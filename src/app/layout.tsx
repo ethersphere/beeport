@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppKit } from "@/context/web3";
+import { BzzProvider } from "@/context/Bzz";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AppKit>{children}</AppKit>
+        <BzzProvider>
+          <AppKit>{children}</AppKit>
+        </BzzProvider>
       </body>
     </html>
   );

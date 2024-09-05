@@ -1,4 +1,5 @@
 "use client";
+import { useBzz } from "@/context/Bzz";
 import React, { useState, useEffect } from "react";
 
 function FetchPriceComponent() {
@@ -12,8 +13,11 @@ function FetchPriceComponent() {
   const [depth, setDepth] = useState<number | null | "No suitable depth found">(
     null
   );
+
+  const { bzzAmount, setBzzAmount } = useBzz();
+
   const [amount, setAmount] = useState<number | null>(null);
-  const [storageCost, setStorageCost] = useState<string | null>(null);
+  const [storageCost, setStorageCost] = useState("");
   const [minimumDepthStorageCost, setMinimumDepthStorageCost] = useState<
     string | null
   >(null);
@@ -21,6 +25,10 @@ function FetchPriceComponent() {
   const [timeError, setTimeError] = useState("");
   const [volumeError, setVolumeError] = useState("");
 
+  useEffect(() => {
+    setBzzAmount(storageCost);
+    console.log(bzzAmount, "bzzAmount");
+  }, [storageCost, amount, setBzzAmount, bzzAmount]);
   // Volume in GB
   const volumeToDepth: { [key: string]: number } = {
     "4.93": 22,
@@ -118,8 +126,9 @@ function FetchPriceComponent() {
     setMinimumDepth(calculateMinimumDepth(gigabytes));
     calculateAmount((hours * 3600) / 5);
     setShowResults(true);
+    setBzzAmount(storageCost as string);
+    console.log(bzzAmount, "bzzAmount");
   };
-
   const calculateDepth = (gigabytes: number) => {
     const keys = Object.keys(volumeToDepth)
       .map((key) => parseFloat(key))
@@ -215,13 +224,23 @@ function FetchPriceComponent() {
         </label>
         <input
           id="timeInput"
-          style={{ marginRight: "5px", padding: "8px" }}
+          style={{
+            marginRight: "5px",
+            padding: "8px",
+            borderRadius: "8px",
+            color: "black",
+          }}
           value={time}
           onChange={(e) => setTime(e.target.value)}
           placeholder="Enter time (>= 24 hrs)"
         />
         <select
-          style={{ marginRight: "5px", padding: "8px" }}
+          style={{
+            marginRight: "5px",
+            padding: "8px",
+            color: "black",
+            borderRadius: "8px",
+          }}
           value={timeUnit}
           onChange={(e) => setTimeUnit(e.target.value)}
         >
@@ -243,13 +262,23 @@ function FetchPriceComponent() {
         </label>
         <input
           id="volumeInput"
-          style={{ marginRight: "5px", padding: "8px" }}
+          style={{
+            marginRight: "5px",
+            padding: "8px",
+            color: "black",
+            borderRadius: "8px",
+          }}
           value={volume}
           onChange={(e) => setVolume(e.target.value)}
           placeholder="Enter volume (<= 9 PB)"
         />
         <select
-          style={{ marginRight: "5px", padding: "8px" }}
+          style={{
+            marginRight: "5px",
+            padding: "8px",
+            color: "black",
+            borderRadius: "8px",
+          }}
           value={volumeUnit}
           onChange={(e) => setVolumeUnit(e.target.value)}
         >
@@ -280,9 +309,9 @@ function FetchPriceComponent() {
 
       {showResults && !timeError && !volumeError && (
         <div className="text-white">
-          <div style={{ marginTop: "20px", fontSize: "16px" }}>
+          {/* <div style={{ marginTop: "20px", fontSize: "16px" }}>
             {`In order to store ${volume} ${volumeUnit} of data for ${time} ${timeUnit}, a depth of ${depth} and an amount value of ${amount} should be used.`}
-          </div>
+          </div> */}
           <table
             style={{
               width: "100%",
@@ -321,7 +350,7 @@ function FetchPriceComponent() {
                 <td>Volume</td>
                 <td>{`${volume} ${volumeUnit}`}</td>
               </tr>
-              <tr>
+              {/* <tr>
                 <td>Suggested Minimum Amount</td>
                 <td>{amount} PLUR</td>
               </tr>
@@ -340,8 +369,8 @@ function FetchPriceComponent() {
                     </>
                   )}
                 </td>
-              </tr>
-              <tr>
+              </tr> */}
+              {/* <tr>
                 <td>Suggested Minimum Depth</td>
                 <td>
                   {minimumDepth} (see{" "}
@@ -350,15 +379,15 @@ function FetchPriceComponent() {
                   </a>{" "}
                   - may require <a href="#dilute-your-batch">dilution</a>)
                 </td>
-              </tr>
+              </tr> */}
               <tr>
                 <td className="">Batch Cost for Safe Depth</td>
                 <td>{storageCost} xBZZ</td>
               </tr>
-              <tr>
+              {/* <tr>
                 <td>Batch Cost for Minimum Depth</td>
                 <td>{minimumDepthStorageCost} xBZZ</td>
-              </tr>
+              </tr> */}
             </tbody>
           </table>
         </div>
