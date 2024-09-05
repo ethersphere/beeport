@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@lifi/sdk": "^3.1.5",
+    "@lifi/widget": "^3.4.4",
     "@web3modal/ethers": "^5.1.4",
     "axios": "^1.7.5",
     "ethers": "^6.13.2",

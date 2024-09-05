@@ -1,4 +1,6 @@
+import FetchPriceComponent from "@/components/Calculator/AmountAndDepthCalc";
 import { ConnectButton } from "@/components/ConnectButton";
+import UploadCostCalc from "@/components/Calculator/RedundancyCalc";
 import { Widget } from "@/components/Widget";
 import { WidgetEvents } from "@/components/WidgetEvents";
 
@@ -9,6 +11,8 @@ export default function Home() {
         <ConnectButton />
         <WidgetEvents />
         <Widget />
+        <UploadCostCalc />
+        <FetchPriceComponent />
       </div>
     </main>
   );
