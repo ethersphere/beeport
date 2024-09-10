@@ -10,11 +10,9 @@ export function Widget() {
 
   const config = {
     toChain: 100,
-    toAmount: 1,
-    fromAmount: bzzAmount,
+    toAmount: bzzAmount,
     theme: {
       container: {
-        boxShadow: "0px 8px 32px rgba(0, 0, 0, 0.08)",
         borderRadius: "16px",
       },
     },
@@ -25,7 +23,8 @@ export function Widget() {
       <ClientOnly fallback={<WidgetSkeleton config={config} />}>
         <LiFiWidget
           config={config}
-          toAmount={100}
+          toAmount={bzzAmount}
+          toChain={100}
           toToken="BZZ"
           integrator="nextjs-example"
         />
