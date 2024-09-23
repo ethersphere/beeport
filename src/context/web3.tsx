@@ -1,17 +1,24 @@
 "use client";
 
 import { createWeb3Modal, defaultConfig } from "@web3modal/ethers/react";
-
-// 1. Get projectId from https://cloud.walletconnect.com
 const projectId = "247742c461bf62a2ec613859bc84a937";
 
 // 2. Set chains
-const mainnet = {
-  chainId: 1,
-  name: "Ethereum",
-  currency: "ETH",
-  explorerUrl: "https://etherscan.io",
-  rpcUrl: "https://cloudflare-eth.com",
+
+const Sepolia = {
+  chainId: 11155111,
+  name: "Sepolia",
+  currency: "SepoliaETH",
+  explorerUrl: "https://sepolia.etherscan.io/",
+  rpcUrl: "https://sepolia.infura.io/v3/d80826b52dc64616b60d3e45082332f9",
+};
+
+const Gnosis = {
+  chainId: 100,
+  name: "Gnosis",
+  currency: "xDai",
+  explorerUrl: "https://gnosisscan.io/",
+  rpcUrl: "https://rpc.gnosischain.com",
 };
 
 // 3. Create a metadata object
@@ -37,7 +44,7 @@ const ethersConfig = defaultConfig({
 // 5. Create a AppKit instance
 createWeb3Modal({
   ethersConfig,
-  chains: [mainnet],
+  chains: [Gnosis, Sepolia],
   projectId,
   enableAnalytics: true, // Optional - defaults to your Cloud configuration
 });

@@ -6,16 +6,13 @@ import { ClientOnly } from "../utils/ClientOnly";
 import { useBzz } from "@/context/Bzz";
 
 export function Widget() {
-  const { bzzAmount, setBzzAmount } = useBzz();
+  const { bzzAmount } = useBzz();
 
   const config = {
     toChain: 100,
     toAmount: bzzAmount,
-    theme: {
-      container: {
-        borderRadius: "16px",
-      },
-    },
+    appearance: "light",
+    theme: {},
   } as Partial<WidgetConfig>;
 
   return (
