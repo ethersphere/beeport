@@ -1,6 +1,7 @@
 "use client";
 import { Input } from "@/components/ui/Input";
-import { useBzz } from "@/context/Bzz";
+import { useGlobal } from "@/context/Global";
+import { ethers } from "ethers";
 import React, { useState, useEffect } from "react";
 
 export default function Calculator() {
@@ -15,7 +16,13 @@ export default function Calculator() {
     null
   );
 
-  const { bzzAmount, setBzzAmount } = useBzz();
+  const {
+    setBzzAmount,
+    bzzUserAmount,
+    setNeedTokens,
+    setCalculateData,
+    needTokens,
+  } = useGlobal();
 
   const [amount, setAmount] = useState<number | null>(null);
   const [storageCost, setStorageCost] = useState("");
@@ -45,6 +52,7 @@ export default function Calculator() {
     if (minimumDepth !== null && amount !== null) {
       calculateMinimumDepthStorageCost();
     }
+    setCalculateData([depth, amount, minimumDepth]);
   }, [depth, amount, minimumDepth]);
 
   const fetchPrice = async () => {
@@ -123,22 +131,33 @@ export default function Calculator() {
 
   const calculateAmount = (blocks: number) => {
     if (price !== null && !isNaN(blocks)) {
-      const totalAmount = blocks * price;
-      setAmount(totalAmount);
+      const totalAmount = blocks * price; // Convertimos totalAmount a BigInt
+
+      setAmount(Number(totalAmount));
     } else {
-      setAmount(0); // Valor por defecto si no es posible el cálculo
+      setAmount(0);
     }
   };
-
+  function isGreater(a: bigint, b: bigint): boolean {
+    return a > b;
+  }
   const calculateStorageCost = () => {
     if (depth !== null && amount !== null && !isNaN(amount)) {
       const cost = (2 ** (depth as number) * (amount as number)) / 1e16;
+      const parseBzzAmount = ethers.parseEther(cost.toString());
+      if (isGreater(parseBzzAmount, bzzUserAmount)) {
+        setNeedTokens(true);
+      } else {
+        setNeedTokens(false);
+      }
       setStorageCost(cost.toFixed(4));
       setBzzAmount(cost.toFixed(4));
     } else {
       setStorageCost("0.0000");
     }
   };
+
+  console.log(needTokens, "needTokens");
 
   const calculateMinimumDepthStorageCost = () => {
     if (minimumDepth !== null && amount !== null) {
@@ -190,6 +209,11 @@ export default function Calculator() {
     }
     return gigabytes;
   };
+
+  useEffect(() => {
+    const cost = (2 ** (depth as number) * (amount as number)) / 1e16;
+    setCalculateData([depth, amount, minimumDepth, cost]);
+  }, [depth, amount, minimumDepth, storageCost]);
 
   return (
     <div className="flex flex-col space-y-2 w-[86%] mx-auto p-2 bg-white text-black">

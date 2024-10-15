@@ -1,10 +1,4 @@
-import {
-  BrowserProvider,
-  Contract,
-  ethers,
-  EventLog,
-  TransactionReceipt,
-} from "ethers";
+import { BrowserProvider, Contract, ethers } from "ethers";
 import { BigNumberish } from "ethers";
 
 import {
@@ -13,17 +7,13 @@ import {
   SEPOLIA_ERC20_ADDRESS,
   SEPOLIA_SWARM_CONTRACT_ADDRESS,
 } from "@/constants";
-import { BatchCreatedEvent } from "@/interface";
-import { useWeb3ModalProvider } from "@web3modal/ethers/react";
-import { Log } from "ethers";
+import { randomBytes } from "crypto";
 
 export async function CreateBatch(
-  signer: any,
+  signer: ethers.JsonRpcSigner,
   address: string,
-  initialBalancePerChunk: BigNumberish,
+  totalCostBZZ: BigNumberish, // Costo total en BZZ
   depth: number,
-  bucketDepth: number,
-  nonce: string,
   immutable: boolean
 ): Promise<string> {
   let batchId: string = "";
@@ -35,18 +25,21 @@ export async function CreateBatch(
       signer
     );
 
-    const initialBalancePerChunk = ethers.parseUnits("2", "ether"); // Balance inicial
-    const depth = 8; // Profundidad
-    const bucketDepth = 4; // Bucket depth
-    const encodedNonce = ethers.encodeBytes32String(nonce);
+    const bucketDepth = 16;
 
-    // Estimate gas before sending the transaction
+    const numberOfChunks = 2 ** depth;
+
+    const initialBalancePerChunk = ethers.parseUnits(
+      (parseFloat(totalCostBZZ.toString()) / numberOfChunks).toFixed(18),
+      "ether"
+    );
+    const nonce = randomBytes(32);
     const gasEstimate = await contract.createBatch.estimateGas(
       address,
       initialBalancePerChunk,
       depth,
       bucketDepth,
-      encodedNonce,
+      nonce,
       immutable
     );
 
@@ -55,7 +48,7 @@ export async function CreateBatch(
       initialBalancePerChunk,
       depth,
       bucketDepth,
-      encodedNonce,
+      nonce,
       immutable,
       { gasLimit: gasEstimate }
     );
@@ -76,7 +69,7 @@ export async function CreateBatch(
   return batchId;
 }
 
-export async function ApproveBZZ(signer: any) {
+export async function ApproveBZZ(signer: ethers.JsonRpcSigner) {
   try {
     const contract = new Contract(SEPOLIA_ERC20_ADDRESS, ERC20ABI, signer);
     const tx = await contract.approve(SEPOLIA_SWARM_CONTRACT_ADDRESS, 100n);
@@ -95,3 +88,70 @@ export async function ApproveBZZ(signer: any) {
     console.error("Error calling approveBZZ:", error);
   }
 }
+
+export async function GetBatchIdsFromOwner(
+  walletProvider: any,
+  address: string
+) {
+  try {
+    const provider = new BrowserProvider(walletProvider as any);
+    const signer = await provider.getSigner();
+
+    const contract = new Contract(
+      SEPOLIA_SWARM_CONTRACT_ADDRESS,
+      contractABI,
+      signer
+    );
+    const batchId = await contract.getBatchesForOwner(address);
+
+    const batchIds = batchId.map((batch: any) =>
+      batch.toString().slice(2).toUpperCase()
+    );
+    return batchIds;
+  } catch (error) {
+    console.error("Error calling getBatchId:", error);
+  }
+}
+
+export async function GetBZZBalance(walletProvider: any, address: string) {
+  const provider = new BrowserProvider(walletProvider as any);
+  const signer = await provider.getSigner();
+  const contract = new Contract(SEPOLIA_ERC20_ADDRESS, ERC20ABI, signer);
+  const balance = await contract.balanceOf(address);
+
+  return balance;
+}
+
+export const GetBZZAllowance = async (
+  signer: ethers.JsonRpcSigner,
+  address: string
+) => {
+  const contract = new Contract(SEPOLIA_ERC20_ADDRESS, ERC20ABI, signer);
+  const allowance = await contract.allowance(
+    address,
+    SEPOLIA_SWARM_CONTRACT_ADDRESS
+  );
+  const formattedAllowance = ethers.formatUnits(allowance, 18);
+  console.log("Allowance:", formattedAllowance);
+  return formattedAllowance;
+};
+
+export const MakeContractCallData = async (
+  walletProvider: any,
+  address: string,
+  functionName: string,
+  functionParams: any[]
+) => {
+  const provider = new BrowserProvider(walletProvider as any);
+  const signer = await provider.getSigner();
+  const contract = new Contract(
+    SEPOLIA_SWARM_CONTRACT_ADDRESS,
+    contractABI,
+    signer
+  );
+  const callData = contract.interface.encodeFunctionData(
+    functionName,
+    functionParams
+  );
+  return callData;
+};

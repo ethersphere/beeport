@@ -3,8 +3,7 @@
 import { createWeb3Modal, defaultConfig } from "@web3modal/ethers/react";
 const projectId = "247742c461bf62a2ec613859bc84a937";
 
-// 2. Set chains
-
+/// Chains
 const Sepolia = {
   chainId: 11155111,
   name: "Sepolia",
@@ -21,14 +20,14 @@ const Gnosis = {
   rpcUrl: "https://rpc.gnosischain.com",
 };
 
-// 3. Create a metadata object
+//Create a metadata object
 const metadata = {
   name: "My Website",
   description: "My Website description",
   url: "https://mywebsite.com", // origin must match your domain & subdomain
   icons: ["https://avatars.mywebsite.com/"],
 };
-// 4. Create Ethers config
+// Create Ethers config
 const ethersConfig = defaultConfig({
   /*Required*/
   metadata,
@@ -41,10 +40,11 @@ const ethersConfig = defaultConfig({
   defaultChainId: 1, // used for the Coinbase SDK
 });
 
-// 5. Create a AppKit instance
+// Create a AppKit instance
 createWeb3Modal({
   ethersConfig,
   chains: [Gnosis, Sepolia],
+  defaultChain: Sepolia,
   projectId,
   enableAnalytics: true, // Optional - defaults to your Cloud configuration
 });
