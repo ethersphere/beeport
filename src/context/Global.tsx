@@ -1,5 +1,5 @@
 "use client";
-import { GlobalContextProps } from "@/interface";
+import { GlobalContextProps } from "@/types/globalContext";
 import React, { createContext, useState, useContext, ReactNode } from "react";
 
 const GlobalContext = createContext<GlobalContextProps | undefined>(undefined);
@@ -7,11 +7,13 @@ const GlobalContext = createContext<GlobalContextProps | undefined>(undefined);
 export const GlobalProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [bzzAmount, setBzzAmount] = useState("");
+  const [bzzAmount, setBzzAmount] = useState<string | undefined>("");
   const [bzzUserAmount, setBzzUserAmount] = useState<bigint>(0n);
   const [needTokens, setNeedTokens] = useState(false);
-  const [calculateData, setCalculateData] = useState([]);
-  const [batchIds, setBatchIds] = useState<string[]>([]);
+  const [calculateData, setCalculateData] = useState<(number | null)[]>([]);
+
+  const [batchIds, setBatchIds] = useState<string[] | null>(null);
+  
   return (
     <GlobalContext.Provider
       value={{
@@ -21,7 +23,7 @@ export const GlobalProvider: React.FC<{ children: ReactNode }> = ({
         setBzzUserAmount,
         needTokens,
         setNeedTokens,
-        calculateData,
+        calculateData: calculateData || [],
         setCalculateData,
         batchIds,
         setBatchIds,

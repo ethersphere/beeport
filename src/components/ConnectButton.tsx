@@ -10,8 +10,7 @@ export const ConnectButton = () => {
     <>
       {useHydrated() && (
         <section className="m-auto rounded-xl">
-          {isConnected === false && <w3m-connect-button />}
-
+          {!isConnected && <w3m-connect-button />}
           {isConnected && <w3m-button />}
         </section>
       )}

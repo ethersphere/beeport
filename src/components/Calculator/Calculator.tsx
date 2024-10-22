@@ -4,17 +4,16 @@ import { useGlobal } from "@/context/Global";
 import { ethers } from "ethers";
 import React, { useState, useEffect } from "react";
 
+// TODO: REVIEW THE CODE IN THIS FILE
 export default function Calculator() {
-  const [price, setPrice] = useState<any>(null);
+  const [price, setPrice] = useState<number | null>(null);
   const [time, setTime] = useState("");
   const [timeUnit, setTimeUnit] = useState("hours");
   const [volume, setVolume] = useState("");
   const [volumeUnit, setVolumeUnit] = useState("GB");
   const [convertedTime, setConvertedTime] = useState<number | null>(null);
   const [minimumDepth, setMinimumDepth] = useState<number | null>(0);
-  const [depth, setDepth] = useState<number | null | "No suitable depth found">(
-    null
-  );
+  const [depth, setDepth] = useState<number | null>(null);
 
   const {
     setBzzAmount,
@@ -67,8 +66,8 @@ export default function Calculator() {
       } else {
         console.error("No price update available.");
       }
-    } catch (error: any) {
-      console.error("Error fetching price:", error?.message);
+    } catch (error) {
+      console.error("Error fetching price:", error);
     }
   };
 
@@ -115,9 +114,7 @@ export default function Calculator() {
       .map((key) => parseFloat(key))
       .sort((a, b) => a - b);
     let foundKey = keys.find((key) => key >= gigabytes);
-    setDepth(
-      foundKey ? volumeToDepth[foundKey.toFixed(2)] : "No suitable depth found"
-    );
+    setDepth(foundKey ? volumeToDepth[foundKey.toFixed(2)] : null);
   };
 
   const calculateMinimumDepth = (gigabytes: number) => {
@@ -156,8 +153,6 @@ export default function Calculator() {
       setStorageCost("0.0000");
     }
   };
-
-  console.log(needTokens, "needTokens");
 
   const calculateMinimumDepthStorageCost = () => {
     if (minimumDepth !== null && amount !== null) {

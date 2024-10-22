@@ -2,17 +2,20 @@ import { BrowserProvider, Contract, ethers } from "ethers";
 import { BigNumberish } from "ethers";
 
 import {
-  contractABI,
-  ERC20ABI,
+  // ERC20ABI,
   SEPOLIA_ERC20_ADDRESS,
   SEPOLIA_SWARM_CONTRACT_ADDRESS,
 } from "@/constants";
 import { randomBytes } from "crypto";
 
+import { swarmContractAbi  } from "@/abis/swarmContractAbi";
+import { ERC20ABI } from "@/abis/ERC20Abi";
+
+// TODO CHANGE THIS FUNCTIONS TO CLASS FOR BETTER ORDER
 export async function CreateBatch(
   signer: ethers.JsonRpcSigner,
   address: string,
-  totalCostBZZ: BigNumberish, // Costo total en BZZ
+  totalCostBZZ: BigNumberish,
   depth: number,
   immutable: boolean
 ): Promise<string> {
@@ -21,7 +24,7 @@ export async function CreateBatch(
   try {
     const contract = new Contract(
       SEPOLIA_SWARM_CONTRACT_ADDRESS,
-      contractABI,
+      swarmContractAbi,
       signer
     );
 
@@ -54,11 +57,6 @@ export async function CreateBatch(
     );
 
     const receipt = await tx.wait();
-    console.log("Transaction confirmed in block:", receipt.blockNumber);
-    console.log(
-      "Transaction status:",
-      receipt.status === 1 ? "Success" : "Failed"
-    );
 
     batchId = receipt.logs[1].topics[1].slice(2).toUpperCase();
 
@@ -73,53 +71,60 @@ export async function ApproveBZZ(signer: ethers.JsonRpcSigner) {
   try {
     const contract = new Contract(SEPOLIA_ERC20_ADDRESS, ERC20ABI, signer);
     const tx = await contract.approve(SEPOLIA_SWARM_CONTRACT_ADDRESS, 100n);
-    console.log("Transaction hash:", tx.hash);
-    console.log(tx, "tx");
-    const receipt = await tx.wait();
-    console.log(tx.value, "tx to string");
 
-    console.log("Transaction confirmed in block:", receipt.blockNumber);
-    console.log(
-      "Transaction status:",
-      receipt.status === 1 ? "Success" : "Failed"
-    );
-    console.log(receipt, "receipt general data");
+    const receipt = await tx.wait();
   } catch (error) {
     console.error("Error calling approveBZZ:", error);
   }
 }
 
 export async function GetBatchIdsFromOwner(
-  walletProvider: any,
+  walletProvider: ethers.Eip1193Provider,
   address: string
 ) {
   try {
-    const provider = new BrowserProvider(walletProvider as any);
+    const provider = new BrowserProvider(
+      walletProvider as ethers.Eip1193Provider
+    );
     const signer = await provider.getSigner();
 
     const contract = new Contract(
       SEPOLIA_SWARM_CONTRACT_ADDRESS,
-      contractABI,
+      swarmContractAbi,
       signer
     );
     const batchId = await contract.getBatchesForOwner(address);
 
-    const batchIds = batchId.map((batch: any) =>
+    const batchIds = batchId.map((batch: string) =>
       batch.toString().slice(2).toUpperCase()
     );
     return batchIds;
   } catch (error) {
-    console.error("Error calling getBatchId:", error);
+    console.error("Error GetBatchIdsFromOwner:", error);
   }
 }
 
-export async function GetBZZBalance(walletProvider: any, address: string) {
-  const provider = new BrowserProvider(walletProvider as any);
+export async function GetBZZBalance(
+  walletProvider: ethers.Eip1193Provider,
+  address: string
+) {
+  const provider = new BrowserProvider(
+    walletProvider as ethers.Eip1193Provider
+  );
   const signer = await provider.getSigner();
   const contract = new Contract(SEPOLIA_ERC20_ADDRESS, ERC20ABI, signer);
-  const balance = await contract.balanceOf(address);
+  console.log('address :>> ', address);
+  try {
+    const balance = await contract.balanceOf(address);
+    console.log('balance :>> ', balance);
+    return balance;
+    
+  } catch (error) {
+    console.log('Error en GetBzzBalance :>> ', error);
+  }
 
-  return balance;
+  return 0
+
 }
 
 export const GetBZZAllowance = async (
@@ -132,21 +137,19 @@ export const GetBZZAllowance = async (
     SEPOLIA_SWARM_CONTRACT_ADDRESS
   );
   const formattedAllowance = ethers.formatUnits(allowance, 18);
-  console.log("Allowance:", formattedAllowance);
   return formattedAllowance;
 };
 
 export const MakeContractCallData = async (
-  walletProvider: any,
-  address: string,
+  walletProvider: ethers.Eip1193Provider,
   functionName: string,
-  functionParams: any[]
+  functionParams: []
 ) => {
-  const provider = new BrowserProvider(walletProvider as any);
+  const provider = new BrowserProvider(walletProvider);
   const signer = await provider.getSigner();
   const contract = new Contract(
     SEPOLIA_SWARM_CONTRACT_ADDRESS,
-    contractABI,
+    swarmContractAbi,
     signer
   );
   const callData = contract.interface.encodeFunctionData(
@@ -154,4 +157,39 @@ export const MakeContractCallData = async (
     functionParams
   );
   return callData;
+};
+
+export const BuyPostage = async (
+  walletProvider: ethers.Eip1193Provider,
+  address: string,
+  calculateData: (number | null)[]
+) => {
+  const provider = new BrowserProvider(
+    walletProvider as ethers.Eip1193Provider
+  );
+
+  if (
+    !address ||
+    !walletProvider ||
+    !calculateData ||
+    !calculateData[3] ||
+    !calculateData[0]
+  ) {
+    console.error("Error in BuyPostage");
+    return;
+  }
+  const signer = await provider.getSigner();
+  const allowance = await GetBZZAllowance(signer, address as string);
+  if (allowance < calculateData[3]?.toString()) {
+    await ApproveBZZ(signer);
+  }
+
+  const batchId = await CreateBatch(
+    signer,
+    address,
+    calculateData[3],
+    calculateData[0],
+    false
+  );
+  return batchId;
 };

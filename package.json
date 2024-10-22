@@ -9,14 +9,17 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ethersphere/bee-js": "^8.1.0",
     "@lifi/sdk": "^3.1.3",
     "@lifi/widget": "^3.3.0",
     "@radix-ui/react-select": "^2.1.1",
     "@radix-ui/react-slot": "^1.1.0",
+    "@reown/appkit": "^1.1.6",
+    "@reown/appkit-adapter-ethers": "^1.1.6",
     "@web3modal/ethers": "^5.1.4",
     "axios": "^1.7.5",
     "class-variance-authority": "^0.7.0",
-    "ethers": "^6.13.2",
+    "ethers": "^6.13.4",
     "lucide-react": "^0.438.0",
     "next": "14.2.7",
     "react": "^18",

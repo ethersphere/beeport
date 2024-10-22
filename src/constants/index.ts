@@ -1,7 +1,10 @@
 export const SEPOLIA_SWARM_CONTRACT_ADDRESS =
-  "0x46c46f96Fa488cb491353804528C8591E2E2D9eA"; //// SEPOLIA TESTNET
-export const SEPOLIA_ERC20_ADDRESS =
-  "0x3997c1ee3895e51B98637935549d35E034Ea0e98"; //// SEPOLIA TESTNET
+  process.env.NEXT_PUBLIC_SWARM_CONTRACT_ADDRESS!; //// SEPOLIA TESTNET
+export const SEPOLIA_ERC20_ADDRESS = process.env.NEXT_PUBLIC_ERC20_ADDRESS!; //// SEPOLIA TESTNET
+
+if (!SEPOLIA_SWARM_CONTRACT_ADDRESS || !SEPOLIA_ERC20_ADDRESS) {
+  throw new Error("NEXT_PUBLIC_CONTRACT_ADDRESS is not set");
+}
 
 export const contractABI = [
   "function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external returns (bytes32)",
