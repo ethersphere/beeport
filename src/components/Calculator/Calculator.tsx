@@ -1,120 +1,95 @@
 "use client";
 import { Input } from "@/components/ui/Input";
 import { useGlobal } from "@/context/Global";
-import { ethers } from "ethers";
+import { SwarmCalc, timeUnitType, volumeUnitType } from "@/lib/SwarmCalc";
+import { getPrice } from "@/services/getPrice";
+import { parseEther } from "ethers";
 import React, { useState, useEffect } from "react";
 
 // TODO: REVIEW THE CODE IN THIS FILE
 export default function Calculator() {
-  const [price, setPrice] = useState<number | null>(null);
-  const [time, setTime] = useState("");
-  const [timeUnit, setTimeUnit] = useState("hours");
-  const [volume, setVolume] = useState("");
-  const [volumeUnit, setVolumeUnit] = useState("GB");
-  const [convertedTime, setConvertedTime] = useState<number | null>(null);
-  const [minimumDepth, setMinimumDepth] = useState<number | null>(0);
-  const [depth, setDepth] = useState<number | null>(null);
+  const [price, setPrice] = useState<number | undefined>();
+  const [time, setTime] = useState<number>(0);
+  const [timeUnit, setTimeUnit] = useState<timeUnitType>(timeUnitType.HOURS);
+  const [volume, setVolume] = useState<number>(0);
+  const [volumeUnit, setVolumeUnit] = useState<volumeUnitType>(
+    volumeUnitType.GB
+  );
 
-  const {
-    setBzzAmount,
-    bzzUserAmount,
-    setNeedTokens,
-    setCalculateData,
-    needTokens,
-  } = useGlobal();
+  const [amount, setAmount] = useState<number>(0);
 
-  const [amount, setAmount] = useState<number | null>(null);
+  const [minimumDepth, setMinimumDepth] = useState<number>(0);
+  const [depth, setDepth] = useState<number>(0);
+
+  const { setBzzAmount, bzzUserAmount, setNeedTokens, setCalculateData } =
+    useGlobal();
+
   const [storageCost, setStorageCost] = useState("");
-  const [minimumDepthStorageCost, setMinimumDepthStorageCost] = useState<
-    string | null
-  >(null);
   const [timeError, setTimeError] = useState("");
   const [volumeError, setVolumeError] = useState("");
 
   // Fetch the price on component mount
   useEffect(() => {
-    fetchPrice();
+    (async () => {
+      const price = await getPrice();
+      setPrice(price);
+    })();
   }, []);
 
   // Auto calculate whenever time, volume, timeUnit, or volumeUnit change
   useEffect(() => {
-    if (price) {
+    if (!!price) {
       handleCalculate();
     }
   }, [time, timeUnit, volume, volumeUnit]);
 
   // Auto calculate storage cost when depth, amount, or minimumDepth change
   useEffect(() => {
-    if (depth !== null && amount !== null) {
-      calculateStorageCost();
+    if (!amount) return;
+
+    if (!!depth) {
+      const cost = SwarmCalc.calculateStorageCost(depth, amount);
+      const bzzAmount = parseEther(cost.toString());
+
+      if (bzzAmount > bzzUserAmount) {
+        setNeedTokens(true);
+      } else {
+        setNeedTokens(false);
+      }
+      setStorageCost(cost.toFixed(4));
+      setBzzAmount(cost.toFixed(4));
     }
-    if (minimumDepth !== null && amount !== null) {
-      calculateMinimumDepthStorageCost();
-    }
+
     setCalculateData([depth, amount, minimumDepth]);
   }, [depth, amount, minimumDepth]);
-
-  const fetchPrice = async () => {
-    try {
-      const response = await fetch(
-        "https://api.swarmscan.io/v1/events/storage-price-oracle/price-update"
-      );
-      if (!response.ok) throw new Error("Network response was not ok");
-      const data = await response.json();
-      if (data.events && data.events.length > 0) {
-        setPrice(parseFloat(data.events[0].data.price));
-      } else {
-        console.error("No price update available.");
-      }
-    } catch (error) {
-      console.error("Error fetching price:", error);
-    }
-  };
 
   const handleCalculate = () => {
     setTimeError("");
     setVolumeError("");
 
-    const hours = convertTimeToHours(time, timeUnit);
-    const gigabytes = convertVolumeToGB(volume, volumeUnit);
+    const hours = SwarmCalc.convertTimeToHours(time, timeUnit);
+    const gigabytes = SwarmCalc.convertVolumeToGB(volume, volumeUnit);
 
-    if (!hours || !gigabytes) return;
+    if (!gigabytes) setVolumeError("Volume must be a positive number.");
+    if (!hours) setTimeError("The value of time must be greater than zero.");
 
-    setConvertedTime(hours);
+    if (!hours || !gigabytes || !price) return;
+    const block = (hours * 3600) / 5;
+
     calculateDepth(gigabytes);
     setMinimumDepth(calculateMinimumDepth(gigabytes));
-    calculateAmount((hours * 3600) / 5);
+    const totalAmount = SwarmCalc.calculateAmount(block, price);
+    setAmount(totalAmount);
   };
 
   const calculateDepth = (gigabytes: number) => {
-    const volumeToDepth: { [key: string]: number } = {
-      "4.93": 22,
-      "17.03": 23,
-      "44.21": 24,
-      "102.78": 25,
-      "225.86": 26,
-      "480.43": 27,
-      "1024.00": 28,
-      "2109.44": 29,
-      "4300.80": 30,
-      "8724.48": 31,
-      "17612.80": 32,
-      "35461.12": 33,
-      "71249.92": 34,
-      "142981.12": 35,
-      "286627.84": 36,
-      "574187.52": 37,
-      "1174405.12": 38,
-      "2359296.00": 39,
-      "4718592.00": 40,
-      "9437184.00": 41,
-    };
-
+    const volumeToDepth = SwarmCalc.getVolumeToDepth();
     const keys = Object.keys(volumeToDepth)
       .map((key) => parseFloat(key))
       .sort((a, b) => a - b);
-    let foundKey = keys.find((key) => key >= gigabytes);
-    setDepth(foundKey ? volumeToDepth[foundKey.toFixed(2)] : null);
+
+    const foundKey = keys.find((key) => key >= gigabytes);
+    setDepth(foundKey ? volumeToDepth[foundKey.toFixed(2)] : 0);
   };
 
   const calculateMinimumDepth = (gigabytes: number) => {
@@ -123,90 +98,11 @@ export default function Calculator() {
         return depth;
       }
     }
-    return null;
-  };
-
-  const calculateAmount = (blocks: number) => {
-    if (price !== null && !isNaN(blocks)) {
-      const totalAmount = blocks * price; // Convertimos totalAmount a BigInt
-
-      setAmount(Number(totalAmount));
-    } else {
-      setAmount(0);
-    }
-  };
-  function isGreater(a: bigint, b: bigint): boolean {
-    return a > b;
-  }
-  const calculateStorageCost = () => {
-    if (depth !== null && amount !== null && !isNaN(amount)) {
-      const cost = (2 ** (depth as number) * (amount as number)) / 1e16;
-      const parseBzzAmount = ethers.parseEther(cost.toString());
-      if (isGreater(parseBzzAmount, bzzUserAmount)) {
-        setNeedTokens(true);
-      } else {
-        setNeedTokens(false);
-      }
-      setStorageCost(cost.toFixed(4));
-      setBzzAmount(cost.toFixed(4));
-    } else {
-      setStorageCost("0.0000");
-    }
-  };
-
-  const calculateMinimumDepthStorageCost = () => {
-    if (minimumDepth !== null && amount !== null) {
-      const cost = (2 ** minimumDepth * amount) / 1e16;
-      setMinimumDepthStorageCost(cost.toFixed(4));
-    }
-  };
-
-  const convertTimeToHours = (time: string, unit: string) => {
-    const num = parseFloat(time);
-    if (isNaN(num) || num <= 0) {
-      setTimeError("Time must be a positive number greater than 24 hrs.");
-      return 0;
-    }
-    const hours =
-      num *
-      (unit === "years"
-        ? 8760
-        : unit === "weeks"
-        ? 168
-        : unit === "days"
-        ? 24
-        : 1);
-    if (hours < 24) {
-      setTimeError("Time must be longer than 24 hours.");
-      return 0;
-    }
-    return hours;
-  };
-
-  const convertVolumeToGB = (volume: string, unit: string) => {
-    const num = parseFloat(volume);
-    if (isNaN(num) || num <= 0) {
-      setVolumeError("Volume must be a positive number.");
-      return 0;
-    }
-    const gigabytes =
-      num *
-      (unit === "TB"
-        ? 1024
-        : unit === "PB"
-        ? 1048576
-        : unit === "MB"
-        ? 1 / 1024
-        : 1);
-    if (gigabytes <= 0 || gigabytes > 9437184) {
-      setVolumeError("Volume must be greater than 0 and less than 9 PB.");
-      return 0;
-    }
-    return gigabytes;
+    return 0;
   };
 
   useEffect(() => {
-    const cost = (2 ** (depth as number) * (amount as number)) / 1e16;
+    const cost = SwarmCalc.calculateStorageCost(depth, amount);
     setCalculateData([depth, amount, minimumDepth, cost]);
   }, [depth, amount, minimumDepth, storageCost]);
 
@@ -215,44 +111,46 @@ export default function Calculator() {
       <div className="flex justify-between items-center space-x-2">
         <Input
           type="text"
-          placeholder="Time (>= 24 hrs)"
-          className="w-full text-sm font-bold"
-          onChange={(e) => setTime(e.target.value)}
-        />
-        <select
-          className="text-sm p-1 border rounded w-24 font-bold "
-          value={timeUnit}
-          onChange={(e) => setTimeUnit(e.target.value)}
-        >
-          <option value="hours">Hours</option>
-          <option value="days">Days</option>
-          <option value="weeks">Weeks</option>
-          <option value="years">Years</option>
-        </select>
-      </div>
-      {timeError && <p className="text-red-500 text-xs">{timeError}</p>}
-
-      <div className="flex justify-between items-center space-x-2">
-        <Input
-          type="text"
           placeholder="Volume (> 0)"
           className="w-full text-sm font-bold"
-          onChange={(e) => setVolume(e.target.value)}
+          onChange={(e) => setVolume(parseFloat(e.target.value))}
         />
         <select
           className="text-sm p-1 border rounded w-24 font-bold"
           value={volumeUnit}
-          onChange={(e) => setVolumeUnit(e.target.value)}
+          onChange={(e) => setVolumeUnit(e.target.value as volumeUnitType)}
         >
-          <option value="GB">GB</option>
           <option value="MB">MB</option>
+          <option value="GB">GB</option>
           <option value="TB">TB</option>
           <option value="PB">PB</option>
         </select>
       </div>
-      {volumeError && <p className="text-red-500 text-xs">{volumeError}</p>}
+      {!!volumeError && <p className="text-red-500 text-xs">{volumeError}</p>}
 
-      {storageCost && (
+      <div className="flex justify-between items-center space-x-2">
+        <Input
+          type="text"
+          placeholder="Time (>= 24 hrs)"
+          className="w-full text-sm font-bold"
+          onChange={(e) => setTime(parseFloat(e.target.value))}
+        />
+
+        <select
+          className="text-sm p-1 border rounded w-24 font-bold "
+          value={timeUnit}
+          onChange={(e) => setTimeUnit(e.target.value as timeUnitType)}
+        >
+          <option value={`${timeUnitType.HOURS}`}>Hours</option>
+          <option value={`${timeUnitType.DAYS}`}>Days</option>
+          <option value={`${timeUnitType.WEEKS}`}>Weeks</option>
+          <option value={`${timeUnitType.YEARS}`}>Years</option>
+        </select>
+      </div>
+
+      {!!timeError && <p className="text-red-500 text-xs">{timeError}</p>}
+
+      {!!storageCost && (
         <div className="text-center mt-2 font-bold">
           <p className="text-sm">Storage cost: {storageCost} BZZ</p>
         </div>

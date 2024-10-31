@@ -12,15 +12,18 @@ export const ExistingBatches = () => {
         <p>No batches found</p>
       ) : (
         <ul className="space-y-2">
-          { batchIds.map((batchId: string) => (
+          {batchIds.map((batchId: string) => (
             <li
               key={batchId}
               className="p-2 border-black border-2 rounded-xl group"
+              onClick={() => {
+                navigator.clipboard.writeText(batchId);
+              }}
             >
               <p className="truncate group-hover:hidden">
-                Batch ID: {FormatHash(batchId)}
+                {FormatHash(batchId)}
               </p>
-              <p className="hidden group-hover:block">Batch ID: {batchId}</p>
+              <p className="hidden group-hover:block">{batchId}</p>
             </li>
           ))}
         </ul>

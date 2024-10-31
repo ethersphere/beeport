@@ -7,10 +7,7 @@ import {
   useWeb3ModalAccount,
   useWeb3ModalProvider,
 } from "@web3modal/ethers/react";
-import {
-  SEPOLIA_ERC20_ADDRESS,
-  SEPOLIA_SWARM_CONTRACT_ADDRESS,
-} from "@/constants";
+import { ERC20_ADDRESS, SWARM_CONTRACT_ADDRESS } from "@/constants";
 import { CalculateGas } from "../contractFunctions/CalculateGas";
 import { ERC20ABI } from "@/abis/ERC20Abi";
 import { swarmContractAbi } from "@/abis/swarmContractAbi";
@@ -32,8 +29,8 @@ export function useContractData() {
 
   const contractERC20Interface = new ethers.Interface(ERC20ABI);
   const erc20CallData = contractERC20Interface.encodeFunctionData("approve", [
-    SEPOLIA_SWARM_CONTRACT_ADDRESS,
-    BigInt(bzzAmount!),
+    SWARM_CONTRACT_ADDRESS,
+    BigInt(Math.floor(Number(bzzAmount))),
   ]);
 
   const bucketDepth = 16;
@@ -83,28 +80,28 @@ export function useContractData() {
     ]
   );
 
-  const gasLimitCreateBatch = CalculateGas(
-    SEPOLIA_SWARM_CONTRACT_ADDRESS,
-    address as string,
-    "createBatch",
-    swarmContractAbi,
-    walletProvider as ethers.Eip1193Provider,
-    [address, initialBalancePerChunk, calculateData[0]!]
-  );
+  // const gasLimitCreateBatch = CalculateGas(
+  //   SWARM_CONTRACT_ADDRESS,
+  //   address as string,
+  //   "createBatch",
+  //   swarmContractAbi,
+  //   walletProvider as ethers.Eip1193Provider,
+  //   [address, initialBalancePerChunk, calculateData[0]!]
+  // );
 
-  const gasLimitApprove = CalculateGas(
-    SEPOLIA_ERC20_ADDRESS,
-    address as string,
-    "approve",
-    ERC20ABI,
-    walletProvider as ethers.Eip1193Provider,
-    [SEPOLIA_SWARM_CONTRACT_ADDRESS, bzzAmount]
-  );
+  // const gasLimitApprove = CalculateGas(
+  //   ERC20_ADDRESS,
+  //   address as string,
+  //   "approve",
+  //   ERC20ABI,
+  //   walletProvider as ethers.Eip1193Provider,
+  //   [SWARM_CONTRACT_ADDRESS, bzzAmount]
+  // );
 
   return {
     erc20CallData,
     swarmCallData,
-    gasLimitCreateBatch,
-    gasLimitApprove,
+    // gasLimitCreateBatch,
+    // gasLimitApprove,
   };
 }

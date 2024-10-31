@@ -11,7 +11,6 @@ export const GlobalProvider: React.FC<{ children: ReactNode }> = ({
   const [bzzUserAmount, setBzzUserAmount] = useState<bigint>(0n);
   const [needTokens, setNeedTokens] = useState(false);
   const [calculateData, setCalculateData] = useState<(number | null)[]>([]);
-
   const [batchIds, setBatchIds] = useState<string[] | null>(null);
   
   return (

@@ -1,7 +1,6 @@
-import { BrowserProvider } from "ethers";
-import { ethers } from "ethers";
+import { ethers, BaseContractMethod, BrowserProvider } from "ethers";
 
-// TODO ADD THIS FUNCTIONS TO CLASS IN THE PARENT LEVEL
+
 export async function CalculateGas(
   contractAddress: string,
   address: string,
@@ -20,15 +19,21 @@ export async function CalculateGas(
     | `0x${string}`[][]
   )[]
 ): Promise<bigint> {
-  const provider = new BrowserProvider(
-    walletProvider as ethers.Eip1193Provider
-  );
+  const provider = new BrowserProvider(walletProvider);
   const signer = await provider.getSigner();
   const contract = new ethers.Contract(contractAddress, contractAbi, signer);
-  const gasEstimate = await contract[functionName].estimateGas(
-    address,
-    ...params
-  );
+
+  const method = contract[
+    functionName as keyof typeof contract
+  ] as BaseContractMethod<any[], any, any>;
+
+  if (typeof method.populateTransaction !== "function") {
+    throw new Error(`Function ${functionName} does not exist on the contract.`);
+  }
+
+  const tx = await method.populateTransaction(address, ...params);
+
+  const gasEstimate = await signer.estimateGas(tx);
 
   return gasEstimate;
 }

@@ -1,0 +1,38 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 86%;
+    margin: 0 auto;
+    padding: 0.5rem;
+    background-color: white;
+    color: black;
+  }
+  
+  .inputGroup {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .input {
+    width: 100%;
+    font-size: 0.875rem;
+    font-weight: bold;
+  }
+  
+  .select {
+    font-size: 0.875rem;
+    padding: 0.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.25rem;
+    width: 6rem;
+    font-weight: bold;
+  }
+  
+  .errorText {
+    color: #ef4444;
+    font-size: 0.75rem;
+  }
+  

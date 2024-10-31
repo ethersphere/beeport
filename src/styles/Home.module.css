@@ -1,0 +1,60 @@
+.main {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6rem;
+    background-color: white;
+  }
+  
+  .container {
+    z-index: 10;
+    width: 91.666667%;
+    max-width: 64rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  
+  .calculatorContainer {
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+    width: 50%;
+    padding: 2.5rem;
+    border-radius: 0.75rem;
+  }
+  
+  .button {
+    color: black;
+    border: 2px solid black;
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+  }
+  
+  .link {
+    color: #1d4ed8;
+    font-weight: bold;
+    border: 2px solid black;
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+  }
+  
+  .batchIdContainer {
+    color: black;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    margin-top: 2.5rem;
+    border: 2px solid black;
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+  }
+  

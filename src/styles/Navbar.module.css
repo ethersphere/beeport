@@ -1,0 +1,22 @@
+.navbar {
+    display: flex;
+    flex-direction: row;
+    background-color: white;
+    padding: 2.5rem; /* 10px to rem */
+    color: black;
+    border-radius: 0.75rem; /* xl rounded */
+    width: 91.666667%; /* w-11/12 */
+    margin: auto;
+    font-weight: bold;
+    justify-content: space-between;
+  }
+  
+  .link {
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  .link:hover {
+    text-decoration: underline;
+  }
+  

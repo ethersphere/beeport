@@ -7,12 +7,7 @@ import type {
 import { WidgetEvent, useWidgetEvents } from "@lifi/widget";
 import { BrowserProvider, ethers } from "ethers";
 import { useEffect } from "react";
-import {
-  ApproveBZZ,
-  BuyPostage,
-  CreateBatch,
-  GetBZZAllowance,
-} from "../contractFunctions";
+import { BuyPostage } from "../contractFunctions";
 import { useGlobal } from "@/context/Global";
 import {
   useWeb3ModalAccount,
