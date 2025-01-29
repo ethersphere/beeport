@@ -327,7 +327,7 @@ const SwapComponent: React.FC = () => {
     if (isConnected && selectedChainId && fromToken) {
       updatePriceEstimate();
     }
-  }, [selectedDays, selectedDepth, fromToken, isConnected, selectedChainId]);
+  }, [swarmConfig.swarmBatchInitialBalance, selectedDepth]);
 
   const fetchNodeWalletAddress = async () => {
     try {
@@ -473,9 +473,9 @@ const SwapComponent: React.FC = () => {
 
   const updateSwarmBatchInitialBalance = () => {
     if (currentPrice !== null) {
-      const initialPaymentPerChunkPerDay = currentPrice * BigInt(17280);
+      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
-        initialPaymentPerChunkPerDay * BigInt(selectedDays);
+        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays);
       setSwarmConfig((prev) => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
