@@ -147,6 +147,7 @@ const SwapComponent: React.FC = () => {
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
   const [isChainsLoading, setIsChainsLoading] = useState(true);
+  const [liquidityError, setLiquidityError] = useState<boolean>(false);
 
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
     step: "",
@@ -265,6 +266,7 @@ const SwapComponent: React.FC = () => {
     const updatePriceEstimate = async () => {
       if (!isConnected || !address || !fromToken) return;
       setTotalUsdAmount("0");
+      setLiquidityError(false); // Reset error state
 
       try {
         const newNonce =
@@ -304,7 +306,6 @@ const SwapComponent: React.FC = () => {
             gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
           });
 
-          // Sum up bridge fees
           const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
             ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
                 (total, fee) => {
@@ -320,10 +321,10 @@ const SwapComponent: React.FC = () => {
       } catch (error) {
         console.error("Error getting price estimate:", error);
         setTotalUsdAmount(null);
+        setLiquidityError(true);
       }
     };
 
-    // Only run if we have the required values
     if (isConnected && selectedChainId && fromToken) {
       updatePriceEstimate();
     }
@@ -868,7 +869,7 @@ const SwapComponent: React.FC = () => {
       toToken: gnosisDestinationToken,
       toAmount: toAmount,
       contractCalls: [],
-      slippage: 0.05, //  0.005 represents 0.5%
+      slippage: 0.5, //  0.005 represents 0.5%
     };
 
     const crossChainContractQuoteResponse = await getContractCallsQuote(
@@ -1380,6 +1381,8 @@ const SwapComponent: React.FC = () => {
             <p className={styles.priceInfo}>
               {Number(totalUsdAmount) === 0
                 ? "Estimating total cost..."
+                : liquidityError
+                ? "Not enough liquidity for this swap"
                 : `Total cost ~ $${Number(totalUsdAmount).toFixed(2)}`}
             </p>
           )}
@@ -1387,9 +1390,15 @@ const SwapComponent: React.FC = () => {
           <button
             className={styles.button}
             onClick={handleSwap}
-            disabled={!isClientConnected || isLoading}
+            disabled={!isClientConnected || isLoading || liquidityError}
           >
-            {isLoading ? <div>Loading...</div> : "Execute Swap"}
+            {isLoading ? (
+              <div>Loading...</div>
+            ) : liquidityError ? (
+              "Cannot Swap - Insufficient Liquidity"
+            ) : (
+              "Execute Swap"
+            )}
           </button>
 
           {executionResult && (
