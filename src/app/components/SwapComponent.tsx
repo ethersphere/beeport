@@ -258,10 +258,36 @@ const SwapComponent: React.FC = () => {
   }, [currentPrice, selectedDays, selectedDepth]);
 
   useEffect(() => {
+    const performWithRetry = async <T,>(
+      operation: () => Promise<T>,
+      name: string
+    ): Promise<T> => {
+      const maxRetries = 5;
+      const delayMs = 500;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          console.log(
+            `${name} attempt ${attempt}/${maxRetries} failed:`,
+            error
+          );
+
+          if (attempt === maxRetries) {
+            throw error;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+      throw new Error(`${name} failed after ${maxRetries} attempts`);
+    };
+
     const updatePriceEstimate = async () => {
       if (!isConnected || !address || !fromToken) return;
       setTotalUsdAmount("0");
-      setLiquidityError(false); // Reset error state
+      setLiquidityError(false);
 
       try {
         const newNonce =
@@ -276,36 +302,41 @@ const SwapComponent: React.FC = () => {
             ? fromToken
             : GNOSIS_DESTINATION_TOKEN;
 
-        const { gnosisContactCallsQuoteResponse } = await getGnosisQuote({
-          gnosisSourceToken,
-          address,
-          bzzAmount,
-          nodeAddress,
-          swarmConfig: {
-            ...swarmConfig,
-            swarmBatchNonce: newNonce,
-          },
-        });
+        const { gnosisContactCallsQuoteResponse } = await performWithRetry(
+          () =>
+            getGnosisQuote({
+              gnosisSourceToken,
+              address,
+              bzzAmount,
+              nodeAddress,
+              swarmConfig: {
+                ...swarmConfig,
+                swarmBatchNonce: newNonce,
+              },
+            }),
+          "getGnosisQuote"
+        );
 
         let totalAmount = Number(
           gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0
         );
 
-        // If not on Gnosis chain, get cross chain fees
         if (selectedChainId !== ChainId.DAI) {
-          const { crossChainContractQuoteResponse } = await getCrossChainQuote({
-            selectedChainId,
-            fromToken,
-            address,
-            toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
-            gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-          });
+          const { crossChainContractQuoteResponse } = await performWithRetry(
+            () =>
+              getCrossChainQuote({
+                selectedChainId,
+                fromToken,
+                address,
+                toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+                gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+              }),
+            "getCrossChainQuote"
+          );
 
           const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
             ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
-                (total, fee) => {
-                  return total + Number(fee.amountUSD || 0);
-                },
+                (total, fee) => total + Number(fee.amountUSD || 0),
                 0
               )
             : 0;
@@ -314,7 +345,7 @@ const SwapComponent: React.FC = () => {
 
         setTotalUsdAmount(totalAmount.toString());
       } catch (error) {
-        console.error("Error getting price estimate:", error);
+        console.error("Error getting price estimate after all retries:", error);
         setTotalUsdAmount(null);
         setLiquidityError(true);
       }
@@ -323,7 +354,15 @@ const SwapComponent: React.FC = () => {
     if (isConnected && selectedChainId && fromToken) {
       updatePriceEstimate();
     }
-  }, [swarmConfig.swarmBatchInitialBalance, selectedDepth]);
+  }, [
+    isConnected,
+    address,
+    fromToken,
+    selectedChainId,
+    swarmConfig.swarmBatchInitialBalance,
+    selectedDepth,
+    nodeAddress,
+  ]);
 
   const fetchNodeWalletAddress = async () => {
     try {
