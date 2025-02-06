@@ -200,3 +200,11 @@ tar -cf swap_uploader.tar .
 ```
 
 so you get TAR archive of static files export and there is no subdirectory when its uploaded to Swarm
+
+## Testing large file upload
+
+Use below to create 1GB bin file on linux, to make it 2GB put count to 32 etc
+
+```
+dd if=/dev/urandom of=1GB.bin bs=64M count=16 iflag=fullblock
+```
