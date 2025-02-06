@@ -156,6 +156,7 @@ const SwapComponent: React.FC = () => {
   const [showOverlay, setShowOverlay] = useState(false);
   const [uploadStep, setUploadStep] = useState<UploadStep>("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   const [selectedTokenInfo, setSelectedTokenInfo] = useState<any>(null);
   const [availableTokens, setAvailableTokens] = useState<TokensResponse | null>(
@@ -224,12 +225,6 @@ const SwapComponent: React.FC = () => {
     // Execute first two functions immediately
     fetchCurrentPrice();
     fetchNodeWalletAddress();
-
-    // Advanced option open
-    const isLocalhost =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1");
 
     // Execute the last function with 1 second delay
     const timer = setTimeout(() => {
@@ -954,19 +949,6 @@ const SwapComponent: React.FC = () => {
       ) {
         await handleDirectBzzTransactions();
       } else {
-        const postagStampTxData = encodeFunctionData({
-          abi: parseAbi(swarmConfig.swarmContractAbi),
-          functionName: "createBatch",
-          args: [
-            nodeAddress,
-            swarmConfig.swarmBatchInitialBalance,
-            swarmConfig.swarmBatchDepth,
-            swarmConfig.swarmBatchBucketDepth,
-            swarmConfig.swarmBatchNonce,
-            swarmConfig.swarmBatchImmutable,
-          ],
-        });
-
         setStatusMessage({
           step: "Quoting",
           message: "Getting contract calls quote...",
@@ -1015,14 +997,8 @@ const SwapComponent: React.FC = () => {
     const isLocalhost =
       beeApiUrl.includes("localhost") || beeApiUrl.includes("127.0.0.1");
 
-    console.log("Starting upload with batch ID:", postageBatchId);
-    console.log(
-      "File details:",
-      selectedFile.name,
-      selectedFile.type,
-      selectedFile.size
-    );
     setUploadStep("uploading");
+    setUploadProgress(0);
 
     try {
       const baseHeaders: Record<string, string> = {
@@ -1031,34 +1007,25 @@ const SwapComponent: React.FC = () => {
         "swarm-pin": "false",
       };
 
-      // Only add collection header for tar files
       if (isTarFile) {
         baseHeaders["swarm-collection"] = "true";
       }
 
-      // Get signature if not running locally
-      // TODO maybe we dont need SIG if we just enforce domain from where it will be run to protect
-      // others from upload through other means
       if (!isLocalhost) {
-        try {
-          const messageHash = keccak256(
-            encodeAbiParameters(parseAbiParameters(["string", "bytes32"]), [
-              selectedFile.name,
-              `0x${postageBatchId}`,
-            ])
-          );
+        const messageHash = keccak256(
+          encodeAbiParameters(parseAbiParameters(["string", "bytes32"]), [
+            selectedFile.name,
+            `0x${postageBatchId}`,
+          ])
+        );
 
-          const signature = await walletClient.signMessage({
-            message: { raw: messageHash },
-          });
+        const signature = await walletClient.signMessage({
+          message: { raw: messageHash },
+        });
 
-          baseHeaders["x-upload-signature"] = signature;
-          baseHeaders["x-uploader-address"] = address as string;
-          baseHeaders["x-file-name"] = selectedFile.name;
-        } catch (error) {
-          console.error("Signing failed:", error);
-          throw error;
-        }
+        baseHeaders["x-upload-signature"] = signature;
+        baseHeaders["x-uploader-address"] = address as string;
+        baseHeaders["x-file-name"] = selectedFile.name;
       }
 
       if (isWebpageUpload && isTarFile) {
@@ -1066,156 +1033,263 @@ const SwapComponent: React.FC = () => {
         baseHeaders["Swarm-Error-Document"] = "error.html";
       }
 
+      interface XHRResponse {
+        ok: boolean;
+        status: number;
+        text: () => Promise<string>;
+        headers?: Headers;
+      }
+
       const uploadWithRetry = async (
         maxRetries404 = 20,
         maxRetries422 = 30
       ): Promise<string> => {
-        for (let attempt = 1; attempt <= maxRetries404; attempt++) {
+        // First loop - waiting for batch to be created (404 retries)
+        for (let attempt404 = 1; attempt404 <= maxRetries404; attempt404++) {
           try {
-            const response = await fetch(`${beeApiUrl}/bzz`, {
-              method: "POST",
-              headers: baseHeaders,
-              body: selectedFile,
-            });
+            console.log(`Attempt ${attempt404}/${maxRetries404} to find batch`);
 
-            console.log(`Attempt ${attempt} - Status: ${response.status}`);
-            console.log(
-              "Response headers:",
-              Object.fromEntries(response.headers)
+            const response = await new Promise<XHRResponse>(
+              (resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+
+                xhr.onload = () => {
+                  console.log(`XHR status: ${xhr.status}`);
+                  resolve({
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    status: xhr.status,
+                    text: () => Promise.resolve(xhr.responseText),
+                  });
+                };
+
+                xhr.onerror = (e) => {
+                  console.error("XHR Error:", e);
+                  reject(new Error("Network request failed"));
+                };
+
+                xhr.open("POST", `${beeApiUrl}/bzz`);
+                console.log("Request URL:", `${beeApiUrl}/bzz`);
+                console.log("Request headers:", baseHeaders);
+
+                Object.entries(baseHeaders).forEach(([key, value]) => {
+                  xhr.setRequestHeader(key, value);
+                });
+
+                xhr.send(selectedFile);
+              }
             );
 
             if (response.ok) {
+              console.log("Successful response received");
               const reference = await response.text();
-              console.log("Upload successful, reference:", reference);
               return reference;
             }
 
             const errorText = await response.text();
-            console.log(`Response error: ${errorText}`);
+            console.log(`Response error:`, errorText);
+
+            if (response.status === 404) {
+              console.log(
+                `Batch not found yet, attempt ${attempt404}/${maxRetries404}`
+              );
+              setStatusMessage({
+                step: "404",
+                message: "Searching for batch ID...",
+              });
+              await new Promise((resolve) => setTimeout(resolve, 3000));
+              continue;
+            }
 
             if (
               response.status === 422 &&
               errorText.includes("batch not usable yet")
             ) {
               console.log(
-                "Batch found but not usable, moving to usability check phase"
+                "Entering 422 retry loop - batch exists but not usable"
               );
-
               for (
                 let attempt422 = 1;
                 attempt422 <= maxRetries422;
                 attempt422++
               ) {
                 try {
+                  console.log(`422 attempt ${attempt422}/${maxRetries422}`);
                   setStatusMessage({
-                    step: "Waiting",
-                    message: `Waiting for batch to be usable... (Attempt ${attempt422}/${maxRetries422})`,
-                    isError: false,
+                    step: "422",
+                    message: "Waiting for batch to be usable...",
                   });
 
-                  const response422 = await fetch(`${beeApiUrl}/bzz`, {
-                    method: "POST",
-                    headers: baseHeaders,
-                    body: selectedFile,
-                  });
+                  const response422 = await new Promise<XHRResponse>(
+                    (resolve, reject) => {
+                      const xhr = new XMLHttpRequest();
+
+                      xhr.onload = () => {
+                        console.log(`422 retry XHR status: ${xhr.status}`);
+                        resolve({
+                          ok: xhr.status >= 200 && xhr.status < 300,
+                          status: xhr.status,
+                          text: () => Promise.resolve(xhr.responseText),
+                        });
+                      };
+
+                      xhr.onerror = (e) => {
+                        console.error("422 retry XHR Error:", e);
+                        reject(new Error("Network request failed"));
+                      };
+
+                      xhr.open("POST", `${beeApiUrl}/bzz`);
+
+                      Object.entries(baseHeaders).forEach(([key, value]) => {
+                        xhr.setRequestHeader(key, value);
+                      });
+
+                      xhr.send(selectedFile);
+                    }
+                  );
 
                   if (response422.ok) {
-                    const reference = await response422.text();
-                    console.log("Upload successful, reference:", reference);
-                    return reference;
+                    console.log(
+                      "Batch is now usable, proceeding with actual upload"
+                    );
+                    // Now that batch is ready, do the actual upload with progress
+                    const uploadResponse = await new Promise<XHRResponse>(
+                      (resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+
+                        xhr.upload.onprogress = (event) => {
+                          if (event.lengthComputable) {
+                            const percent = (event.loaded / event.total) * 100;
+                            setUploadProgress(Math.min(99, percent));
+                            console.log(
+                              `Upload progress: ${percent.toFixed(1)}%`
+                            );
+                          }
+                        };
+
+                        xhr.onload = () => {
+                          console.log(`Final upload XHR status: ${xhr.status}`);
+                          if (xhr.status >= 200 && xhr.status < 300) {
+                            setUploadProgress(100);
+                            resolve({
+                              ok: true,
+                              status: xhr.status,
+                              text: () => Promise.resolve(xhr.responseText),
+                            });
+                          } else {
+                            resolve({
+                              ok: false,
+                              status: xhr.status,
+                              text: () => Promise.resolve(xhr.responseText),
+                            });
+                          }
+                        };
+
+                        xhr.onerror = (e) => {
+                          console.error("Final upload XHR Error:", e);
+                          reject(new Error("Network request failed"));
+                        };
+
+                        xhr.open("POST", `${beeApiUrl}/bzz`);
+
+                        Object.entries(baseHeaders).forEach(([key, value]) => {
+                          xhr.setRequestHeader(key, value);
+                        });
+
+                        setStatusMessage({
+                          step: "Uploading",
+                          message: "Uploading file...",
+                        });
+
+                        xhr.send(selectedFile);
+                      }
+                    );
+
+                    if (uploadResponse.ok) {
+                      console.log("Upload completed successfully");
+                      const reference = await uploadResponse.text();
+                      return reference;
+                    }
                   }
 
                   const error422Text = await response422.text();
-                  if (response422.status !== 422) {
+                  console.log(`422 retry response error:`, error422Text);
+
+                  if (!error422Text.includes("batch not usable yet")) {
+                    console.error(
+                      `Unexpected error during 422 retry:`,
+                      error422Text
+                    );
                     throw new Error(
-                      `Unexpected error: ${response422.status} ${error422Text}`
+                      `Upload failed: ${response422.status} ${error422Text}`
                     );
                   }
 
                   console.log(
-                    `422 retry attempt ${attempt422}/${maxRetries422}`
+                    `Batch still not usable, waiting 5 seconds before attempt ${
+                      attempt422 + 1
+                    }`
                   );
                   await new Promise((resolve) => setTimeout(resolve, 5000));
                 } catch (error) {
-                  const errorMessage =
-                    error instanceof Error ? error.message : "Unknown error";
-                  if (!errorMessage.includes("422")) throw error;
+                  console.error(`Error during 422 retry:`, error);
+                  if (attempt422 === maxRetries422) {
+                    throw new Error(
+                      "Maximum retries reached waiting for batch to become usable"
+                    );
+                  }
                 }
               }
-              throw new Error(
-                "Maximum retries reached waiting for batch to become usable"
-              );
-            }
-
-            if (response.status === 404) {
-              setStatusMessage({
-                step: "Waiting",
-                message: `Waiting for batch to be created... (Attempt ${attempt}/${maxRetries404})`,
-                isError: false,
-              });
-
-              console.log(
-                `Batch not found, retrying... (Attempt ${attempt}/${maxRetries404})`
-              );
-              await new Promise((resolve) => setTimeout(resolve, 3000));
-              continue;
             }
 
             throw new Error(`Upload failed: ${response.status} ${errorText}`);
           } catch (error) {
+            console.error(`Error during attempt ${attempt404}:`, error);
             if (error instanceof Error) {
-              if (
-                !error.message.includes("404") &&
-                !error.message.includes("422")
-              ) {
+              if (!error.message.includes("404")) {
                 throw error;
               }
-            } else {
-              throw new Error(`Network or system error: ${String(error)}`);
             }
-
-            if (attempt === maxRetries404) {
+            if (attempt404 === maxRetries404) {
               throw new Error(
                 "Maximum retries reached waiting for batch to be created"
               );
             }
           }
         }
+
         throw new Error("Maximum retry attempts reached");
       };
 
       const reference = await uploadWithRetry();
       const parsedReference = JSON.parse(reference);
 
-      const truncateReference = (ref: string) => {
-        if (!ref) return "";
-        return `${ref.slice(0, 6)}...${ref.slice(-4)}`;
-      };
-
       setStatusMessage({
         step: "Complete",
-        message: `File Uploaded Successfully. Reference:  ${truncateReference(
-          parsedReference.reference
-        )}`,
+        message: `Upload Successful. Reference: ${parsedReference.reference.slice(
+          0,
+          6
+        )}...${parsedReference.reference.slice(-4)}`,
         isSuccess: true,
         reference: parsedReference.reference,
       });
+
       setUploadStep("complete");
       setTimeout(() => {
         setUploadStep("idle");
         setShowOverlay(false);
         setIsLoading(false);
+        setUploadProgress(0);
       }, 55000);
     } catch (error) {
-      console.error("Error uploading file:", error);
+      console.error("Upload error:", error);
       setStatusMessage({
         step: "Error",
         message: "Upload failed",
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
+        error: error instanceof Error ? error.message : "Unknown error",
         isError: true,
       });
       setUploadStep("idle");
+      setUploadProgress(0);
     }
   };
 
@@ -1513,12 +1587,26 @@ const SwapComponent: React.FC = () => {
                           {uploadStep === "uploading" ? (
                             <>
                               <div className={styles.smallSpinner}></div>
-                              Uploading...
+                              {statusMessage.step === "404"
+                                ? "Searching for batch ID..."
+                                : statusMessage.step === "422"
+                                ? "Waiting for batch to be usable..."
+                                : statusMessage.step === "Uploading"
+                                ? `Uploading... ${uploadProgress.toFixed(1)}%`
+                                : "Processing..."}
                             </>
                           ) : (
                             "Upload"
                           )}
                         </button>
+                        {uploadStep === "uploading" && (
+                          <div className={styles.progressBarContainer}>
+                            <div
+                              className={styles.progressBar}
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
