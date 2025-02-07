@@ -1263,7 +1263,7 @@ const SwapComponent: React.FC = () => {
         setShowOverlay(false);
         setIsLoading(false);
         setUploadProgress(0);
-      }, 5000);
+      }, 255000);
     } catch (error) {
       console.error("Upload error:", error);
       setStatusMessage({
