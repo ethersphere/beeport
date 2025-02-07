@@ -1153,7 +1153,7 @@ const SwapComponent: React.FC = () => {
       }
 
       const waitForBatch = async (
-        maxRetries404 = 20,
+        maxRetries404 = 30,
         maxRetries422 = 30,
         retryDelay404 = 3000,
         retryDelay422 = 5000
@@ -1490,7 +1490,9 @@ const SwapComponent: React.FC = () => {
 
                 {!["ready", "uploading"].includes(uploadStep) && (
                   <>
-                    {isLoading && <div className={styles.spinner}></div>}
+                    {isLoading && statusMessage.step !== "Complete" && (
+                      <div className={styles.spinner}></div>
+                    )}
                     <div className={styles.statusMessage}>
                       <h3
                         className={

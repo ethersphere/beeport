@@ -4,7 +4,7 @@ import { StorageOption, SwarmConfigType } from "./types";
 export const DEFAULT_NODE_ADDRESS =
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";
 export const GNOSIS_BZZ_ADDRESS = "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da";
-export const BEE_GATEWAY_URL = "http://95.216.6.96:3000/bzz/";
+export const BEE_GATEWAY_URL = "http://95.216.6.96:3333/bzz/";
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   "0x86de783bf23bc13daef5a55ec531c198da8f10cf";
 // We are using USDC as this is what LIFI mostly uses now with Relay bridge for Gnosis
