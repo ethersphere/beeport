@@ -4,10 +4,8 @@ const {
     keccak256,
     encodeAbiParameters,
     parseAbiParameters,
-    getAddress,
     createPublicClient,
     http,
-    verifyMessage,
 } = require("viem");
 const { gnosis } = require("viem/chains");
 
