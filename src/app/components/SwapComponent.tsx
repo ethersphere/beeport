@@ -187,38 +187,12 @@ const SwapComponent: React.FC = () => {
 
   // Get PRICE estimation for currently choosen options
   useEffect(() => {
-    const performWithRetry = async <T,>(
-      operation: () => Promise<T>,
-      name: string
-    ): Promise<T> => {
-      const maxRetries = 5;
-      const delayMs = 500;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          return await operation();
-        } catch (error) {
-          console.log(
-            `${name} attempt ${attempt}/${maxRetries} failed:`,
-            error
-          );
-
-          if (attempt === maxRetries) {
-            throw error;
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-        }
-      }
-      throw new Error(`${name} failed after ${maxRetries} attempts`);
-    };
+    if (!isConnected || !address || !fromToken) return;
+    setTotalUsdAmount("0");
+    setLiquidityError(false);
+    setIsPriceEstimating(true); // Set to true when starting
 
     const updatePriceEstimate = async () => {
-      if (!isConnected || !address || !fromToken) return;
-      setTotalUsdAmount("0");
-      setLiquidityError(false);
-      setIsPriceEstimating(true); // Set to true when starting
-
       try {
         const newNonce =
           "0x" +
@@ -351,7 +325,7 @@ const SwapComponent: React.FC = () => {
     validateResult?: (result: T) => boolean
   ): Promise<T> => {
     const maxRetries = 5;
-    const delayMs = 500;
+    const delayMs = 300;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
