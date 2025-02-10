@@ -57,71 +57,7 @@ import {
 } from "./constants";
 
 import HelpSection from "./HelpSection";
-
-const SearchableChainDropdown: React.FC<{
-  selectedChainId: number;
-  availableChains: Chain[];
-  onChainSelect: (chainId: number) => void;
-  isChainsLoading: boolean;
-}> = ({ selectedChainId, availableChains, onChainSelect, isChainsLoading }) => {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
-
-  const filteredChains = availableChains.filter((chain) =>
-    chain.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const selectedChain = availableChains.find(
-    (chain) => chain.id === selectedChainId
-  );
-
-  return (
-    <div className={styles.selectWrapper}>
-      <div
-        className={`${styles.select} ${isOpen ? styles.open : ""}`}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        {selectedChain?.name || "Select Chain"}
-      </div>
-
-      {isOpen && (
-        <div className={styles.dropdown}>
-          <input
-            type="text"
-            className={styles.searchInput}
-            placeholder="Search chains..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className={styles.optionsList}>
-            {isChainsLoading ? (
-              <div className={styles.option}>Loading chains...</div>
-            ) : filteredChains.length === 0 ? (
-              <div className={styles.option}>No chains found</div>
-            ) : (
-              filteredChains.map((chain) => (
-                <div
-                  key={chain.id}
-                  className={`${styles.option} ${
-                    selectedChainId === chain.id ? styles.selected : ""
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChainSelect(chain.id);
-                    setIsOpen(false);
-                  }}
-                >
-                  {chain.name}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+import SearchableChainDropdown from "./SearchableChainDropdown";
 
 const SwapComponent: React.FC = () => {
   const { address, isConnected } = useAccount();
@@ -185,7 +121,6 @@ const SwapComponent: React.FC = () => {
     transport: http(),
   });
 
-  // Update the useEffect hooks
   useEffect(() => {
     const init = async () => {
       setIsWalletLoading(true);
@@ -258,6 +193,7 @@ const SwapComponent: React.FC = () => {
     }
   }, [currentPrice, selectedDays, selectedDepth]);
 
+  // Get PRICE estimation for currently choosen options
   useEffect(() => {
     const performWithRetry = async <T,>(
       operation: () => Promise<T>,
@@ -368,31 +304,7 @@ const SwapComponent: React.FC = () => {
     nodeAddress,
   ]);
 
-  const fetchNodeWalletAddress = async () => {
-    try {
-      const response = await fetch(`${beeApiUrl}/wallet`, {
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.walletAddress) {
-          setNodeAddress(data.walletAddress);
-          console.log("Node wallet address set:", data.walletAddress);
-        } else {
-          console.error("Wallet address not found in response");
-          setNodeAddress(DEFAULT_NODE_ADDRESS);
-        }
-      } else {
-        setNodeAddress(DEFAULT_NODE_ADDRESS);
-      }
-    } catch (error) {
-      console.error("Error fetching node wallet address:", error);
-      setNodeAddress(DEFAULT_NODE_ADDRESS);
-    }
-  };
-
-  // In the initializeLiFi function
+  // Initialize LiFi function
   const initializeLiFi = () => {
     createConfig({
       integrator: "Swarm",
@@ -417,6 +329,61 @@ const SwapComponent: React.FC = () => {
     setLifiConfigInitialized(true);
   };
 
+  const fetchNodeWalletAddress = async () => {
+    try {
+      const response = await fetch(`${beeApiUrl}/wallet`, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.walletAddress) {
+          setNodeAddress(data.walletAddress);
+          console.log("Node wallet address set:", data.walletAddress);
+        } else {
+          console.error("Wallet address not found in response");
+          setNodeAddress(DEFAULT_NODE_ADDRESS);
+        }
+      } else {
+        setNodeAddress(DEFAULT_NODE_ADDRESS);
+      }
+    } catch (error) {
+      console.error("Error fetching node wallet address:", error);
+      setNodeAddress(DEFAULT_NODE_ADDRESS);
+    }
+  };
+
+  const performWithRetry = async <T,>(
+    operation: () => Promise<T>,
+    name: string,
+    validateResult?: (result: T) => boolean
+  ): Promise<T> => {
+    const maxRetries = 5;
+    const delayMs = 500;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await operation();
+
+        // If there's a validation function and the result is invalid, throw an error
+        if (validateResult && !validateResult(result)) {
+          throw new Error(`Invalid result for ${name}`);
+        }
+
+        return result;
+      } catch (error) {
+        console.log(`${name} attempt ${attempt}/${maxRetries} failed:`, error);
+
+        if (attempt === maxRetries) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    throw new Error(`${name} failed after ${maxRetries} attempts`);
+  };
+
   const fetchTokensAndBalances = async () => {
     if (!address || !isConnected) {
       setTokenBalances(null);
@@ -428,20 +395,33 @@ const SwapComponent: React.FC = () => {
 
     setIsTokensLoading(true);
     try {
-      // First fetch all available tokens
-      const tokens = await getTokens({
-        chains: [selectedChainId],
-        chainTypes: [ChainType.EVM],
-      });
+      // First fetch all available tokens with retry
+      const tokens = await performWithRetry(
+        () =>
+          getTokens({
+            chains: [selectedChainId],
+            chainTypes: [ChainType.EVM],
+          }),
+        "getTokens",
+        (result) => Boolean(result?.tokens?.[selectedChainId]?.length)
+      );
       console.log("Available tokens:", tokens);
       setAvailableTokens(tokens);
 
-      // Then get balances for these tokens
+      // Then get balances for these tokens with retry
       const tokensByChain = {
         [selectedChainId]: tokens.tokens[selectedChainId],
       };
 
-      const balances = await getTokenBalancesByChain(address, tokensByChain);
+      const balances = await performWithRetry(
+        () => getTokenBalancesByChain(address, tokensByChain),
+        "getTokenBalances",
+        (result) => {
+          // Validate that we have a non-empty balance result for the selected chain
+          const chainBalances = result?.[selectedChainId];
+          return Boolean(chainBalances && chainBalances.length > 0);
+        }
+      );
       console.log("Token balances:", balances);
       setTokenBalances(balances);
 
@@ -510,6 +490,12 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  const calculateTotalAmount = () => {
+    return (
+      BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
+    );
+  };
+
   const updateSwarmBatchInitialBalance = () => {
     if (currentPrice !== null) {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
@@ -520,12 +506,6 @@ const SwapComponent: React.FC = () => {
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
       }));
     }
-  };
-
-  const calculateTotalAmount = () => {
-    return (
-      BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
-    );
   };
 
   const handleDepthChange = (newDepth: number) => {
