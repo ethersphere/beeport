@@ -148,6 +148,7 @@ const SwapComponent: React.FC = () => {
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
   const [isChainsLoading, setIsChainsLoading] = useState(true);
   const [liquidityError, setLiquidityError] = useState<boolean>(false);
+  const [isPriceEstimating, setIsPriceEstimating] = useState(false);
 
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
     step: "",
@@ -288,6 +289,7 @@ const SwapComponent: React.FC = () => {
       if (!isConnected || !address || !fromToken) return;
       setTotalUsdAmount("0");
       setLiquidityError(false);
+      setIsPriceEstimating(true); // Set to true when starting
 
       try {
         const newNonce =
@@ -348,6 +350,8 @@ const SwapComponent: React.FC = () => {
         console.error("Error getting price estimate after all retries:", error);
         setTotalUsdAmount(null);
         setLiquidityError(true);
+      } finally {
+        setIsPriceEstimating(false); // Set to false when done
       }
     };
 
@@ -1448,10 +1452,17 @@ const SwapComponent: React.FC = () => {
           <button
             className={styles.button}
             onClick={handleSwap}
-            disabled={!isClientConnected || isLoading || liquidityError}
+            disabled={
+              !isClientConnected ||
+              isLoading ||
+              liquidityError ||
+              isPriceEstimating
+            }
           >
             {isLoading ? (
               <div>Loading...</div>
+            ) : isPriceEstimating ? (
+              "Execute Swap"
             ) : liquidityError ? (
               "Cannot Swap - Insufficient Liquidity"
             ) : (
@@ -1604,7 +1615,7 @@ const SwapComponent: React.FC = () => {
                     <h3>Upload Successful!</h3>
                     <div className={styles.referenceBox}>
                       <p>Reference:</p>
-                      <code>{statusMessage.reference?.reference}</code>
+                      <code>{statusMessage.reference}</code>
                       <a
                         href={`${BEE_GATEWAY_URL}${statusMessage.reference}`}
                         target="_blank"

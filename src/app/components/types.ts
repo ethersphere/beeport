@@ -5,7 +5,7 @@ export type ExecutionStatus = {
   error?: string;
   isError?: boolean;
   isSuccess?: boolean;
-  reference?: { reference: string };
+  reference?: string;
 };
 
 export type UploadStep = "idle" | "ready" | "uploading" | "complete";
