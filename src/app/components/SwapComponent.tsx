@@ -161,14 +161,6 @@ const SwapComponent: React.FC = () => {
     // Execute first two functions immediately
     fetchCurrentPrice();
     fetchNodeWalletAddress();
-
-    // Execute the last function with 1 second delay
-    const timer = setTimeout(() => {
-      fetchTokensAndBalances();
-    }, 1000);
-
-    // Cleanup timer on component unmount
-    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -1444,7 +1436,7 @@ const SwapComponent: React.FC = () => {
             ) : isPriceEstimating ? (
               "Execute Swap"
             ) : liquidityError ? (
-              "Cannot Swap - Insufficient Liquidity"
+              "Cannot Swap - Can't Find Route"
             ) : (
               "Execute Swap"
             )}
