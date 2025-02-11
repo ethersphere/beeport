@@ -2,9 +2,19 @@
 pragma solidity ^0.8.23;
 
 /*
-    ╔═╗┌┬┐┌─┐┌┬┐┌─┐  ╦═╗┌─┐┌─┐┬┌─┐┌┬┐┬─┐┬ ┬
-    ╚═╗ │ ├─┤│││├─┘  ╠╦╝├┤ │ ┬│└─┐ │ ├┬┘└┬┘
-    ╚═╝ ┴ ┴ ┴┴ ┴┴    ╩╚═└─┘└─┘┴└─┘ ┴ ┴└─ ┴ 
+    ██████╗  █████╗ ████████╗ ██████╗██╗  ██╗
+    ██╔══██╗██╔══██╗╚══██╔══╝██╔════╝██║  ██║
+    ██████╔╝███████║   ██║   ██║     ███████║
+    ██╔══██╗██╔══██║   ██║   ██║     ██╔══██║
+    ██████╔╝██║  ██║   ██║   ╚██████╗██║  ██║
+    ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝
+                                              
+    ██████╗ ███████╗ ██████╗ ██╗███████╗████████╗██████╗ ██╗   ██╗
+    ██╔══██╗██╔════╝██╔════╝ ██║██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝
+    ██████╔╝█████╗  ██║  ███╗██║███████╗   ██║   ██████╔╝ ╚████╔╝ 
+    ██╔══██╗██╔══╝  ██║   ██║██║╚════██║   ██║   ██╔══██╗  ╚██╔╝  
+    ██║  ██║███████╗╚██████╔╝██║███████║   ██║   ██║  ██║   ██║   
+    ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   
 */
 
 interface ISwarmContract {
@@ -22,7 +32,7 @@ interface ISwarmContract {
 
 contract StampRegistry {
     // State variables
-    ISwarmContract public swarmContract;
+    ISwarmContract public swarmStampContract;
     mapping(uint256 => address) public batchPayers;
     address public admin;
 
@@ -46,7 +56,7 @@ contract StampRegistry {
     }
 
     constructor(address _swarmContractAddress) {
-        swarmContract = ISwarmContract(_swarmContractAddress);
+        swarmStampContract = ISwarmContract(_swarmContractAddress);
         admin = msg.sender;
     }
 
@@ -57,8 +67,8 @@ contract StampRegistry {
     function updateSwarmContract(
         address _newSwarmContractAddress
     ) external onlyAdmin {
-        address oldAddress = address(swarmContract);
-        swarmContract = ISwarmContract(_newSwarmContractAddress);
+        address oldAddress = address(swarmStampContract);
+        swarmStampContract = ISwarmContract(_newSwarmContractAddress);
         emit SwarmContractUpdated(oldAddress, _newSwarmContractAddress);
     }
 
@@ -80,7 +90,7 @@ contract StampRegistry {
         bool _immutable
     ) external {
         // Call the original swarm contract with this contract as owner
-        swarmContract.createBatch(
+        swarmStampContract.createBatch(
             address(this),
             _initialBalancePerChunk,
             _depth,
@@ -97,8 +107,8 @@ contract StampRegistry {
 
         // Calculate total amount and normalized balance
         uint256 totalAmount = _initialBalancePerChunk * (1 << _depth);
-        uint256 normalisedBalance = swarmContract.currentTotalOutPayment() +
-            _initialBalancePerChunk;
+        uint256 normalisedBalance = swarmStampContract
+            .currentTotalOutPayment() + _initialBalancePerChunk;
 
         // Emit the batch creation event
         emit BatchCreated(
