@@ -1563,7 +1563,7 @@ const SwapComponent: React.FC = () => {
                       <p>Reference:</p>
                       <code>{statusMessage.reference}</code>
                       <a
-                        href={`${BEE_GATEWAY_URL}${statusMessage.reference}`}
+                        href={`${BEE_GATEWAY_URL}${statusMessage.reference}/`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={styles.referenceLink}
