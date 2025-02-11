@@ -30,9 +30,21 @@ interface ISwarmContract {
     function currentTotalOutPayment() external view returns (uint256);
 }
 
+interface IERC20 {
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+
+    function approve(address spender, uint256 amount) external returns (bool);
+}
+
 contract StampRegistry {
     // State variables
     ISwarmContract public swarmStampContract;
+    IERC20 public constant BZZ_TOKEN =
+        IERC20(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da);
     mapping(uint256 => address) public batchPayers;
     address public admin;
 
@@ -48,6 +60,10 @@ contract StampRegistry {
         bool immutable_
     );
     event SwarmContractUpdated(address oldAddress, address newAddress);
+
+    // Custom errors
+    error TransferFailed();
+    error ApprovalFailed();
 
     // Modifiers
     modifier onlyAdmin() {
@@ -89,6 +105,19 @@ contract StampRegistry {
         bytes32 _nonce,
         bool _immutable
     ) external {
+        // Calculate total amount
+        uint256 totalAmount = _initialBalancePerChunk * (1 << _depth);
+
+        // Transfer BZZ tokens from payer to this contract
+        if (!BZZ_TOKEN.transferFrom(_payer, address(this), totalAmount)) {
+            revert TransferFailed();
+        }
+
+        // Approve swarmStampContract to spend the BZZ tokens
+        if (!BZZ_TOKEN.approve(address(swarmStampContract), totalAmount)) {
+            revert ApprovalFailed();
+        }
+
         // Call the original swarm contract with this contract as owner
         swarmStampContract.createBatch(
             address(this),
@@ -105,8 +134,7 @@ contract StampRegistry {
         // Store the payer information
         batchPayers[batchId] = _payer;
 
-        // Calculate total amount and normalized balance
-        uint256 totalAmount = _initialBalancePerChunk * (1 << _depth);
+        // Get normalized balance
         uint256 normalisedBalance = swarmStampContract
             .currentTotalOutPayment() + _initialBalancePerChunk;
 
