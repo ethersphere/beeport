@@ -90,15 +90,15 @@ contract StampRegistry {
 
     /**
      * @notice Creates a new batch and registers the payer
-     * @param _payer Address that pays for the batch
+     * @param _owner Address that pays for the batch
      * @param _initialBalancePerChunk Initial balance per chunk
      * @param _depth Depth of the batch
      * @param _bucketDepth Bucket depth
      * @param _nonce Unique nonce for the batch
      * @param _immutable Whether the batch is immutable
      */
-    function registryCreateBatch(
-        address _payer,
+    function createBatch(
+        address _owner,
         uint256 _initialBalancePerChunk,
         uint8 _depth,
         uint8 _bucketDepth,
@@ -109,7 +109,7 @@ contract StampRegistry {
         uint256 totalAmount = _initialBalancePerChunk * (1 << _depth);
 
         // Transfer BZZ tokens from payer to this contract
-        if (!BZZ_TOKEN.transferFrom(_payer, address(this), totalAmount)) {
+        if (!BZZ_TOKEN.transferFrom(_owner, address(this), totalAmount)) {
             revert TransferFailed();
         }
 
@@ -132,7 +132,7 @@ contract StampRegistry {
         uint256 batchId = uint256(keccak256(abi.encode(address(this), _nonce)));
 
         // Store the payer information
-        batchPayers[batchId] = _payer;
+        batchPayers[batchId] = _owner;
 
         // Get normalized balance
         uint256 normalisedBalance = swarmStampContract
@@ -144,7 +144,7 @@ contract StampRegistry {
             totalAmount,
             normalisedBalance,
             address(this),
-            _payer,
+            _owner,
             _depth,
             _bucketDepth,
             _immutable

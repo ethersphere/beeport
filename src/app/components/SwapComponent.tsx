@@ -54,6 +54,8 @@ import {
   BEE_GATEWAY_URL,
   GNOSIS_DESTINATION_TOKEN,
   DAY_OPTIONS,
+  BATCH_REGISTRY_ADDRESS,
+  LIFI_CONTRACT_ADDRESS,
 } from "./constants";
 
 import HelpSection from "./HelpSection";
@@ -594,11 +596,20 @@ const SwapComponent: React.FC = () => {
 
         if (createBatchReceipt.status === "success") {
           try {
-            const batchId = await createBatchId(
-              swarmConfig.swarmBatchNonce,
-              address
-            );
-            console.log("Created batch ID:", batchId);
+            // Batch will be created from registry contract or user address
+            if (nodeAddress == DEFAULT_NODE_ADDRESS) {
+              const batchId = await createBatchId(
+                swarmConfig.swarmBatchNonce,
+                BATCH_REGISTRY_ADDRESS
+              );
+              console.log("Created batch ID:", batchId);
+            } else {
+              const batchId = await createBatchId(
+                swarmConfig.swarmBatchNonce,
+                address
+              );
+              console.log("Created batch ID:", batchId);
+            }
 
             setStatusMessage({
               step: "Complete",
@@ -650,8 +661,20 @@ const SwapComponent: React.FC = () => {
           console.log("Created new Batch at trx", txHash);
 
           try {
-            const batchId = await createBatchId(swarmConfig.swarmBatchNonce);
-            console.log("Created batch ID:", batchId);
+            // Batch will be created from registry contract or lifi contract
+            if (nodeAddress == DEFAULT_NODE_ADDRESS) {
+              const batchId = await createBatchId(
+                swarmConfig.swarmBatchNonce,
+                BATCH_REGISTRY_ADDRESS
+              );
+              console.log("Created batch ID:", batchId);
+            } else {
+              const batchId = await createBatchId(
+                swarmConfig.swarmBatchNonce,
+                LIFI_CONTRACT_ADDRESS
+              );
+              console.log("Created batch ID:", batchId);
+            }
           } catch (error) {
             console.error("Failed to create batch ID:", error);
           }
@@ -756,8 +779,20 @@ const SwapComponent: React.FC = () => {
             console.log("Created new Batch", txHash);
 
             try {
-              const batchId = await createBatchId(swarmConfig.swarmBatchNonce);
-              console.log("Created batch ID:", batchId);
+              // Batch will be created from registry contract or lifi contract
+              if (nodeAddress == DEFAULT_NODE_ADDRESS) {
+                const batchId = await createBatchId(
+                  swarmConfig.swarmBatchNonce,
+                  BATCH_REGISTRY_ADDRESS
+                );
+                console.log("Created batch ID:", batchId);
+              } else {
+                const batchId = await createBatchId(
+                  swarmConfig.swarmBatchNonce,
+                  LIFI_CONTRACT_ADDRESS
+                );
+                console.log("Created batch ID:", batchId);
+              }
             } catch (error) {
               console.error("Failed to create batch ID:", error);
             }
