@@ -56,6 +56,7 @@ import {
   DAY_OPTIONS,
   BATCH_REGISTRY_ADDRESS,
   LIFI_CONTRACT_ADDRESS,
+  GNOSIS_STAMP_ADDRESS,
 } from "./constants";
 
 import HelpSection from "./HelpSection";
@@ -107,6 +108,9 @@ const SwapComponent: React.FC = () => {
   const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>("");
   const [beeApiUrl, setBeeApiUrl] = useState<string>("http://95.216.6.96:3333");
+  const [contractUsed, setContractUsed] = useState<string>(
+    BATCH_REGISTRY_ADDRESS
+  );
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -534,10 +538,7 @@ const SwapComponent: React.FC = () => {
           "function approve(address spender, uint256 amount) external returns (bool)",
         ]),
         functionName: "approve",
-        args: [
-          swarmConfig.swarmPostageStampAddress as `0x${string}`,
-          BigInt(bzzAmount),
-        ],
+        args: [contractUsed as `0x${string}`, BigInt(bzzAmount)],
         account: address,
       });
 
@@ -563,11 +564,11 @@ const SwapComponent: React.FC = () => {
         // Second transaction: Create Batch
         const { request: createBatchRequest } =
           await publicClient.simulateContract({
-            address: swarmConfig.swarmPostageStampAddress as `0x${string}`,
+            address: contractUsed as `0x${string}`,
             abi: parseAbi(swarmConfig.swarmContractAbi),
             functionName: "createBatch",
             args: [
-              nodeAddress,
+              address,
               swarmConfig.swarmBatchInitialBalance,
               swarmConfig.swarmBatchDepth,
               swarmConfig.swarmBatchBucketDepth,
@@ -830,7 +831,7 @@ const SwapComponent: React.FC = () => {
       abi: parseAbi(swarmConfig.swarmContractAbi),
       functionName: "createBatch",
       args: [
-        nodeAddress,
+        address,
         swarmConfig.swarmBatchInitialBalance,
         swarmConfig.swarmBatchDepth,
         swarmConfig.swarmBatchBucketDepth,
@@ -851,7 +852,7 @@ const SwapComponent: React.FC = () => {
         {
           fromAmount: bzzAmount,
           fromTokenAddress: swarmConfig.swarmToken,
-          toContractAddress: swarmConfig.swarmPostageStampAddress,
+          toContractAddress: contractUsed,
           toContractCallData: postagStampTxData,
           toContractGasLimit: swarmConfig.swarmContractGasLimit,
         },

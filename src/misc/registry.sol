@@ -47,6 +47,7 @@ contract StampRegistry {
         IERC20(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da);
     mapping(uint256 => address) public batchPayers;
     address public admin;
+    address public defaultNodeAddress; // New variable for default node address
 
     // Events
     event BatchCreated(
@@ -60,6 +61,7 @@ contract StampRegistry {
         bool immutable_
     );
     event SwarmContractUpdated(address oldAddress, address newAddress);
+    event DefaultNodeAddressUpdated(address oldAddress, address newAddress); // New event for node address updates
 
     // Custom errors
     error TransferFailed();
@@ -74,6 +76,7 @@ contract StampRegistry {
     constructor(address _swarmContractAddress) {
         swarmStampContract = ISwarmContract(_swarmContractAddress);
         admin = msg.sender;
+        defaultNodeAddress = msg.sender; // Initialize default node address to admin
     }
 
     /**
@@ -89,8 +92,20 @@ contract StampRegistry {
     }
 
     /**
+     * @notice Updates the default node address
+     * @param _newNodeAddress New default node address
+     */
+    function updateDefaultNodeAddress(
+        address _newNodeAddress
+    ) external onlyAdmin {
+        address oldAddress = defaultNodeAddress;
+        defaultNodeAddress = _newNodeAddress;
+        emit DefaultNodeAddressUpdated(oldAddress, _newNodeAddress);
+    }
+
+    /**
      * @notice Creates a new batch and registers the payer
-     * @param _owner Address that pays for the batch
+     * @param _owner Address that pays for the batch, but not the owner of the batch
      * @param _initialBalancePerChunk Initial balance per chunk
      * @param _depth Depth of the batch
      * @param _bucketDepth Bucket depth
@@ -118,9 +133,9 @@ contract StampRegistry {
             revert ApprovalFailed();
         }
 
-        // Call the original swarm contract with this contract as owner
+        // Call the original swarm contract with defaultNodeAddress as owner
         swarmStampContract.createBatch(
-            address(this),
+            defaultNodeAddress,
             _initialBalancePerChunk,
             _depth,
             _bucketDepth,
@@ -129,7 +144,9 @@ contract StampRegistry {
         );
 
         // Calculate batchId using the same logic as in the original contract
-        uint256 batchId = uint256(keccak256(abi.encode(address(this), _nonce)));
+        uint256 batchId = uint256(
+            keccak256(abi.encode(defaultNodeAddress, _nonce))
+        );
 
         // Store the payer information
         batchPayers[batchId] = _owner;
@@ -143,7 +160,7 @@ contract StampRegistry {
             batchId,
             totalAmount,
             normalisedBalance,
-            address(this),
+            defaultNodeAddress,
             _owner,
             _depth,
             _bucketDepth,

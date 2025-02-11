@@ -1,13 +1,16 @@
 import { ChainId } from "@lifi/sdk";
 import { StorageOption, SwarmConfigType } from "./types";
 
+// This is node address used as gateway swarm provides for end users
 export const DEFAULT_NODE_ADDRESS =
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";
 export const BATCH_REGISTRY_ADDRESS =
-  "0x85022Dac19170a2C162852C5c73E3982E7e505E0";
+  "0x34d750fe2cf242bc43c9aada3d37dbc541ee394e";
 export const LIFI_CONTRACT_ADDRESS =
   "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D";
 export const GNOSIS_BZZ_ADDRESS = "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da";
+export const GNOSIS_STAMP_ADDRESS =
+  "0x45a1502382541Cd610CC9068e88727426b696293";
 export const BEE_GATEWAY_URL = "http://95.216.6.96:3333/bzz/";
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   "0x86de783bf23bc13daef5a55ec531c198da8f10cf";
@@ -29,7 +32,7 @@ export const STORAGE_OPTIONS: StorageOption[] = [
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,
-  swarmPostageStampAddress: "0x45a1502382541Cd610CC9068e88727426b696293",
+  swarmPostageStampAddress: BATCH_REGISTRY_ADDRESS,
   swarmToken: "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da",
   swarmContractGasLimit: "2000000",
   swarmContractAbi: [
