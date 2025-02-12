@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import styles from "./StampListSection.module.css";
+import styles from "./css/StampListSection.module.css";
 import { createPublicClient, http, formatUnits } from "viem";
 import { gnosis } from "viem/chains";
 
@@ -8,6 +8,7 @@ import { BATCH_REGISTRY_ADDRESS, GNOSIS_STAMP_ADDRESS } from "./constants";
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
   address: string | undefined;
+  beeApiUrl: string; // Add this prop
 }
 
 interface BatchEvent {
@@ -15,11 +16,28 @@ interface BatchEvent {
   totalAmount: string;
   depth: number;
   timestamp?: number;
+  utilization?: number;
+  batchTTL?: number;
+}
+
+interface StampInfo {
+  batchID: string;
+  utilization: number;
+  usable: boolean;
+  label: string;
+  depth: number;
+  amount: string;
+  bucketDepth: number;
+  blockNumber: number;
+  immutableFlag: boolean;
+  exists: boolean;
+  batchTTL: number;
 }
 
 const StampListSection: React.FC<StampListSectionProps> = ({
   setShowStampList,
   address,
+  beeApiUrl,
 }) => {
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,6 +46,18 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     chain: gnosis,
     transport: http(),
   });
+
+  const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
+    try {
+      const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`Error fetching stamp info for ${batchId}:`, error);
+      return null;
+    }
+  };
 
   useEffect(() => {
     const fetchStamps = async () => {
@@ -51,7 +81,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             name: "BatchCreated",
             type: "event",
           },
-          fromBlock: 25780238n, // Deployment block
+          fromBlock: 25780238n,
           toBlock: "latest",
         });
 
@@ -64,11 +94,17 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             const block = await gnosisClient.getBlock({
               blockNumber: log.blockNumber,
             });
+
+            const batchId = log.args.batchId?.toString() || "";
+            const stampInfo = await fetchStampInfo(batchId);
+
             return {
-              batchId: log.args.batchId?.toString() || "",
+              batchId,
               totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
               depth: Number(log.args.depth || 0),
               timestamp: Number(block.timestamp),
+              utilization: stampInfo?.utilization,
+              batchTTL: stampInfo?.batchTTL,
             };
           })
         );
@@ -84,7 +120,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     fetchStamps();
-  }, [address]);
+  }, [address, beeApiUrl]);
 
   return (
     <div className={styles.stampListContainer}>
@@ -113,6 +149,12 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ
                   </span>
                   <span>Depth: {stamp.depth}</span>
+                  {stamp.utilization !== undefined && (
+                    <span>Utilization: {stamp.utilization}%</span>
+                  )}
+                  {stamp.batchTTL !== undefined && (
+                    <span>TTL: {Math.floor(stamp.batchTTL / 86400)} days</span>
+                  )}
                   {stamp.timestamp && (
                     <span>
                       Date:{" "}

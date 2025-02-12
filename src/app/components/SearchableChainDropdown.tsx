@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Chain } from "@lifi/sdk";
-import styles from "./SwapComponent.module.css";
+import styles from "./css/SwapComponent.module.css";
 
 interface SearchableChainDropdownProps {
   selectedChainId: number;

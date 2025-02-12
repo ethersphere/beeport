@@ -26,7 +26,7 @@ import {
   Chain,
 } from "@lifi/sdk";
 import { tokenAddresses } from "./tokenAddresses";
-import styles from "./SwapComponent.module.css";
+import styles from "./css/SwapComponent.module.css";
 import { parseAbi, encodeFunctionData, formatUnits } from "viem";
 import {
   keccak256,
@@ -496,10 +496,9 @@ const SwapComponent: React.FC = () => {
     }));
   };
 
-  // LIFI DEFAULT while using swap and execute "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D"
   const createBatchId = async (
     nonce: string,
-    sender: string = "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D"
+    sender: string
   ): Promise<string> => {
     try {
       const encodedData = encodeAbiParameters(
@@ -1692,6 +1691,7 @@ const SwapComponent: React.FC = () => {
         <StampListSection
           setShowStampList={setShowStampList}
           address={address}
+          beeApiUrl={beeApiUrl}
         />
       )}
     </div>
