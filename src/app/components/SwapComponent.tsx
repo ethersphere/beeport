@@ -60,6 +60,7 @@ import {
 } from "./constants";
 
 import HelpSection from "./HelpSection";
+import StampListSection from "./StampListSection";
 import SearchableChainDropdown from "./SearchableChainDropdown";
 
 const SwapComponent: React.FC = () => {
@@ -97,6 +98,7 @@ const SwapComponent: React.FC = () => {
   const [uploadStep, setUploadStep] = useState<UploadStep>("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [showStampList, setShowStampList] = useState(false);
 
   const [selectedTokenInfo, setSelectedTokenInfo] = useState<any>(null);
   const [availableTokens, setAvailableTokens] = useState<TokensResponse | null>(
@@ -1635,6 +1637,30 @@ const SwapComponent: React.FC = () => {
           <div className={styles.configContainer}>
             <button
               className={styles.configButton}
+              onClick={() => setShowStampList(true)}
+              aria-label="Stamp List"
+              style={{ marginRight: "10px" }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg>
+            </button>
+            <button
+              className={styles.configButton}
               onClick={() => setShowHelp(true)}
               aria-label="Settings"
             >
@@ -1661,6 +1687,13 @@ const SwapComponent: React.FC = () => {
           setNodeAddress={setNodeAddress}
           setBeeApiUrl={setBeeApiUrl}
           setShowHelp={setShowHelp}
+        />
+      )}
+
+      {showStampList && (
+        <StampListSection
+          setShowStampList={setShowStampList}
+          address={address}
         />
       )}
     </div>

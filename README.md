@@ -51,6 +51,8 @@ npx serve out
 
 12. Enforce on server checking of origin of domain, where the upload came from
 
+13. Decide do we have 2 clear modes working separatly for Bee Public node and Custom nodes
+
 ## How to run locally
 
 Set the BEE API URL to http://localhost:1633
