@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import styles from "./StampListSection.module.css";
-import { createPublicClient, http, formatEther } from "viem";
+import { createPublicClient, http, formatUnits } from "viem";
 import { gnosis } from "viem/chains";
+
+import { BATCH_REGISTRY_ADDRESS, GNOSIS_STAMP_ADDRESS } from "./constants";
 
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
@@ -33,7 +35,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
       try {
         const logs = await gnosisClient.getLogs({
-          address: "0x8de0de60e0b634f044e3e1a37e131cbbb09ef603",
+          address: BATCH_REGISTRY_ADDRESS,
           event: {
             anonymous: false,
             inputs: [
@@ -64,7 +66,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             });
             return {
               batchId: log.args.batchId?.toString() || "",
-              totalAmount: formatEther(log.args.totalAmount || 0n),
+              totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
               depth: Number(log.args.depth || 0),
               timestamp: Number(block.timestamp),
             };
