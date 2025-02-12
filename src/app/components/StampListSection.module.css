@@ -1,0 +1,82 @@
+.stampListContainer {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  .stampListContent {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .stampListHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .stampListHeader h2 {
+    color: #2d3748;
+    margin-bottom: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+  
+  .stampListCloseButton {
+    padding: 0.75rem 1.5rem;
+    background-color: #4a5568;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    min-width: 120px;
+  }
+  
+  .stampListCloseButton:hover {
+    background-color: #2d3748;
+  }
+  
+  .stampListItem {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    border: 1px solid #eee;
+  }
+  
+  .stampListId {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #333;
+    word-break: break-all;
+  }
+  
+  .stampListDetails {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.9em;
+    color: #666;
+  }
+  
+  .stampListLoading {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+  }
+  
+  .stampListEmpty {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    background: #f9f9f9;
+    border-radius: 8px;
+  }
+  

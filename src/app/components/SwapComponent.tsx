@@ -1273,7 +1273,7 @@ const SwapComponent: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      {!showHelp ? (
+      {!showHelp && !showStampList ? (
         <>
           <h1 className={styles.title}>Buy BZZ and Upload data</h1>
 
@@ -1680,7 +1680,7 @@ const SwapComponent: React.FC = () => {
             </button>
           </div>
         </>
-      ) : (
+      ) : showHelp ? (
         <HelpSection
           nodeAddress={nodeAddress}
           beeApiUrl={beeApiUrl}
@@ -1688,9 +1688,7 @@ const SwapComponent: React.FC = () => {
           setBeeApiUrl={setBeeApiUrl}
           setShowHelp={setShowHelp}
         />
-      )}
-
-      {showStampList && (
+      ) : (
         <StampListSection
           setShowStampList={setShowStampList}
           address={address}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import styles from "./SwapComponent.module.css";
+import styles from "./StampListSection.module.css";
 import { createPublicClient, http, formatEther } from "viem";
 import { gnosis } from "viem/chains";
 
@@ -86,39 +86,43 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
   return (
     <div className={styles.stampListContainer}>
-      <div className={styles.stampListHeader}>
-        <h2>Your Stamps</h2>
-        <button
-          onClick={() => setShowStampList(false)}
-          className={styles.stampListCloseButton}
-        >
-          ×
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div className={styles.stampListLoading}>Loading stamps...</div>
-      ) : stamps.length === 0 ? (
-        <div className={styles.stampListEmpty}>No stamps found</div>
-      ) : (
-        <div className={styles.stampListContent}>
-          {stamps.map((stamp, index) => (
-            <div key={index} className={styles.stampListItem}>
-              <div className={styles.stampListId}>ID: {stamp.batchId}</div>
-              <div className={styles.stampListDetails}>
-                <span>Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
-                <span>Depth: {stamp.depth}</span>
-                {stamp.timestamp && (
-                  <span>
-                    Date:{" "}
-                    {new Date(stamp.timestamp * 1000).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
+      <div className={styles.stampListContent}>
+        <div className={styles.stampListHeader}>
+          <h2>Your Stamps</h2>
+          <button
+            onClick={() => setShowStampList(false)}
+            className={styles.stampListCloseButton}
+          >
+            Back
+          </button>
         </div>
-      )}
+
+        {isLoading ? (
+          <div className={styles.stampListLoading}>Loading stamps...</div>
+        ) : stamps.length === 0 ? (
+          <div className={styles.stampListEmpty}>No stamps found</div>
+        ) : (
+          <>
+            {stamps.map((stamp, index) => (
+              <div key={index} className={styles.stampListItem}>
+                <div className={styles.stampListId}>ID: {stamp.batchId}</div>
+                <div className={styles.stampListDetails}>
+                  <span>
+                    Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ
+                  </span>
+                  <span>Depth: {stamp.depth}</span>
+                  {stamp.timestamp && (
+                    <span>
+                      Date:{" "}
+                      {new Date(stamp.timestamp * 1000).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import styles from "./SwapComponent.module.css";
+import styles from "./HelpSection.module.css";
 
 interface HelpSectionProps {
   nodeAddress: string;
