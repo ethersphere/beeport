@@ -45,13 +45,13 @@ contract StampRegistry {
     ISwarmContract public swarmStampContract;
     IERC20 public constant BZZ_TOKEN =
         IERC20(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da);
-    mapping(uint256 => address) public batchPayers;
+    mapping(bytes32 => address) public batchPayers;
     address public admin;
     address public defaultNodeAddress; // New variable for default node address
 
     // Events
     event BatchCreated(
-        uint256 indexed batchId,
+        bytes32 indexed batchId,
         uint256 totalAmount,
         uint256 normalisedBalance,
         address indexed owner,
@@ -143,10 +143,8 @@ contract StampRegistry {
             _immutable
         );
 
-        // Calculate batchId using the same logic as in the original contract
-        uint256 batchId = uint256(
-            keccak256(abi.encode(defaultNodeAddress, _nonce))
-        );
+        // Calculate batchId as bytes32
+        bytes32 batchId = keccak256(abi.encode(address(this), _nonce));
 
         // Store the payer information
         batchPayers[batchId] = _owner;
@@ -173,7 +171,7 @@ contract StampRegistry {
      * @param _batchId The ID of the batch
      * @return The address of the payer
      */
-    function getBatchPayer(uint256 _batchId) external view returns (address) {
+    function getBatchPayer(bytes32 _batchId) external view returns (address) {
         return batchPayers[_batchId];
     }
 }

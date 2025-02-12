@@ -5,7 +5,7 @@ import { StorageOption, SwarmConfigType } from "./types";
 export const DEFAULT_NODE_ADDRESS =
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";
 export const BATCH_REGISTRY_ADDRESS =
-  "0x8de0de60e0b634f044e3e1a37e131cbbb09ef603";
+  "0x00ae225037eb9f015f8fcc2b3c6e53a7661541e5";
 export const LIFI_CONTRACT_ADDRESS =
   "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D";
 export const GNOSIS_BZZ_ADDRESS = "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da";

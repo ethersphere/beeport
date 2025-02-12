@@ -4,11 +4,15 @@ import { createPublicClient, http, formatUnits } from "viem";
 import { gnosis } from "viem/chains";
 
 import { BATCH_REGISTRY_ADDRESS, GNOSIS_STAMP_ADDRESS } from "./constants";
+import { UploadStep } from "./types";
 
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
   address: string | undefined;
-  beeApiUrl: string; // Add this prop
+  beeApiUrl: string;
+  setPostageBatchId: (id: string) => void;
+  setShowOverlay: (show: boolean) => void;
+  setUploadStep: (step: UploadStep) => void;
 }
 
 interface BatchEvent {
@@ -38,6 +42,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setShowStampList,
   address,
   beeApiUrl,
+  setPostageBatchId,
+  setShowOverlay,
+  setUploadStep,
 }) => {
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,7 +56,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
   const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
     try {
-      const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
+      const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`);
       if (!response.ok) return null;
       const data = await response.json();
       return data;
@@ -69,7 +76,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           event: {
             anonymous: false,
             inputs: [
-              { indexed: true, name: "batchId", type: "uint256" },
+              { indexed: true, name: "batchId", type: "bytes32" },
               { indexed: false, name: "totalAmount", type: "uint256" },
               { indexed: false, name: "normalisedBalance", type: "uint256" },
               { indexed: true, name: "owner", type: "address" },
@@ -153,7 +160,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     <span>Utilization: {stamp.utilization}%</span>
                   )}
                   {stamp.batchTTL !== undefined && (
-                    <span>TTL: {Math.floor(stamp.batchTTL / 86400)} days</span>
+                    <span>
+                      Expires: {Math.floor(stamp.batchTTL / 86400)} days
+                    </span>
                   )}
                   {stamp.timestamp && (
                     <span>
@@ -162,6 +171,17 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     </span>
                   )}
                 </div>
+                <button
+                  className={styles.uploadWithStampButton}
+                  onClick={() => {
+                    setPostageBatchId(stamp.batchId.slice(2));
+                    setShowStampList(false);
+                    setShowOverlay(true);
+                    setUploadStep("ready" as UploadStep);
+                  }}
+                >
+                  Upload with this stamp
+                </button>
               </div>
             ))}
           </>

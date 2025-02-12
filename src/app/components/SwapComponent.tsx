@@ -1692,6 +1692,9 @@ const SwapComponent: React.FC = () => {
           setShowStampList={setShowStampList}
           address={address}
           beeApiUrl={beeApiUrl}
+          setPostageBatchId={setPostageBatchId}
+          setShowOverlay={setShowOverlay}
+          setUploadStep={setUploadStep}
         />
       )}
     </div>
