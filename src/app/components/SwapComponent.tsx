@@ -111,6 +111,7 @@ const SwapComponent: React.FC = () => {
   const [contractUsed, setContractUsed] = useState<string>(
     BATCH_REGISTRY_ADDRESS
   );
+  const [addressUsed, setAddressUsed] = useState<string>("");
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -216,7 +217,7 @@ const SwapComponent: React.FC = () => {
           () =>
             getGnosisQuote({
               gnosisSourceToken,
-              address,
+              address: addressUsed,
               bzzAmount,
               nodeAddress,
               swarmConfig: {
@@ -309,8 +310,13 @@ const SwapComponent: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
+        setAddressUsed(address as string);
         if (data.walletAddress) {
           setNodeAddress(data.walletAddress);
+          // Set address as node, we are in custom node mode
+          if (data.walletAddress != DEFAULT_NODE_ADDRESS) {
+            setAddressUsed(data.walletAddress);
+          }
           console.log("Node wallet address set:", data.walletAddress);
         } else {
           console.error("Wallet address not found in response");
@@ -568,7 +574,7 @@ const SwapComponent: React.FC = () => {
             abi: parseAbi(swarmConfig.swarmContractAbi),
             functionName: "createBatch",
             args: [
-              address,
+              addressUsed,
               swarmConfig.swarmBatchInitialBalance,
               swarmConfig.swarmBatchDepth,
               swarmConfig.swarmBatchBucketDepth,
@@ -607,7 +613,7 @@ const SwapComponent: React.FC = () => {
             } else {
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                address
+                addressUsed
               );
               console.log("Created batch ID:", batchId);
             }
@@ -984,12 +990,10 @@ const SwapComponent: React.FC = () => {
             ? fromToken
             : GNOSIS_DESTINATION_TOKEN;
 
-        // If we are using registry we need to give approval to it first
-
         const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
           await getGnosisQuote({
             gnosisSourceToken,
-            address,
+            address: addressUsed,
             bzzAmount,
             nodeAddress,
             swarmConfig,
