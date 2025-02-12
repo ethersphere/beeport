@@ -73,10 +73,10 @@ contract StampRegistry {
         _;
     }
 
-    constructor(address _swarmContractAddress) {
+    constructor(address _swarmContractAddress, address _defaultBeeNode) {
         swarmStampContract = ISwarmContract(_swarmContractAddress);
         admin = msg.sender;
-        defaultNodeAddress = msg.sender; // Initialize default node address to admin
+        defaultNodeAddress = _defaultBeeNode;
     }
 
     /**
@@ -123,8 +123,8 @@ contract StampRegistry {
         // Calculate total amount
         uint256 totalAmount = _initialBalancePerChunk * (1 << _depth);
 
-        // Transfer BZZ tokens from payer to this contract
-        if (!BZZ_TOKEN.transferFrom(_owner, address(this), totalAmount)) {
+        // Transfer BZZ tokens from sender to this contract
+        if (!BZZ_TOKEN.transferFrom(msg.sender, address(this), totalAmount)) {
             revert TransferFailed();
         }
 

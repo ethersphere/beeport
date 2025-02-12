@@ -984,6 +984,8 @@ const SwapComponent: React.FC = () => {
             ? fromToken
             : GNOSIS_DESTINATION_TOKEN;
 
+        // If we are using registry we need to give approval to it first
+
         const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
           await getGnosisQuote({
             gnosisSourceToken,
