@@ -28,7 +28,15 @@ const HelpSection: React.FC<HelpSectionProps> = ({
       <h1 className={styles.title}>Help</h1>
 
       <div className={styles.helpContent}>
-        <h2>Configuration</h2>
+        <div className={styles.configHeader}>
+          <h2>Configuration</h2>
+          <button
+            className={`${styles.button} ${styles.helpButton}`}
+            onClick={() => setShowHelp(false)}
+          >
+            Back
+          </button>
+        </div>
         <div className={styles.advancedSection}>
           <div className={styles.inputGroup}>
             <div className={styles.formSection}>
@@ -133,15 +141,6 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
         </div>
-      </div>
-
-      <div className={styles.buttonWrapper}>
-        <button
-          className={`${styles.button} ${styles.helpButton}`}
-          onClick={() => setShowHelp(false)}
-        >
-          Back
-        </button>
       </div>
     </div>
   );

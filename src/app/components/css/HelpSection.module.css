@@ -170,3 +170,10 @@
   padding: 10px 20px;
   gap: 10px;
 }
+
+.configHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
