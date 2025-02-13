@@ -28,7 +28,8 @@ export const formatErrorMessage = (error: unknown): string => {
 
 export const createBatchId = async (
   nonce: string,
-  sender: string
+  sender: string,
+  setPostageBatchId: (batchId: string) => void
 ): Promise<string> => {
   try {
     const encodedData = encodeAbiParameters(
@@ -37,6 +38,7 @@ export const createBatchId = async (
     );
 
     const calculatedBatchId = keccak256(encodedData);
+    setPostageBatchId(calculatedBatchId.slice(2));
     return calculatedBatchId.slice(2);
   } catch (error) {
     console.error("Error creating batch ID:", error);

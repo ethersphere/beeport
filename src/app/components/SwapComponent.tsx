@@ -549,13 +549,15 @@ const SwapComponent: React.FC = () => {
             if (nodeAddress == DEFAULT_NODE_ADDRESS) {
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                BATCH_REGISTRY_ADDRESS
+                BATCH_REGISTRY_ADDRESS,
+                setPostageBatchId
               );
               console.log("Created batch ID:", batchId);
             } else {
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                addressUsed
+                addressUsed,
+                setPostageBatchId
               );
               console.log("Created batch ID:", batchId);
             }
@@ -614,13 +616,15 @@ const SwapComponent: React.FC = () => {
             if (nodeAddress == DEFAULT_NODE_ADDRESS) {
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                BATCH_REGISTRY_ADDRESS
+                BATCH_REGISTRY_ADDRESS,
+                setPostageBatchId
               );
               console.log("Created batch ID:", batchId);
             } else {
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                LIFI_CONTRACT_ADDRESS
+                LIFI_CONTRACT_ADDRESS,
+                setPostageBatchId
               );
               console.log("Created batch ID:", batchId);
             }
@@ -732,13 +736,15 @@ const SwapComponent: React.FC = () => {
               if (nodeAddress == DEFAULT_NODE_ADDRESS) {
                 const batchId = await createBatchId(
                   swarmConfig.swarmBatchNonce,
-                  BATCH_REGISTRY_ADDRESS
+                  BATCH_REGISTRY_ADDRESS,
+                  setPostageBatchId
                 );
                 console.log("Created batch ID:", batchId);
               } else {
                 const batchId = await createBatchId(
                   swarmConfig.swarmBatchNonce,
-                  LIFI_CONTRACT_ADDRESS
+                  LIFI_CONTRACT_ADDRESS,
+                  setPostageBatchId
                 );
                 console.log("Created batch ID:", batchId);
               }
