@@ -25,7 +25,6 @@ import {
   getTokenBalancesByChain,
   Chain,
 } from "@lifi/sdk";
-import { tokenAddresses } from "./tokenAddresses";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, encodeFunctionData, formatUnits } from "viem";
 import {
@@ -874,30 +873,21 @@ const SwapComponent: React.FC = () => {
     });
 
     try {
-      // Find the token
-      const selectedToken = Object.values(
-        (tokenAddresses as any)[selectedChainId]
-      ).find((token: any) => {
-        try {
-          // Skip for 0 address as checksum wont work
-          if (fromToken === "0x0000000000000000000000000000000000000000") {
-            return true;
+      // Find the token in available tokens
+      const selectedToken = availableTokens?.tokens[selectedChainId]?.find(
+        (token) => {
+          try {
+            return (
+              toChecksumAddress(token.address) === toChecksumAddress(fromToken)
+            );
+          } catch (error) {
+            console.error("Error comparing token addresses:", error);
+            return false;
           }
-          const checksumTokenAddress = getAddress(token.address);
-          const checksumFromToken = getAddress(fromToken);
-          console.log(checksumTokenAddress, checksumFromToken);
-          return checksumTokenAddress === checksumFromToken;
-        } catch (error) {
-          console.error("Error converting address to checksum:", {
-            tokenAddress: token.address,
-            fromToken: fromToken,
-            error: error,
-          });
-          return false;
         }
-      });
+      );
 
-      if (!selectedToken) {
+      if (!selectedToken || !selectedToken.address) {
         throw new Error("Selected token not found");
       }
 
