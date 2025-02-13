@@ -7,6 +7,7 @@
 .select {
   flex: 1;
   padding: 10px;
+  padding-left: 36px; /* Space for logo */
   border-radius: 5px;
   border: 1px solid #ddd;
   background-color: white;
@@ -22,6 +23,16 @@
   pointer-events: none;
 }
 
+.selectedTokenInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.balanceInfo {
+  text-align: right;
+}
+
 .balanceAmount {
   font-size: 16px;
   color: #333;
@@ -32,10 +43,112 @@
   color: #666;
 }
 
+.tokenOptionContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.tokenLogo {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.tokenSymbol {
+  font-weight: 500;
+}
+
+.tokenBalance {
+  color: #666;
+  margin-left: auto;
+}
+
 .tokenOption {
   padding: 8px;
   font-size: 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.dropdownContainer {
+  position: relative;
+  width: 100%;
+}
+
+.dropdownButton {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.dropdownButton:hover {
+  border-color: #999;
+}
+
+.dropdownButton.open {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.option:hover {
+  background-color: #f5f5f5;
+}
+
+.option.selected {
+  background-color: #e6e6e6;
+}
+
+.tokenLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tokenRight {
+  text-align: right;
+}
+
+.tokenUsdValue {
+  color: #666;
+  font-size: 0.9em;
+  margin-left: 4px;
+}
+
+.placeholder {
+  color: #666;
 }

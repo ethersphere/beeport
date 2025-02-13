@@ -14,6 +14,10 @@ const config = {
     // Optional: Change the output directory `out` -> `dist`
     // distDir: 'dist',
 
+    images: {
+        unoptimized: true,
+    },
+
 
     // TODO remove and fix once for production
     eslint: {
