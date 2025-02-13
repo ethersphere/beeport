@@ -18,6 +18,8 @@ const SearchableChainDropdown: React.FC<SearchableChainDropdownProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
 
+  console.log("Available chains:", availableChains);
+
   const filteredChains = availableChains.filter((chain) =>
     chain.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -32,7 +34,17 @@ const SearchableChainDropdown: React.FC<SearchableChainDropdownProps> = ({
         className={`${styles.select} ${isOpen ? styles.open : ""}`}
         onClick={() => setIsOpen(!isOpen)}
       >
-        {selectedChain?.name || "Select Chain"}
+        {selectedChain && (
+          <div className={styles.chainItem}>
+            <img
+              src={selectedChain.logoURI}
+              alt={selectedChain.name}
+              className={styles.chainLogo}
+            />
+            <span>{selectedChain.name}</span>
+          </div>
+        )}
+        {!selectedChain && "Select Chain"}
       </div>
 
       {isOpen && (
@@ -63,7 +75,14 @@ const SearchableChainDropdown: React.FC<SearchableChainDropdownProps> = ({
                     setIsOpen(false);
                   }}
                 >
-                  {chain.name}
+                  <div className={styles.chainItem}>
+                    <img
+                      src={chain.logoURI}
+                      alt={chain.name}
+                      className={styles.chainLogo}
+                    />
+                    <span>{chain.name}</span>
+                  </div>
                 </div>
               ))
             )}
