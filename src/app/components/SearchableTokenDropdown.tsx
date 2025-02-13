@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { formatUnits } from "viem";
 import styles from "./css/SearchableTokenDropdown.module.css";
 import { toChecksumAddress, formatTokenBalance } from "./utils";
+import { MIN_TOKEN_BALANCE_USD } from "./constants";
 
 interface TokenDropdownProps {
   fromToken: string;
@@ -13,6 +14,7 @@ interface TokenDropdownProps {
   tokenBalances: any;
   selectedTokenInfo: any;
   onTokenSelect: (address: string, tokenInfo: any) => void;
+  minBalanceUsd?: number;
 }
 
 const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
@@ -25,6 +27,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   tokenBalances,
   selectedTokenInfo,
   onTokenSelect,
+  minBalanceUsd = MIN_TOKEN_BALANCE_USD,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -84,7 +87,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
         const usdValue = Number(balanceInTokens) * Number(token.priceUSD);
 
         if (
-          Number(balanceInTokens) > 0 ||
+          usdValue >= minBalanceUsd ||
           checksumTokenAddress === toChecksumAddress(fromToken)
         ) {
           return {

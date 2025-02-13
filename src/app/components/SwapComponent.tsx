@@ -56,6 +56,7 @@ import {
   BATCH_REGISTRY_ADDRESS,
   LIFI_CONTRACT_ADDRESS,
   GNOSIS_STAMP_ADDRESS,
+  MIN_TOKEN_BALANCE_USD,
 } from "./constants";
 
 import HelpSection from "./HelpSection";
@@ -1248,6 +1249,7 @@ const SwapComponent: React.FC = () => {
                 setFromToken(address);
                 setSelectedTokenInfo(token);
               }}
+              minBalanceUsd={MIN_TOKEN_BALANCE_USD}
             />
           </div>
 

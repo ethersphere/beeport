@@ -3,12 +3,12 @@ import { StorageOption, SwarmConfigType } from "./types";
 
 // This is node address used as gateway swarm provides for end users
 export const DEFAULT_NODE_ADDRESS =
-  "0xb81784e65c84ca25b595ff4f0badb502673e343b";
+  "0x6C158C9dbd5c8Bb05d68D1d7e1f4d3a5891993C0";
 export const BATCH_REGISTRY_ADDRESS =
   "0x00ae225037eb9f015f8fcc2b3c6e53a7661541e5";
 export const LIFI_CONTRACT_ADDRESS =
   "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D";
-export const GNOSIS_BZZ_ADDRESS = "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da";
+export const GNOSIS_BZZ_ADDRESS = "0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da";
 export const GNOSIS_STAMP_ADDRESS =
   "0x45a1502382541Cd610CC9068e88727426b696293";
 export const BEE_GATEWAY_URL = "http://95.216.6.96:3333/bzz/";
@@ -18,6 +18,7 @@ export const GNOSIS_PRICE_ORACLE_ADDRESS =
 export const GNOSIS_DESTINATION_TOKEN =
   "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83";
 export const DEFAULT_BEE_API_URL = "http://95.216.6.96:3333";
+export const MIN_TOKEN_BALANCE_USD = 1; // Minimum USD balance to show token in dropdown
 
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
 
