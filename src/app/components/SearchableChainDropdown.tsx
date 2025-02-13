@@ -18,8 +18,6 @@ const SearchableChainDropdown: React.FC<SearchableChainDropdownProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
 
-  console.log("Available chains:", availableChains);
-
   const filteredChains = availableChains.filter((chain) =>
     chain.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
