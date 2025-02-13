@@ -1,7 +1,7 @@
 import React from "react";
 import { formatUnits } from "viem";
 import styles from "./css/SearchableTokenDropdown.module.css";
-import { toChecksumAddress } from "./utils";
+import { toChecksumAddress, formatTokenBalance } from "./utils";
 
 interface TokenDropdownProps {
   fromToken: string;
@@ -104,25 +104,19 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
       </select>
       {selectedTokenInfo && (
         <div className={styles.tokenBalance}>
-          <div className={styles.balanceAmount}>
-            {Number(
-              formatUnits(
-                selectedTokenInfo.amount || 0n,
-                selectedTokenInfo.decimals
-              )
-            ).toFixed(4)}
-          </div>
-          <div className={styles.balanceUsd}>
-            $
-            {(
-              Number(
-                formatUnits(
-                  selectedTokenInfo.amount || 0n,
-                  selectedTokenInfo.decimals
-                )
-              ) * Number(selectedTokenInfo.priceUSD)
-            ).toFixed(2)}
-          </div>
+          {(() => {
+            const { formatted, usdValue } = formatTokenBalance(
+              selectedTokenInfo.amount,
+              selectedTokenInfo.decimals,
+              selectedTokenInfo.priceUSD
+            );
+            return (
+              <>
+                <div className={styles.balanceAmount}>{formatted}</div>
+                <div className={styles.balanceUsd}>${usdValue}</div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

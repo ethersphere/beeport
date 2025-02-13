@@ -64,6 +64,14 @@ import StampListSection from "./StampListSection";
 import SearchableChainDropdown from "./SearchableChainDropdown";
 import SearchableTokenDropdown from "./SearchableTokenDropdown";
 
+import {
+  formatErrorMessage,
+  createBatchId,
+  performWithRetry,
+  formatTokenBalance,
+  toChecksumAddress,
+} from "./utils";
+
 const SwapComponent: React.FC = () => {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -117,14 +125,6 @@ const SwapComponent: React.FC = () => {
   const [addressUsed, setAddressUsed] = useState<string>("");
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
-
-  const formatErrorMessage = (error: unknown): string => {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const requestArgsIndex = errorMessage.indexOf("Request Arguments:");
-    return requestArgsIndex > -1
-      ? errorMessage.slice(0, requestArgsIndex).trim()
-      : errorMessage;
-  };
 
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
@@ -334,37 +334,6 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const performWithRetry = async <T,>(
-    operation: () => Promise<T>,
-    name: string,
-    validateResult?: (result: T) => boolean
-  ): Promise<T> => {
-    const maxRetries = 5;
-    const delayMs = 300;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await operation();
-
-        // If there's a validation function and the result is invalid, throw an error
-        if (validateResult && !validateResult(result)) {
-          throw new Error(`Invalid result for ${name}`);
-        }
-
-        return result;
-      } catch (error) {
-        console.log(`${name} attempt ${attempt}/${maxRetries} failed:`, error);
-
-        if (attempt === maxRetries) {
-          throw error;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-    throw new Error(`${name} failed after ${maxRetries} attempts`);
-  };
-
   const fetchTokensAndBalances = async () => {
     if (!address || !isConnected) {
       setTokenBalances(null);
@@ -459,18 +428,6 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const toChecksumAddress = (
-    address: string | undefined | null
-  ): string | null => {
-    if (!address) return null;
-    try {
-      return getAddress(address);
-    } catch (error) {
-      console.log("Invalid address:", address, error);
-      return null;
-    }
-  };
-
   const calculateTotalAmount = () => {
     return (
       BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
@@ -497,28 +454,6 @@ const SwapComponent: React.FC = () => {
     }));
   };
 
-  const createBatchId = async (
-    nonce: string,
-    sender: string
-  ): Promise<string> => {
-    try {
-      const encodedData = encodeAbiParameters(
-        parseAbiParameters(["address", "bytes32"]),
-        [sender as `0x${string}`, nonce as `0x${string}`]
-      );
-
-      const calculatedBatchId = keccak256(encodedData);
-      console.log("Created ID", calculatedBatchId);
-
-      setPostageBatchId(calculatedBatchId.slice(2));
-      return calculatedBatchId.slice(2);
-    } catch (error) {
-      console.error("Error creating batch ID:", error);
-      throw error;
-    }
-  };
-
-  // Add this new function to handle direct BZZ transactions
   const handleDirectBzzTransactions = async () => {
     if (!publicClient || !walletClient) {
       console.error("Clients not initialized");
@@ -1270,6 +1205,24 @@ const SwapComponent: React.FC = () => {
       setUploadProgress(0);
     }
   };
+
+  const displayTokenBalance = selectedTokenInfo && (
+    <div className={styles.tokenBalance}>
+      {(() => {
+        const { formatted, usdValue } = formatTokenBalance(
+          selectedTokenInfo.amount,
+          selectedTokenInfo.decimals,
+          selectedTokenInfo.priceUSD
+        );
+        return (
+          <>
+            <div className={styles.balanceAmount}>{formatted}</div>
+            <div className={styles.balanceUsd}>${usdValue}</div>
+          </>
+        );
+      })()}
+    </div>
+  );
 
   return (
     <div className={styles.container}>
