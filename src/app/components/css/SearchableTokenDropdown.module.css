@@ -1,0 +1,41 @@
+.selectWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  flex: 1;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  background-color: white;
+  font-size: 16px;
+  padding-right: 120px;
+  width: 100%;
+}
+
+.tokenBalance {
+  position: absolute;
+  right: 30px;
+  text-align: right;
+  pointer-events: none;
+}
+
+.balanceAmount {
+  font-size: 16px;
+  color: #333;
+}
+
+.balanceUsd {
+  font-size: 12px;
+  color: #666;
+}
+
+.tokenOption {
+  padding: 8px;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

@@ -62,6 +62,7 @@ import {
 import HelpSection from "./HelpSection";
 import StampListSection from "./StampListSection";
 import SearchableChainDropdown from "./SearchableChainDropdown";
+import SearchableTokenDropdown from "./SearchableTokenDropdown";
 
 const SwapComponent: React.FC = () => {
   const { address, isConnected } = useAccount();
@@ -1291,111 +1292,20 @@ const SwapComponent: React.FC = () => {
 
           <div className={styles.inputGroup}>
             <label className={styles.label}>From Token:</label>
-            <div className={styles.selectWrapper}>
-              <select
-                className={styles.select}
-                value={fromToken}
-                onChange={(e) => {
-                  const checksumAddress = toChecksumAddress(e.target.value);
-                  if (checksumAddress) {
-                    setFromToken(checksumAddress);
-                    const token = tokenBalances?.[selectedChainId]?.find(
-                      (t: any) =>
-                        toChecksumAddress(t.address) === checksumAddress
-                    );
-                    setSelectedTokenInfo(token);
-                  }
-                }}
-                disabled={isWalletLoading || isTokensLoading}
-              >
-                <option value="" className={styles.tokenOption}>
-                  {isWalletLoading
-                    ? "Loading wallet..."
-                    : !isConnected
-                    ? "Connect wallet to see tokens"
-                    : isTokensLoading
-                    ? "Loading tokens..."
-                    : "Select Token"}
-                </option>
-                {isConnected &&
-                  !isWalletLoading &&
-                  !isTokensLoading &&
-                  availableTokens?.tokens[selectedChainId]
-                    ?.map((token) => {
-                      if (!token.address) return null;
-
-                      const checksumTokenAddress = toChecksumAddress(
-                        token.address
-                      );
-                      if (!checksumTokenAddress) {
-                        console.log("Invalid token address:", token);
-                        return null;
-                      }
-
-                      const balance = tokenBalances?.[selectedChainId]?.find(
-                        (t: any) =>
-                          toChecksumAddress(t.address) === checksumTokenAddress
-                      );
-                      const balanceInTokens = balance
-                        ? formatUnits(balance.amount || 0n, token.decimals)
-                        : "0";
-                      const usdValue =
-                        Number(balanceInTokens) * Number(token.priceUSD);
-
-                      if (
-                        Number(balanceInTokens) > 0 ||
-                        checksumTokenAddress === toChecksumAddress(fromToken)
-                      ) {
-                        return {
-                          token,
-                          balance: Number(balanceInTokens),
-                          usdValue,
-                          address: checksumTokenAddress,
-                          symbol: token.symbol,
-                        } as const; // ensure the type is preserved
-                      }
-                      return null;
-                    })
-                    .filter(
-                      (item): item is NonNullable<typeof item> => item !== null
-                    ) // type predicate
-                    .sort((a, b) => b.usdValue - a.usdValue)
-                    .map(({ token, balance, usdValue }) => (
-                      <option
-                        key={token.address}
-                        value={token.address}
-                        className={styles.tokenOption}
-                      >
-                        {`${token.symbol} - ${balance.toFixed(
-                          4
-                        )} ($${usdValue.toFixed(2)})`}
-                      </option>
-                    ))}
-              </select>
-              {selectedTokenInfo && (
-                <div className={styles.tokenBalance}>
-                  <div className={styles.balanceAmount}>
-                    {Number(
-                      formatUnits(
-                        selectedTokenInfo.amount || 0n,
-                        selectedTokenInfo.decimals
-                      )
-                    ).toFixed(4)}
-                  </div>
-                  <div className={styles.balanceUsd}>
-                    $
-                    {(
-                      Number(
-                        formatUnits(
-                          selectedTokenInfo.amount || 0n,
-                          selectedTokenInfo.decimals
-                        )
-                      ) * Number(selectedTokenInfo.priceUSD)
-                    ).toFixed(2)}
-                  </div>
-                </div>
-              )}
-            </div>
+            <SearchableTokenDropdown
+              fromToken={fromToken}
+              selectedChainId={selectedChainId}
+              isWalletLoading={isWalletLoading}
+              isTokensLoading={isTokensLoading}
+              isConnected={isConnected}
+              availableTokens={availableTokens}
+              tokenBalances={tokenBalances}
+              selectedTokenInfo={selectedTokenInfo}
+              onTokenSelect={(address, token) => {
+                setFromToken(address);
+                setSelectedTokenInfo(token);
+              }}
+            />
           </div>
 
           <div className={styles.inputGroup}>
