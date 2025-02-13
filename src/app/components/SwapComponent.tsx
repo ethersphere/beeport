@@ -318,7 +318,12 @@ const SwapComponent: React.FC = () => {
           setNodeAddress(data.walletAddress);
           // Set address as node, we are in custom node mode
           if (data.walletAddress != DEFAULT_NODE_ADDRESS) {
-            setAddressUsed(data.walletAddress);
+            // Cannot use node's wallet address (data.walletAddress) here because:
+            // 1. LIFI SDK requires the 'fromAddress' in quote request to match the wallet that will sign the transaction
+            // 2. If we set a different address, LIFI will reject the quote with "Invalid sender address"
+            // 3. The transaction must be signed by the same address that's buying the tokens
+            // Therefore, we must use the connected wallet's address (address) instead of the node's address
+            // setAddressUsed(data.walletAddress);
           }
           console.log("Node wallet address set:", data.walletAddress);
         } else {
