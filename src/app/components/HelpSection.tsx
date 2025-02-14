@@ -16,6 +16,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setBeeApiUrl,
   setShowHelp,
 }) => {
+  const [isCustomNode, setIsCustomNode] = React.useState(false);
+
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
     // Remove trailing slashes
@@ -37,40 +39,41 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             Back
           </button>
         </div>
-        <div className={styles.advancedSection}>
-          <div className={styles.inputGroup}>
-            <div className={styles.formSection}>
-              <label className={styles.label}>Node Address:</label>
-              <input
-                className={styles.input}
-                type="text"
-                value={nodeAddress}
-                onChange={(e) => setNodeAddress(e.target.value)}
-                placeholder="Enter node address"
-              />
-              <div className={styles.hint}>
-                Defaults to address provided from API URL endpoint
-              </div>
-            </div>
 
-            <div className={styles.divider}></div>
-
-            <div className={styles.formSection}>
-              <label className={styles.label}>BEE API URL:</label>
+        <div className={styles.customNodeSection}>
+          <div className={styles.switchContainer}>
+            <span className={styles.switchLabel}>Custom Node</span>
+            <label className={styles.switch}>
               <input
-                className={styles.input}
-                type="text"
-                value={beeApiUrl}
-                onChange={handleBeeApiUrlChange}
-                placeholder="Enter Bee API URL"
+                type="checkbox"
+                checked={isCustomNode}
+                onChange={(e) => setIsCustomNode(e.target.checked)}
               />
-              <div className={styles.hint}>
-                Default config is to use global node provided by swarm assoc.
-                Change it to custom value if you have NGROK running or remote
-                node
-              </div>
-            </div>
+              <span className={styles.slider}></span>
+            </label>
           </div>
+
+          {isCustomNode && (
+            <div className={styles.customNodeConfig}>
+              <div className={styles.formSection}>
+                <label className={styles.label}>BEE API URL:</label>
+                <input
+                  className={styles.input}
+                  type="text"
+                  value={beeApiUrl}
+                  onChange={handleBeeApiUrlChange}
+                  placeholder="Enter Bee API URL"
+                />
+                <div className={styles.nodeAddress}>
+                  Node Address: <span>{nodeAddress}</span>
+                </div>
+                <div className={styles.hint}>
+                  Change it to custom value if you have NGROK running or remote
+                  node
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <h2>How to use this dapp?</h2>
@@ -78,18 +81,16 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           <li>
             <h3>Using swarm central node</h3>
             <p>
-              By default this app is hosted on swarm provides central node for
-              uploads and you can just buy storage and upload data (this is
-              default behavior)
+              By default this app provides central node for uploads and you can
+              just buy storage and upload data
             </p>
           </li>
           <li>
             <h3>Using local node</h3>
             <p>
-              Connect app hosted on swarm to your local node, you need a PAID
-              plan for NGROK to expose it to world and then start it with this
-              command "ngrok http 1633
-              --request-header-add="ngrok-skip-browser-warning:1"
+              Connect to your local node, you need a PAID plan for NGROK to
+              expose it to world and then start it with this command "ngrok http
+              1633 --request-header-add="ngrok-skip-browser-warning:1"
             </p>
           </li>
           <li>
@@ -98,7 +99,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               This app can also be run with remote node, hosted on a server and
               its endpoints exposed, you can use{" "}
               <a
-                href="https://gist.github.com/0xCardinalError/3f2ab21612c10c038cdc127d242ced08"
+                href="https://github.com/ethersphere/multichain/blob/main/src/misc/index.js"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.link}
@@ -126,9 +127,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <h3>How long does it take for my storage to become available?</h3>
             <p>
               After purchasing storage, it typically takes 2-5 minutes for your
-              postage stamps to become usable. During this time, the transaction
-              needs to be processed and confirmed on the blockchain. The app
-              will automatically notify you once your storage is ready for use.
+              postage stamps to become usable. The app will automatically notify
+              you once your storage is ready for use.
             </p>
           </div>
           <div className={styles.faqItem}>
