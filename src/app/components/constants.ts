@@ -37,7 +37,7 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   swarmToken: "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da",
   swarmContractGasLimit: "2000000",
   swarmContractAbi: [
-    "function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external",
+    "function createBatchRegistry(address _owner,  address _nodeAddress, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external",
   ],
   swarmBatchInitialBalance: "477774720",
   swarmBatchDepth: "20",

@@ -127,9 +127,9 @@ const SwapComponent: React.FC = () => {
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
   const [isCustomNode, setIsCustomNode] = useState<boolean>(() => {
-    // Initialize from localStorage, default to false if not set
-    const saved = localStorage.getItem("isCustomNode");
-    return saved ? JSON.parse(saved) : false;
+    // Always start with custom node off
+    localStorage.setItem("isCustomNode", "false");
+    return false;
   });
 
   // Save isCustomNode state to localStorage whenever it changes
