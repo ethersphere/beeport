@@ -174,6 +174,12 @@ const SwapComponent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Execute first two functions immediately
+    fetchCurrentPrice();
+    fetchNodeWalletAddress();
+  }, [isConnected, address]);
+
+  useEffect(() => {
     const fetchChains = async () => {
       try {
         setIsChainsLoading(true);
