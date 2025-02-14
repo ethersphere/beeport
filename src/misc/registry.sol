@@ -47,7 +47,6 @@ contract StampRegistry {
         IERC20(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da);
     mapping(bytes32 => address) public batchPayers;
     address public admin;
-    address public defaultNodeAddress; // New variable for default node address
 
     // Events
     event BatchCreated(
@@ -61,7 +60,6 @@ contract StampRegistry {
         bool immutable_
     );
     event SwarmContractUpdated(address oldAddress, address newAddress);
-    event DefaultNodeAddressUpdated(address oldAddress, address newAddress); // New event for node address updates
 
     // Custom errors
     error TransferFailed();
@@ -73,10 +71,9 @@ contract StampRegistry {
         _;
     }
 
-    constructor(address _swarmContractAddress, address _defaultBeeNode) {
+    constructor(address _swarmContractAddress) {
         swarmStampContract = ISwarmContract(_swarmContractAddress);
         admin = msg.sender;
-        defaultNodeAddress = _defaultBeeNode;
     }
 
     /**
@@ -92,28 +89,18 @@ contract StampRegistry {
     }
 
     /**
-     * @notice Updates the default node address
-     * @param _newNodeAddress New default node address
-     */
-    function updateDefaultNodeAddress(
-        address _newNodeAddress
-    ) external onlyAdmin {
-        address oldAddress = defaultNodeAddress;
-        defaultNodeAddress = _newNodeAddress;
-        emit DefaultNodeAddressUpdated(oldAddress, _newNodeAddress);
-    }
-
-    /**
      * @notice Creates a new batch and registers the payer
      * @param _owner Address that pays for the batch, but not the owner of the batch
+     * @param _nodeAddress Address of the node that will own the batch
      * @param _initialBalancePerChunk Initial balance per chunk
      * @param _depth Depth of the batch
      * @param _bucketDepth Bucket depth
      * @param _nonce Unique nonce for the batch
      * @param _immutable Whether the batch is immutable
      */
-    function createBatch(
+    function createBatchRegistry(
         address _owner,
+        address _nodeAddress,
         uint256 _initialBalancePerChunk,
         uint8 _depth,
         uint8 _bucketDepth,
@@ -133,9 +120,9 @@ contract StampRegistry {
             revert ApprovalFailed();
         }
 
-        // Call the original swarm contract with defaultNodeAddress as owner
+        // Call the original swarm contract with nodeAddress as owner
         swarmStampContract.createBatch(
-            defaultNodeAddress,
+            _nodeAddress,
             _initialBalancePerChunk,
             _depth,
             _bucketDepth,
@@ -158,7 +145,7 @@ contract StampRegistry {
             batchId,
             totalAmount,
             normalisedBalance,
-            defaultNodeAddress,
+            _nodeAddress,
             _owner,
             _depth,
             _bucketDepth,

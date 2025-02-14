@@ -1,5 +1,6 @@
 import React from "react";
 import styles from "./css/HelpSection.module.css";
+import { DEFAULT_BEE_API_URL } from "./constants";
 
 interface HelpSectionProps {
   nodeAddress: string;
@@ -7,6 +8,8 @@ interface HelpSectionProps {
   setNodeAddress: (value: string) => void;
   setBeeApiUrl: (value: string) => void;
   setShowHelp: (value: boolean) => void;
+  isCustomNode: boolean;
+  setIsCustomNode: (value: boolean) => void;
 }
 
 const HelpSection: React.FC<HelpSectionProps> = ({
@@ -15,14 +18,22 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setNodeAddress,
   setBeeApiUrl,
   setShowHelp,
+  isCustomNode,
+  setIsCustomNode,
 }) => {
-  const [isCustomNode, setIsCustomNode] = React.useState(false);
-
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
     // Remove trailing slashes
     value = value.replace(/\/+$/, "");
     setBeeApiUrl(value);
+  };
+
+  const handleCustomNodeToggle = (checked: boolean) => {
+    setIsCustomNode(checked);
+    if (!checked) {
+      // Reset to default URL when turning off custom node
+      setBeeApiUrl(DEFAULT_BEE_API_URL);
+    }
   };
 
   return (
@@ -47,7 +58,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               <input
                 type="checkbox"
                 checked={isCustomNode}
-                onChange={(e) => setIsCustomNode(e.target.checked)}
+                onChange={(e) => handleCustomNodeToggle(e.target.checked)}
               />
               <span className={styles.slider}></span>
             </label>

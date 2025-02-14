@@ -126,6 +126,17 @@ const SwapComponent: React.FC = () => {
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
+  const [isCustomNode, setIsCustomNode] = useState<boolean>(() => {
+    // Initialize from localStorage, default to false if not set
+    const saved = localStorage.getItem("isCustomNode");
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  // Save isCustomNode state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("isCustomNode", JSON.stringify(isCustomNode));
+  }, [isCustomNode]);
+
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
     transport: http(),
@@ -226,7 +237,7 @@ const SwapComponent: React.FC = () => {
           () =>
             getGnosisQuote({
               gnosisSourceToken,
-              address: addressUsed,
+              address,
               bzzAmount,
               nodeAddress,
               swarmConfig: {
@@ -316,32 +327,16 @@ const SwapComponent: React.FC = () => {
       const response = await fetch(`${beeApiUrl}/wallet`, {
         signal: AbortSignal.timeout(15000),
       });
-
+      setNodeAddress(DEFAULT_NODE_ADDRESS);
       if (response.ok) {
         const data = await response.json();
-        setAddressUsed(address as string);
         if (data.walletAddress) {
           setNodeAddress(data.walletAddress);
-          // Set address as node, we are in custom node mode
-          if (data.walletAddress != DEFAULT_NODE_ADDRESS) {
-            // Cannot use node's wallet address (data.walletAddress) here because:
-            // 1. LIFI SDK requires the 'fromAddress' in quote request to match the wallet that will sign the transaction
-            // 2. If we set a different address, LIFI will reject the quote with "Invalid sender address"
-            // 3. The transaction must be signed by the same address that's buying the tokens
-            // Therefore, we must use the connected wallet's address (address) instead of the node's address
-            // setAddressUsed(data.walletAddress);
-          }
           console.log("Node wallet address set:", data.walletAddress);
-        } else {
-          console.error("Wallet address not found in response");
-          setNodeAddress(DEFAULT_NODE_ADDRESS);
         }
-      } else {
-        setNodeAddress(DEFAULT_NODE_ADDRESS);
       }
     } catch (error) {
       console.error("Error fetching node wallet address:", error);
-      setNodeAddress(DEFAULT_NODE_ADDRESS);
     }
   };
 
@@ -520,9 +515,10 @@ const SwapComponent: React.FC = () => {
           await publicClient.simulateContract({
             address: contractUsed as `0x${string}`,
             abi: parseAbi(swarmConfig.swarmContractAbi),
-            functionName: "createBatch",
+            functionName: "createBatchRegistry",
             args: [
-              addressUsed,
+              address,
+              nodeAddress,
               swarmConfig.swarmBatchInitialBalance,
               swarmConfig.swarmBatchDepth,
               swarmConfig.swarmBatchBucketDepth,
@@ -789,9 +785,10 @@ const SwapComponent: React.FC = () => {
     // Create postage stamp transaction data
     const postagStampTxData = encodeFunctionData({
       abi: parseAbi(swarmConfig.swarmContractAbi),
-      functionName: "createBatch",
+      functionName: "createBatchRegistry",
       args: [
         address,
+        nodeAddress,
         swarmConfig.swarmBatchInitialBalance,
         swarmConfig.swarmBatchDepth,
         swarmConfig.swarmBatchBucketDepth,
@@ -1090,10 +1087,10 @@ const SwapComponent: React.FC = () => {
       }
 
       const waitForBatch = async (
-        maxRetries404 = 30,
-        maxRetries422 = 30,
+        maxRetries404 = 50,
+        maxRetries422 = 50,
         retryDelay404 = 3000,
-        retryDelay422 = 5000
+        retryDelay422 = 3000
       ): Promise<void> => {
         // First wait for batch to exist
         for (let attempt404 = 1; attempt404 <= maxRetries404; attempt404++) {
@@ -1558,6 +1555,8 @@ const SwapComponent: React.FC = () => {
           setNodeAddress={setNodeAddress}
           setBeeApiUrl={setBeeApiUrl}
           setShowHelp={setShowHelp}
+          isCustomNode={isCustomNode}
+          setIsCustomNode={setIsCustomNode}
         />
       ) : (
         <StampListSection
