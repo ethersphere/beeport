@@ -122,7 +122,6 @@ const SwapComponent: React.FC = () => {
   const [contractUsed, setContractUsed] = useState<string>(
     BATCH_REGISTRY_ADDRESS
   );
-  const [addressUsed, setAddressUsed] = useState<string>("");
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -547,22 +546,13 @@ const SwapComponent: React.FC = () => {
 
         if (createBatchReceipt.status === "success") {
           try {
-            // Batch will be created from registry contract or user address
-            if (nodeAddress == DEFAULT_NODE_ADDRESS) {
-              const batchId = await createBatchId(
-                swarmConfig.swarmBatchNonce,
-                BATCH_REGISTRY_ADDRESS,
-                setPostageBatchId
-              );
-              console.log("Created batch ID:", batchId);
-            } else {
-              const batchId = await createBatchId(
-                swarmConfig.swarmBatchNonce,
-                addressUsed,
-                setPostageBatchId
-              );
-              console.log("Created batch ID:", batchId);
-            }
+            // Batch will be created from registry contract for all cases
+            const batchId = await createBatchId(
+              swarmConfig.swarmBatchNonce,
+              BATCH_REGISTRY_ADDRESS,
+              setPostageBatchId
+            );
+            console.log("Created batch ID:", batchId);
 
             setStatusMessage({
               step: "Complete",
@@ -614,22 +604,13 @@ const SwapComponent: React.FC = () => {
           console.log("Created new Batch at trx", txHash);
 
           try {
-            // Batch will be created from registry contract or lifi contract
-            if (nodeAddress == DEFAULT_NODE_ADDRESS) {
-              const batchId = await createBatchId(
-                swarmConfig.swarmBatchNonce,
-                BATCH_REGISTRY_ADDRESS,
-                setPostageBatchId
-              );
-              console.log("Created batch ID:", batchId);
-            } else {
-              const batchId = await createBatchId(
-                swarmConfig.swarmBatchNonce,
-                LIFI_CONTRACT_ADDRESS,
-                setPostageBatchId
-              );
-              console.log("Created batch ID:", batchId);
-            }
+            // Batch will be created from registry contract for all cases
+            const batchId = await createBatchId(
+              swarmConfig.swarmBatchNonce,
+              BATCH_REGISTRY_ADDRESS,
+              setPostageBatchId
+            );
+            console.log("Created batch ID:", batchId);
           } catch (error) {
             console.error("Failed to create batch ID:", error);
           }
@@ -734,22 +715,13 @@ const SwapComponent: React.FC = () => {
             console.log("Created new Batch", txHash);
 
             try {
-              // Batch will be created from registry contract or lifi contract
-              if (nodeAddress == DEFAULT_NODE_ADDRESS) {
-                const batchId = await createBatchId(
-                  swarmConfig.swarmBatchNonce,
-                  BATCH_REGISTRY_ADDRESS,
-                  setPostageBatchId
-                );
-                console.log("Created batch ID:", batchId);
-              } else {
-                const batchId = await createBatchId(
-                  swarmConfig.swarmBatchNonce,
-                  LIFI_CONTRACT_ADDRESS,
-                  setPostageBatchId
-                );
-                console.log("Created batch ID:", batchId);
-              }
+              // Batch will be created from registry contract for all cases
+              const batchId = await createBatchId(
+                swarmConfig.swarmBatchNonce,
+                BATCH_REGISTRY_ADDRESS,
+                setPostageBatchId
+              );
+              console.log("Created batch ID:", batchId);
             } catch (error) {
               console.error("Failed to create batch ID:", error);
             }
@@ -935,7 +907,7 @@ const SwapComponent: React.FC = () => {
         const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
           await getGnosisQuote({
             gnosisSourceToken,
-            address: addressUsed,
+            address,
             bzzAmount,
             nodeAddress,
             swarmConfig,
