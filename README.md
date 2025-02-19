@@ -55,6 +55,7 @@ npx serve out
 
 ## How to run locally
 
+First install swarm desktop and run it or install and run bee node locally
 Set the BEE API URL to http://localhost:1633
 
 ## How to setup endpoint to serve content remotely
@@ -95,11 +96,6 @@ Use below to create 1GB bin file on linux, to make it 2GB put count to 32 etc
 dd if=/dev/urandom of=1GB.bin bs=64M count=16 iflag=fullblock
 ```
 
-## Using locally
-
-First install swarm desktop and run it or run bee node locally
-In the app set the local node config to http://127.0.0.1:1633
-
-## Checkin LIFI API endpoints
+## Check LIFI API endpoints
 
 Go to https://apidocs.li.fi/reference
