@@ -3,7 +3,7 @@ import styles from "./css/StampListSection.module.css";
 import { createPublicClient, http, formatUnits } from "viem";
 import { gnosis } from "viem/chains";
 
-import { BATCH_REGISTRY_ADDRESS, GNOSIS_STAMP_ADDRESS } from "./constants";
+import { BATCH_REGISTRY_ADDRESS } from "./constants";
 import { UploadStep } from "./types";
 
 interface StampListSectionProps {

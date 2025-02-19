@@ -164,10 +164,14 @@ const SwapComponent: React.FC = () => {
   }, [beeApiUrl]);
 
   useEffect(() => {
-    if (isConnected && publicClient && walletClient && !lifiConfigInitialized) {
+    if (isConnected && publicClient && walletClient) {
+      // Reinitialize LiFi whenever the wallet changes
       initializeLiFi();
+    } else {
+      // Reset the initialization flag when disconnected
+      setLifiConfigInitialized(false);
     }
-  }, [isConnected, publicClient, walletClient, lifiConfigInitialized]);
+  }, [isConnected, publicClient, walletClient, address]);
 
   useEffect(() => {
     // Execute first two functions immediately
@@ -290,6 +294,7 @@ const SwapComponent: React.FC = () => {
 
   // Initialize LiFi function
   const initializeLiFi = () => {
+    // Create new config instead of modifying existing one
     createConfig({
       integrator: "Swarm",
       providers: [
