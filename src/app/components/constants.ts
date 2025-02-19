@@ -11,13 +11,13 @@ export const LIFI_CONTRACT_ADDRESS =
 export const GNOSIS_BZZ_ADDRESS = "0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da";
 export const GNOSIS_STAMP_ADDRESS =
   "0x45a1502382541Cd610CC9068e88727426b696293";
-export const BEE_GATEWAY_URL = "http://95.216.6.96:3333/bzz/";
+export const BEE_GATEWAY_URL = "https://swarming.site/bzz/";
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   "0x86de783bf23bc13daef5a55ec531c198da8f10cf";
 // We are using USDC as this is what LIFI mostly uses now with Relay bridge for Gnosis
 export const GNOSIS_DESTINATION_TOKEN =
   "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83";
-export const DEFAULT_BEE_API_URL = "http://95.216.6.96:3333";
+export const DEFAULT_BEE_API_URL = "https://swarming.site";
 export const MIN_TOKEN_BALANCE_USD = 1; // Minimum USD balance to show token in dropdown
 
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
