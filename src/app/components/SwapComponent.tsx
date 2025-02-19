@@ -125,16 +125,7 @@ const SwapComponent: React.FC = () => {
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
-  const [isCustomNode, setIsCustomNode] = useState<boolean>(() => {
-    // Always start with custom node off
-    localStorage.setItem("isCustomNode", "false");
-    return false;
-  });
-
-  // Save isCustomNode state to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem("isCustomNode", JSON.stringify(isCustomNode));
-  }, [isCustomNode]);
+  const [isCustomNode, setIsCustomNode] = useState(false);
 
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
