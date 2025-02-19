@@ -118,7 +118,7 @@ const SwapComponent: React.FC = () => {
 
   const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>("");
-  const [beeApiUrl, setBeeApiUrl] = useState<string>("https://swarming.site");
+  const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
   const [contractUsed, setContractUsed] = useState<string>(
     BATCH_REGISTRY_ADDRESS
   );
