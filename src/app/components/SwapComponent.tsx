@@ -54,8 +54,7 @@ import {
   GNOSIS_DESTINATION_TOKEN,
   DAY_OPTIONS,
   BATCH_REGISTRY_ADDRESS,
-  LIFI_CONTRACT_ADDRESS,
-  GNOSIS_STAMP_ADDRESS,
+  DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
 } from "./constants";
 
@@ -80,7 +79,9 @@ const SwapComponent: React.FC = () => {
   const { data: walletClient } = useWalletClient();
 
   const [selectedChainId, setSelectedChainId] = useState(ChainId.DAI);
-  const [fromToken, setFromToken] = useState("");
+  const [fromToken, setFromToken] = useState(
+    "0x0000000000000000000000000000000000000000"
+  );
   const [executionResult, setExecutionResult] = useState<any | null>(null);
   const [lifiConfigInitialized, setLifiConfigInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
