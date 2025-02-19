@@ -60,6 +60,7 @@ import {
 
 import HelpSection from "./HelpSection";
 import StampListSection from "./StampListSection";
+import UploadHistorySection from "./UploadHistorySection";
 import SearchableChainDropdown from "./SearchableChainDropdown";
 import SearchableTokenDropdown from "./SearchableTokenDropdown";
 
@@ -127,6 +128,8 @@ const SwapComponent: React.FC = () => {
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
   const [isCustomNode, setIsCustomNode] = useState(false);
+
+  const [showUploadHistory, setShowUploadHistory] = useState(false);
 
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
@@ -930,6 +933,30 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  const saveUploadReference = (
+    reference: string,
+    stampId: string,
+    expiryDate: number,
+    filename?: string
+  ) => {
+    if (!address) return;
+
+    const savedHistory = localStorage.getItem("uploadHistory");
+    const history = savedHistory ? JSON.parse(savedHistory) : {};
+
+    const addressHistory = history[address] || [];
+    addressHistory.unshift({
+      reference,
+      timestamp: Date.now(),
+      filename,
+      stampId,
+      expiryDate,
+    });
+
+    history[address] = addressHistory;
+    localStorage.setItem("uploadHistory", JSON.stringify(history));
+  };
+
   const handleFileUpload = async () => {
     if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
       console.error("Missing file, postage batch ID, or wallet");
@@ -1167,6 +1194,15 @@ const SwapComponent: React.FC = () => {
         setIsLoading(false);
         setUploadProgress(0);
       }, 255000);
+
+      if (parsedReference.reference) {
+        saveUploadReference(
+          parsedReference.reference,
+          postageBatchId,
+          Date.now() + selectedDays * 24 * 60 * 60 * 1000, // Convert days to milliseconds
+          selectedFile?.name
+        );
+      }
     } catch (error) {
       console.error("Upload error:", error);
       setStatusMessage({
@@ -1200,7 +1236,7 @@ const SwapComponent: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      {!showHelp && !showStampList ? (
+      {!showHelp && !showStampList && !showUploadHistory ? (
         <>
           <h1 className={styles.title}>Buy BZZ and Upload data</h1>
 
@@ -1498,6 +1534,28 @@ const SwapComponent: React.FC = () => {
             </button>
             <button
               className={styles.configButton}
+              onClick={() => setShowUploadHistory(true)}
+              aria-label="Upload History"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </button>
+            <button
+              className={styles.configButton}
               onClick={() => setShowHelp(true)}
               aria-label="Settings"
             >
@@ -1527,7 +1585,7 @@ const SwapComponent: React.FC = () => {
           isCustomNode={isCustomNode}
           setIsCustomNode={setIsCustomNode}
         />
-      ) : (
+      ) : showStampList ? (
         <StampListSection
           setShowStampList={setShowStampList}
           address={address}
@@ -1536,7 +1594,12 @@ const SwapComponent: React.FC = () => {
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
         />
-      )}
+      ) : showUploadHistory ? (
+        <UploadHistorySection
+          address={address}
+          setShowUploadHistory={setShowUploadHistory}
+        />
+      ) : null}
     </div>
   );
 };

@@ -6,8 +6,8 @@ export const metadata = {
   title: "Swarming",
   description: "Swaram uploaded with multichain support",
   icons: {
-    icon: "/favicon.png", // Standard favicon
-    shortcut: "/favicon.png", // Shortcut icon for iOS
+    icon: "./favicon.png", // Standard favicon
+    shortcut: "./favicon.png", // Shortcut icon for iOS
   },
 };
 
