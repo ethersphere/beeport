@@ -70,6 +70,7 @@ import {
   performWithRetry,
   formatTokenBalance,
   toChecksumAddress,
+  logTokenRoute,
 } from "./utils";
 
 const SwapComponent: React.FC = () => {
@@ -636,39 +637,33 @@ const SwapComponent: React.FC = () => {
       message: "Getting quote...",
     });
 
-    const { crossChainContractQuoteResponse, crossChainContractCallsRoute } =
-      await getCrossChainQuote({
-        selectedChainId,
-        fromToken,
-        address: address as string,
-        toAmount,
-        gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-      });
+    const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
+      fromChain: selectedChainId.toString(),
+      fromToken: fromToken,
+      fromAddress: address.toString(),
+      toChain: ChainId.DAI.toString(),
+      toToken: GNOSIS_DESTINATION_TOKEN,
+      toAmount: toAmount,
+      contractCalls: [],
+      slippage: 0.5, //  0.005 represents 0.5%
+    };
 
-    setStatusMessage({
-      step: "Route",
-      message: "Executing first route...",
-    });
+    const crossChainContractQuoteResponse = await getContractCallsQuote(
+      crossChainContractQuoteRequest
+    );
 
-    const executedRoute = await executeRoute(crossChainContractCallsRoute, {
-      updateRouteHook: async (crossChainContractCallsRoute) => {
-        console.log("Updated Route 1:", crossChainContractCallsRoute);
-        const step1Status =
-          crossChainContractCallsRoute.steps[0]?.execution?.status;
-        console.log(`Step 1 Status: ${step1Status}`);
+    console.info(">> Cross Chain Quote", crossChainContractQuoteResponse);
+    logTokenRoute(
+      crossChainContractQuoteResponse.includedSteps,
+      "Cross Chain Quote"
+    );
 
-        setStatusMessage({
-          step: "Route",
-          message: `First route status: ${step1Status}`,
-        });
-
-        if (step1Status === "DONE") {
-          await handleChainSwitch(gnosisContractCallsRoute);
-        }
-      },
-    });
-
-    console.log("First route execution completed:", executedRoute);
+    return {
+      crossChainContractQuoteResponse,
+      crossChainContractCallsRoute: convertQuoteToRoute(
+        crossChainContractQuoteResponse
+      ),
+    };
   };
 
   const handleChainSwitch = async (contractCallsRoute: any) => {
@@ -794,9 +789,13 @@ const SwapComponent: React.FC = () => {
     );
 
     console.info(">> Contract Calls Quote", gnosisContactCallsQuoteResponse);
+    logTokenRoute(
+      gnosisContactCallsQuoteResponse.includedSteps,
+      "Contract Calls Quote"
+    );
 
     return {
-      gnosisContactCallsQuoteResponse: gnosisContactCallsQuoteResponse,
+      gnosisContactCallsQuoteResponse,
       gnosisContractCallsRoute: convertQuoteToRoute(
         gnosisContactCallsQuoteResponse
       ),
@@ -826,6 +825,10 @@ const SwapComponent: React.FC = () => {
     );
 
     console.info(">> Cross Chain Quote", crossChainContractQuoteResponse);
+    logTokenRoute(
+      crossChainContractQuoteResponse.includedSteps,
+      "Cross Chain Quote"
+    );
 
     return {
       crossChainContractQuoteResponse,

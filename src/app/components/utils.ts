@@ -89,3 +89,25 @@ export const performWithRetry = async <T>(
   }
   throw new Error(`${name} failed after ${maxRetries} attempts`);
 };
+
+/**
+ * Logs the token swap route from quote steps
+ * @param steps Array of steps from LIFI quote
+ * @param type String identifier for the quote type
+ */
+export const logTokenRoute = (steps: any[], type: string) => {
+  console.info(`>> ${type} Token Route:`);
+  steps.forEach((step, index) => {
+    const fromToken =
+      step.action.fromToken.name || step.action.fromToken.symbol;
+    const toToken = step.action.toToken.name || step.action.toToken.symbol;
+    const fromChain = step.action.fromChainId;
+    const toChain = step.action.toChainId;
+
+    console.info(
+      `   Step ${
+        index + 1
+      }: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
+    );
+  });
+};
