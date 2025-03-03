@@ -788,10 +788,10 @@ const SwapComponent: React.FC = () => {
       gnosisContractCallsQuoteRequest
     );
 
-    console.info(">> Contract Calls Quote", gnosisContactCallsQuoteResponse);
+    console.info(">> Gnosis Calls Quote", gnosisContactCallsQuoteResponse);
     logTokenRoute(
       gnosisContactCallsQuoteResponse.includedSteps,
-      "Contract Calls Quote"
+      "Gnosis Calls Quote"
     );
 
     return {

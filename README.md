@@ -29,29 +29,17 @@ npx serve out
 
 1. Remove config that skips typescript errors and lint errors, fix problems
 
-2. Get signature from wallet to confirm the ownership
+2. Add Gas on destination chain https://docs.li.fi/li.fi-api/li.fuel
 
-3. Use the signature when uploading data, send the sig to backend, check in backend that SIG correnspondes to the wallet that created batch (msg sender or we will have additional contract that connects bought and created stamps)
+3. Upload folders directly or add more support for non tar uploads
 
-4. Bookkeeper of bought stamps (smart contracts), add who paid for the stamp as we are putting all of them to the same node which will be uploading data for users
+4. Check spending cap on BZZ, if its above, dont ask for approval
 
-5. Make an upload form that sends data to backend, where backend checks if this can be uploaded to the given stamp or given wallet
+5. Check do we really need a signing if we just enforce domain from where uploads can come from, maybe we just check signing but no need to check it through stamp ownership
 
-6. Show for this wallet what stamps it has, maybe somehow show how much more space is there?
+6. Enforce on server checking of origin of domain, where the upload came from
 
-7. Add Gas on destination chain https://docs.li.fi/li.fi-api/li.fuel
-
-8. Upload folders directly or add more support for non tar uploads
-
-9. Check spending cap on BZZ, if its above, dont ask for approval
-
-10. Check do we really need a signing if we just enforce domain from where uploads can come from, maybe we just check signing but no need to check it through stamp ownership
-
-11. Can we have update to smart contract that we add actual owner of stamp and node through which it came?
-
-12. Enforce on server checking of origin of domain, where the upload came from
-
-13. Decide do we have 2 clear modes working separatly for Bee Public node and Custom nodes
+7. How do we handle downloads of data, do we enforce gitcoin passport or leave it to ENS? 
 
 ## How to run locally
 

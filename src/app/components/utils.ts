@@ -98,6 +98,18 @@ export const performWithRetry = async <T>(
 export const logTokenRoute = (steps: any[], type: string) => {
   console.info(`>> ${type} Token Route:`);
   steps.forEach((step, index) => {
+    // Check if this is a contract call step
+    if (
+      step.action.fromToken.symbol === "BZZ" &&
+      step.action.toToken.symbol === "BZZ" &&
+      step.action.toContractCallData?.length > 0
+    ) {
+      console.info(
+        `   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`
+      );
+      return;
+    }
+
     const fromToken =
       step.action.fromToken.name || step.action.fromToken.symbol;
     const toToken = step.action.toToken.name || step.action.toToken.symbol;
