@@ -121,6 +121,7 @@ const SwapComponent: React.FC = () => {
 
   const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>("");
+  const [stampTTL, setStampTTL] = useState<number>(0);
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
   const [contractUsed, setContractUsed] = useState<string>(
     BATCH_REGISTRY_ADDRESS
@@ -938,7 +939,7 @@ const SwapComponent: React.FC = () => {
 
   const saveUploadReference = (
     reference: string,
-    stampId: string,
+    postageBatchId: string,
     expiryDate: number,
     filename?: string
   ) => {
@@ -952,7 +953,7 @@ const SwapComponent: React.FC = () => {
       reference,
       timestamp: Date.now(),
       filename,
-      stampId,
+      stampId: postageBatchId,
       expiryDate,
     });
 
@@ -1199,10 +1200,11 @@ const SwapComponent: React.FC = () => {
       }, 255000);
 
       if (parsedReference.reference) {
+        const stamp = await checkStampStatus(postageBatchId);
         saveUploadReference(
           parsedReference.reference,
           postageBatchId,
-          Date.now() + selectedDays * 24 * 60 * 60 * 1000, // Convert days to milliseconds
+          stamp.batchTTL * 1000, // Convert seconds to milliseconds
           selectedFile?.name
         );
       }

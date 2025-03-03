@@ -13,6 +13,7 @@ interface StampListSectionProps {
   setPostageBatchId: (id: string) => void;
   setShowOverlay: (show: boolean) => void;
   setUploadStep: (step: UploadStep) => void;
+  setStampTTL: (ttl: number) => void;
 }
 
 interface BatchEvent {
@@ -45,6 +46,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setPostageBatchId,
   setShowOverlay,
   setUploadStep,
+  setStampTTL,
 }) => {
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,6 +131,14 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     fetchStamps();
   }, [address, beeApiUrl]);
 
+  const handleStampSelect = (stamp: any) => {
+    setPostageBatchId(stamp.batchID);
+    setStampTTL(stamp.batchTTL);
+    setShowOverlay(true);
+    setUploadStep("ready");
+    setShowStampList(false);
+  };
+
   return (
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
@@ -174,10 +184,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                 <button
                   className={styles.uploadWithStampButton}
                   onClick={() => {
-                    setPostageBatchId(stamp.batchId.slice(2));
-                    setShowStampList(false);
-                    setShowOverlay(true);
-                    setUploadStep("ready" as UploadStep);
+                    handleStampSelect(stamp);
                   }}
                 >
                   Upload with this stamp
