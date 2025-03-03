@@ -597,7 +597,7 @@ const SwapComponent: React.FC = () => {
 
         setStatusMessage({
           step: "Contract",
-          message: `Contract calls status: ${status}`,
+          message: `Status update: ${status?.replace(/_/g, " ")}`,
         });
 
         if (status === "DONE") {
@@ -899,7 +899,7 @@ const SwapComponent: React.FC = () => {
       } else {
         setStatusMessage({
           step: "Quoting",
-          message: "Getting contract calls quote...",
+          message: "Getting quote...",
         });
 
         const gnosisSourceToken =
