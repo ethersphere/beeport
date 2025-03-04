@@ -816,26 +816,34 @@
 }
 
 .configContainer {
-  position: relative;
-  width: 100%;
   display: flex;
-  justify-content: flex-end;
-  padding: 0; /* Added padding-right and padding-top */
-  margin-top: 10px; /* Added margin-top */
-  gap: 10px; /* Added gap between buttons */
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
 }
 
 .configButton {
-  width: 40px;
-  height: 40px;
-  padding: 8px;
+  padding: 8px 16px;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: transform 0.2s ease;
-  display: flex; /* Added for better icon alignment */
-  align-items: center; /* Added for better icon alignment */
-  justify-content: center; /* Added for better icon alignment */
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #666;
+}
+
+.textButton {
+  font-weight: 500;
+}
+
+.textButton:hover {
+  color: #333;
 }
 
 .configButton svg {
@@ -843,7 +851,7 @@
 }
 
 .configButton:hover {
-  transform: rotate(30deg);
+  color: #333;
 }
 
 .chainItem {
