@@ -84,7 +84,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
                   <a
-                    href={`${DEFAULT_BEE_API_URL}/bzz/${record.reference}`}
+                    href={`${DEFAULT_BEE_API_URL}/bzz/${record.reference}/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.link}

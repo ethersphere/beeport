@@ -74,7 +74,7 @@ Sugges to do it in specific way, go to /out directory and then run
 tar -cf swap_uploader.tar .
 ```
 
-or tar -C my_folder -cf my_folder.tar .
+or tar -C out -cf swap_uploader.tar .
 
 so you get TAR archive of static files export and there is no subdirectory when its uploaded to Swarm
 

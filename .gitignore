@@ -15,6 +15,7 @@
 
 # production
 /build
+swap_uploader.tar
 
 # misc
 .DS_Store
