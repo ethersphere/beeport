@@ -41,14 +41,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
       <h1 className={styles.title}>Help</h1>
 
       <div className={styles.helpContent}>
-        <div className={styles.configHeader}>
-          <h2>Configuration</h2>
-          <button
-            className={`${styles.button} ${styles.helpButton}`}
-            onClick={() => setShowHelp(false)}
-          >
-            Back
-          </button>
+        <div className={styles.helpHeader}>
+          <h2>Settings</h2>
         </div>
 
         <div className={styles.customNodeSection}>

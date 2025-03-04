@@ -144,12 +144,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       <div className={styles.stampListContent}>
         <div className={styles.stampListHeader}>
           <h2>Your Buckets</h2>
-          <button
-            onClick={() => setShowStampList(false)}
-            className={styles.stampListCloseButton}
-          >
-            Back
-          </button>
         </div>
 
         {isLoading ? (

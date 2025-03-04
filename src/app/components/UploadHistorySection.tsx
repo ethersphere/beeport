@@ -62,12 +62,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
     <div className={styles.historyContainer}>
       <div className={styles.header}>
         <h2>Upload History</h2>
-        <button
-          className={styles.backButton}
-          onClick={() => setShowUploadHistory(false)}
-        >
-          Back
-        </button>
       </div>
 
       {history.length === 0 ? (

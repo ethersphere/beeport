@@ -879,3 +879,41 @@
 .selected {
   background-color: #e6e6e6;
 }
+
+.tabContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 20px;
+  width: fit-content;
+  margin: 0 auto 20px;
+}
+
+.tabButton {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #666;
+  border-radius: 16px;
+}
+
+.tabButton:hover {
+  color: #333;
+  background: #eee;
+}
+
+.activeTab {
+  background: #eee;
+  color: #333;
+  font-weight: 500;
+}
