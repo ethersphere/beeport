@@ -1214,7 +1214,7 @@ const SwapComponent: React.FC = () => {
         saveUploadReference(
           parsedReference.reference,
           postageBatchId,
-          stamp.batchTTL * 1000, // Convert seconds to milliseconds
+          stamp.batchTTL,
           selectedFile?.name
         );
       }
@@ -1253,7 +1253,7 @@ const SwapComponent: React.FC = () => {
     <div className={styles.container}>
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
-          <h1 className={styles.title}>Buy BZZ and Upload data</h1>
+          <h1 className={styles.title}>Buy Storage and Upload data</h1>
 
           <div className={styles.inputGroup}>
             <label className={styles.label}>From Chain:</label>
@@ -1303,7 +1303,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Storage Block:</label>
+            <label className={styles.label}>Storage Bucket:</label>
             <select
               className={styles.select}
               value={selectedDepth}

@@ -50,7 +50,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
   }, [address]);
 
   const formatDate = (timestamp: number) => {
+    if (timestamp === undefined) return "Unknown";
     return new Date(timestamp).toLocaleDateString();
+  };
+
+  const formatExpiryDays = (ttl: number) => {
+    return `${Math.floor(ttl / 86400)} days`;
   };
 
   return (
@@ -107,7 +112,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
                   <span className={styles.expiryDate}>
-                    {formatDate(record.expiryDate)}
+                    {formatExpiryDays(record.expiryDate)}
                   </span>
                 </div>
               </div>

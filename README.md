@@ -39,7 +39,7 @@ npx serve out
 
 6. Enforce on server checking of origin of domain, where the upload came from
 
-7. How do we handle downloads of data, do we enforce gitcoin passport or leave it to ENS? 
+7. How do we handle downloads of data, do we enforce gitcoin passport or leave it to ENS?
 
 ## How to run locally
 
@@ -73,6 +73,8 @@ Sugges to do it in specific way, go to /out directory and then run
 ```
 tar -cf swap_uploader.tar .
 ```
+
+or tar -C my_folder -cf my_folder.tar .
 
 so you get TAR archive of static files export and there is no subdirectory when its uploaded to Swarm
 

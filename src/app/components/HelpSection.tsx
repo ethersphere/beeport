@@ -138,7 +138,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <h3>How long does it take for my storage to become available?</h3>
             <p>
               After purchasing storage, it typically takes 2-5 minutes for your
-              postage stamps to become usable. The app will automatically notify
+              storage bucket to become usable. The app will automatically notify
               you once your storage is ready for use.
             </p>
           </div>
@@ -149,6 +149,14 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               choose too low amount of USD value to be crossed between chains.
               For below $0.5 you should try to swap and upload directly from
               Gnosis chain.
+            </p>
+          </div>
+          <div className={styles.faqItem}>
+            <h3>How to prepare TAR archive? </h3>
+            <p>
+              Use "tar -C my_folder -cf my_folder.tar ." command to make your
+              folder ready for upload as TAR file. Swarm doesnt suppor gzip so
+              dont include -z flag
             </p>
           </div>
         </div>
