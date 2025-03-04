@@ -1082,11 +1082,11 @@ const SwapComponent: React.FC = () => {
           ])
         );
 
-        const signature = await walletClient.signMessage({
+        const signedMessage = await walletClient.signMessage({
           message: { raw: messageHash },
         });
 
-        baseHeaders["x-upload-signature"] = signature;
+        baseHeaders["x-upload-signed-message"] = signedMessage;
         baseHeaders["x-uploader-address"] = address as string;
         baseHeaders["x-file-name"] = selectedFile.name;
       }

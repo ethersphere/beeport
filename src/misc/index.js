@@ -45,15 +45,15 @@ const gnosisPublicClient = createPublicClient({
 // Modify verifySignature to only check POST requests to /bzz
 const verifySignature = async (req, res, next) => {
     if (req.path === "/bzz" && req.method === "POST") {
-        const signature = req.headers["x-upload-signature"];
+        const signedMessage = req.headers["x-upload-signed-message"];
         const uploaderAddress = req.headers["x-uploader-address"];
         const fileName = req.headers["x-file-name"];
         const batchId = req.headers["swarm-postage-batch-id"];
 
-        if (!signature || !uploaderAddress || !fileName || !batchId) {
+        if (!signedMessage || !uploaderAddress || !fileName || !batchId) {
             return res.status(401).json({
                 error: "Missing required headers",
-                missing: { signature, uploaderAddress, fileName, batchId },
+                missing: { signedMessage, uploaderAddress, fileName, batchId },
             });
         }
 
@@ -68,12 +68,12 @@ const verifySignature = async (req, res, next) => {
             const recoveredAddress = await gnosisPublicClient.verifyMessage({
                 address: uploaderAddress,
                 message: { raw: messageHash },
-                signature,
+                signedMessage,
             });
 
             if (!recoveredAddress) {
                 return res.status(401).json({
-                    error: "Invalid signature",
+                    error: "Invalid signed message",
                     recovered: recoveredAddress,
                     provided: uploaderAddress,
                 });
