@@ -38,8 +38,6 @@ const HelpSection: React.FC<HelpSectionProps> = ({
 
   return (
     <div className={styles.helpContainer}>
-      <h1 className={styles.title}>Help</h1>
-
       <div className={styles.helpContent}>
         <div className={styles.helpHeader}>
           <h2>Settings</h2>
