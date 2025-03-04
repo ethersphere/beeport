@@ -9,17 +9,15 @@ const {
 } = require("viem");
 const { gnosis } = require("viem/chains");
 
-const POSTAGE_STAMP_ABI = [
+const BATCH_REGISTRY_ABI = [
     {
-        name: "batchOwner",
+        name: "getBatchPayer",
         type: "function",
         stateMutability: "view",
         inputs: [{ type: "bytes32", name: "batchId" }],
         outputs: [{ type: "address" }],
     },
 ];
-
-const POSTAGE_STAMP_ADDRESS = "0x45a1502382541Cd610CC9068e88727426b696293";
 
 const app = express();
 
@@ -49,6 +47,7 @@ const verifySignature = async (req, res, next) => {
         const uploaderAddress = req.headers["x-uploader-address"];
         const fileName = req.headers["x-file-name"];
         const batchId = req.headers["swarm-postage-batch-id"];
+        const registryAddress = req.headers["registry-address"];
 
         if (!signedMessage || !uploaderAddress || !fileName || !batchId) {
             return res.status(401).json({
@@ -77,6 +76,37 @@ const verifySignature = async (req, res, next) => {
                     recovered: recoveredAddressValid,
                     provided: uploaderAddress,
                 });
+            }
+
+            // Verify batch ownership if registry address is provided
+            if (registryAddress) {
+                try {
+                    console.log(`Verifying batch ownership for batch ${batchId} with registry ${registryAddress}`);
+
+                    const batchPayer = await gnosisPublicClient.readContract({
+                        address: registryAddress,
+                        abi: BATCH_REGISTRY_ABI,
+                        functionName: "getBatchPayer",
+                        args: [`0x${batchId}`],
+                    });
+
+                    console.log(`Batch payer: ${batchPayer}, Uploader: ${uploaderAddress}`);
+
+                    // Case-insensitive comparison of addresses
+                    if (batchPayer.toLowerCase() !== uploaderAddress.toLowerCase()) {
+                        return res.status(403).json({
+                            error: "Not authorized to use this batch",
+                            batchPayer: batchPayer,
+                            uploader: uploaderAddress,
+                        });
+                    }
+                } catch (batchError) {
+                    console.error("Error verifying batch ownership:", batchError);
+                    return res.status(500).json({
+                        error: "Failed to verify batch ownership",
+                        details: batchError.message,
+                    });
+                }
             }
 
             next();
