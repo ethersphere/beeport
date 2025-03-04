@@ -121,7 +121,7 @@ const SwapComponent: React.FC = () => {
 
   const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>("");
-  const [stampTTL, setStampTTL] = useState<number>(0);
+  const [selectedStampTTL, setSelectedStampTTL] = useState<number>(0);
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
   const [contractUsed, setContractUsed] = useState<string>(
     BATCH_REGISTRY_ADDRESS
@@ -970,6 +970,10 @@ const SwapComponent: React.FC = () => {
   const handleFileUpload = async () => {
     if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
       console.error("Missing file, postage batch ID, or wallet");
+      console.log("selectedFile", selectedFile);
+      console.log("postageBatchId", postageBatchId);
+      console.log("walletClient", walletClient);
+      console.log("publicClient", publicClient);
       return;
     }
 
@@ -1604,6 +1608,7 @@ const SwapComponent: React.FC = () => {
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
+          setSelectedStampTTL={setSelectedStampTTL}
         />
       ) : showUploadHistory ? (
         <UploadHistorySection
