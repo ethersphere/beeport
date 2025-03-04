@@ -65,16 +65,16 @@ const verifySignature = async (req, res, next) => {
                 ])
             );
 
-            const recoveredAddress = await gnosisPublicClient.verifyMessage({
+            const recoveredAddressValid = await gnosisPublicClient.verifyMessage({
                 address: uploaderAddress,
                 message: { raw: messageHash },
                 signedMessage,
             });
 
-            if (!recoveredAddress) {
+            if (!recoveredAddressValid) {
                 return res.status(401).json({
                     error: "Invalid signed message",
-                    recovered: recoveredAddress,
+                    recovered: recoveredAddressValid,
                     provided: uploaderAddress,
                 });
             }
