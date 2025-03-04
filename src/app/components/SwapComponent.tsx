@@ -638,33 +638,39 @@ const SwapComponent: React.FC = () => {
       message: "Getting quote...",
     });
 
-    const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
-      fromChain: selectedChainId.toString(),
-      fromToken: fromToken,
-      fromAddress: address.toString(),
-      toChain: ChainId.DAI.toString(),
-      toToken: GNOSIS_DESTINATION_TOKEN,
-      toAmount: toAmount,
-      contractCalls: [],
-      slippage: 0.5, //  0.005 represents 0.5%
-    };
+    const { crossChainContractQuoteResponse, crossChainContractCallsRoute } =
+      await getCrossChainQuote({
+        selectedChainId,
+        fromToken,
+        address: address as string,
+        toAmount,
+        gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+      });
 
-    const crossChainContractQuoteResponse = await getContractCallsQuote(
-      crossChainContractQuoteRequest
-    );
+    setStatusMessage({
+      step: "Route",
+      message: "Executing first route...",
+    });
 
-    console.info(">> Cross Chain Quote", crossChainContractQuoteResponse);
-    logTokenRoute(
-      crossChainContractQuoteResponse.includedSteps,
-      "Cross Chain Quote"
-    );
+    const executedRoute = await executeRoute(crossChainContractCallsRoute, {
+      updateRouteHook: async (crossChainContractCallsRoute) => {
+        console.log("Updated Route 1:", crossChainContractCallsRoute);
+        const step1Status =
+          crossChainContractCallsRoute.steps[0]?.execution?.status;
+        console.log(`Step 1 Status: ${step1Status}`);
 
-    return {
-      crossChainContractQuoteResponse,
-      crossChainContractCallsRoute: convertQuoteToRoute(
-        crossChainContractQuoteResponse
-      ),
-    };
+        setStatusMessage({
+          step: "Route",
+          message: `First route status: ${step1Status?.replace(/_/g, " ")}`,
+        });
+
+        if (step1Status === "DONE") {
+          await handleChainSwitch(gnosisContractCallsRoute);
+        }
+      },
+    });
+
+    console.log("First route execution completed:", executedRoute);
   };
 
   const handleChainSwitch = async (contractCallsRoute: any) => {
