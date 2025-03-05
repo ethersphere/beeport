@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { formatUnits } from "viem";
 import styles from "./css/SearchableTokenDropdown.module.css";
 import { toChecksumAddress, formatTokenBalance } from "./utils";
@@ -30,12 +30,17 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   minBalanceUsd = MIN_TOKEN_BALANCE_USD,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [localSelectedToken, setLocalSelectedToken] =
+    useState(selectedTokenInfo);
 
   const getLoadingText = () => {
-    if (isWalletLoading) return "Loading wallet...";
-    if (!isConnected) return "Connect wallet to see tokens";
-    if (isTokensLoading) return "Loading tokens...";
-    return "Select Token";
+    if (isWalletLoading || isTokensLoading) {
+      return "Finding tokens...";
+    }
+    if (!isConnected) {
+      return "Connect wallet to see tokens";
+    }
+    return "No tokens with balance";
   };
 
   const renderTokenContent = (
@@ -64,43 +69,36 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
     </>
   );
 
-  const availableTokensList =
-    isConnected &&
-    !isWalletLoading &&
-    !isTokensLoading &&
-    availableTokens?.tokens[selectedChainId]
-      ?.map((token: any) => {
-        if (!token.address) return null;
+  const availableTokensList = tokenBalances?.[selectedChainId]
+    ?.filter((token: any) => {
+      const balance = Number(formatUnits(token.amount || 0n, token.decimals));
+      const usdValue = balance * Number(token.priceUSD);
+      return usdValue >= minBalanceUsd;
+    })
+    .map((token: any) => {
+      const balance = Number(formatUnits(token.amount || 0n, token.decimals));
+      const usdValue = balance * Number(token.priceUSD);
+      return { token, balance, usdValue, address: token.address };
+    })
+    .sort((a: any, b: any) => b.usdValue - a.usdValue);
 
-        const checksumTokenAddress = toChecksumAddress(token.address);
-        if (!checksumTokenAddress) {
-          console.log("Invalid token address:", token);
-          return null;
-        }
+  useEffect(() => {
+    // Reset token selection when chain changes
+    setLocalSelectedToken(null);
+    onTokenSelect("", null);
+  }, [selectedChainId]);
 
-        const balance = tokenBalances?.[selectedChainId]?.find(
-          (t: any) => toChecksumAddress(t.address) === checksumTokenAddress
-        );
-        const balanceInTokens = balance
-          ? formatUnits(balance.amount || 0n, token.decimals)
-          : "0";
-        const usdValue = Number(balanceInTokens) * Number(token.priceUSD);
-
-        if (
-          usdValue >= minBalanceUsd ||
-          checksumTokenAddress === toChecksumAddress(fromToken)
-        ) {
-          return {
-            token,
-            balance: Number(balanceInTokens),
-            usdValue,
-            address: checksumTokenAddress,
-          };
-        }
-        return null;
-      })
-      .filter((item: any) => item !== null)
-      .sort((a: any, b: any) => b.usdValue - a.usdValue);
+  useEffect(() => {
+    if (availableTokensList?.length > 0 && !selectedTokenInfo) {
+      const firstToken = tokenBalances?.[selectedChainId]?.find(
+        (t: any) =>
+          toChecksumAddress(t.address) === availableTokensList[0].address
+      );
+      if (firstToken) {
+        onTokenSelect(availableTokensList[0].address, firstToken);
+      }
+    }
+  }, [availableTokensList, selectedTokenInfo, selectedChainId]);
 
   return (
     <div className={styles.dropdownContainer}>
@@ -136,6 +134,12 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
                 selectedTokenInfo.decimals
               )
             ) * Number(selectedTokenInfo.priceUSD)
+          )
+        ) : availableTokensList && availableTokensList.length > 0 ? (
+          renderTokenContent(
+            availableTokensList[0].token,
+            availableTokensList[0].balance,
+            availableTokensList[0].usdValue
           )
         ) : (
           <div className={styles.placeholder}>{getLoadingText()}</div>

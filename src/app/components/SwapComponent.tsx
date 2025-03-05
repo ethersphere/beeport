@@ -136,6 +136,9 @@ const SwapComponent: React.FC = () => {
       setIsWalletLoading(true);
       if (isConnected && address) {
         await fetchTokensAndBalances();
+        setFromToken("");
+        setSelectedTokenInfo(null);
+        setSelectedDays(null);
       }
       setIsWalletLoading(false);
     };
@@ -152,6 +155,10 @@ const SwapComponent: React.FC = () => {
     if (chainId) {
       setSelectedChainId(chainId);
       setSelectedDays(null);
+      setFromToken("");
+      setSelectedTokenInfo(null);
+      setTokenBalances(null);
+      fetchTokensAndBalances();
     }
   }, [chainId]);
 
