@@ -27,14 +27,7 @@ import {
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, encodeFunctionData, formatUnits } from "viem";
-import {
-  keccak256,
-  encodeAbiParameters,
-  parseAbiParameters,
-  getAddress,
-  createPublicClient,
-  http,
-} from "viem";
+import { getAddress, createPublicClient, http } from "viem";
 
 import { gnosis } from "viem/chains";
 import {
@@ -90,7 +83,7 @@ const SwapComponent: React.FC = () => {
   const [showAddress, setShowAddress] = useState(false);
   const [isClientConnected, setIsClientConnected] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
-  const [selectedDays, setSelectedDays] = useState(1);
+  const [selectedDays, setSelectedDays] = useState<number | null>(null);
   const [selectedDepth, setSelectedDepth] = useState(20);
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
@@ -158,6 +151,7 @@ const SwapComponent: React.FC = () => {
   useEffect(() => {
     if (chainId) {
       setSelectedChainId(chainId);
+      setSelectedDays(null);
     }
   }, [chainId]);
 
@@ -207,8 +201,33 @@ const SwapComponent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentPrice !== null) {
+    if (!selectedDays || selectedDays === 0) {
+      setTotalUsdAmount(null);
+      setSwarmConfig(DEFAULT_SWARM_CONFIG);
+      return;
+    }
+
+    if (!currentPrice) return;
+
+    try {
+      setIsPriceEstimating(true);
+      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+      const totalPricePerDuration =
+        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays);
+      setSwarmConfig((prev) => ({
+        ...prev,
+        initialPaymentPerChunkPerDay,
+        totalPricePerDuration,
+      }));
+
+      // Call updateSwarmBatchInitialBalance after setting config
       updateSwarmBatchInitialBalance();
+    } catch (error) {
+      console.error("Error calculating total cost:", error);
+      setTotalUsdAmount(null);
+      setSwarmConfig(DEFAULT_SWARM_CONFIG);
+    } finally {
+      setIsPriceEstimating(false);
     }
   }, [currentPrice, selectedDays, selectedDepth]);
 
@@ -284,7 +303,7 @@ const SwapComponent: React.FC = () => {
       }
     };
 
-    if (isConnected && selectedChainId && fromToken) {
+    if (isConnected && selectedChainId && fromToken && selectedDays) {
       updatePriceEstimate();
     }
   }, [
@@ -445,7 +464,7 @@ const SwapComponent: React.FC = () => {
     if (currentPrice !== null) {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
-        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays);
+        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
       setSwarmConfig((prev) => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
@@ -1286,7 +1305,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(true);
           }}
         >
-          Uploads
+          History
         </button>
         <button
           className={`${styles.tabButton} ${showHelp ? styles.activeTab : ""}`}
@@ -1348,21 +1367,6 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Number of Days:</label>
-            <select
-              className={styles.select}
-              value={selectedDays}
-              onChange={(e) => setSelectedDays(Number(e.target.value))}
-            >
-              {DAY_OPTIONS.map((days) => (
-                <option key={days} value={days}>
-                  {days} {days === 1 ? "day" : "days"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className={styles.inputGroup}>
             <label className={styles.label}>Storage Bucket:</label>
             <select
               className={styles.select}
@@ -1377,25 +1381,41 @@ const SwapComponent: React.FC = () => {
             </select>
           </div>
 
-          {totalUsdAmount !== null && (
-            <p className={styles.priceInfo}>
-              {Number(totalUsdAmount) === 0
-                ? "Estimating total cost..."
-                : liquidityError
-                ? "Not enough liquidity for this swap"
-                : `Total cost ~ $${Number(totalUsdAmount).toFixed(2)}`}
-            </p>
-          )}
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Number of Days:</label>
+            <select
+              className={styles.select}
+              value={selectedDays || ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedDays(value === "" ? null : Number(value));
+              }}
+            >
+              <option value="">Please select days</option>
+              {DAY_OPTIONS.map((days) => (
+                <option key={days} value={days}>
+                  {days} {days === 1 ? "day" : "days"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedDays &&
+            totalUsdAmount !== null &&
+            Number(totalUsdAmount) !== 0 && (
+              <p className={styles.priceInfo}>
+                {liquidityError
+                  ? "Not enough liquidity for this swap"
+                  : `Total cost ~ $${Number(totalUsdAmount).toFixed(2)}`}
+              </p>
+            )}
 
           <button
-            className={styles.button}
+            className={`${styles.button} ${
+              !selectedDays ? styles.buttonDisabled : ""
+            }`}
+            disabled={!selectedDays}
             onClick={handleSwap}
-            disabled={
-              !isClientConnected ||
-              isLoading ||
-              liquidityError ||
-              isPriceEstimating
-            }
           >
             {isLoading ? (
               <div>Loading...</div>

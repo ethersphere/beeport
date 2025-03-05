@@ -51,7 +51,7 @@
 }
 
 .button:hover {
-  background-color: #45a049;
+  background-color: #357a38;
 }
 
 .button:disabled {
@@ -916,4 +916,13 @@
   background: #eee;
   color: #333;
   font-weight: 500;
+}
+
+.buttonDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.buttonDisabled:hover {
+  background-color: #4caf50;
 }
