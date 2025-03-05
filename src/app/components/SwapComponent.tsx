@@ -135,10 +135,10 @@ const SwapComponent: React.FC = () => {
     const init = async () => {
       setIsWalletLoading(true);
       if (isConnected && address) {
+        setSelectedDays(null);
         await fetchTokensAndBalances();
         setFromToken("");
         setSelectedTokenInfo(null);
-        setSelectedDays(null);
       }
       setIsWalletLoading(false);
     };
@@ -316,11 +316,8 @@ const SwapComponent: React.FC = () => {
   }, [
     isConnected,
     address,
-    fromToken,
-    selectedChainId,
     swarmConfig.swarmBatchInitialBalance,
     selectedDepth,
-    nodeAddress,
   ]);
 
   // Initialize LiFi function
