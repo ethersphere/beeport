@@ -1064,6 +1064,13 @@ const SwapComponent: React.FC = () => {
     };
 
     try {
+      const messageToSign = `${selectedFile.name}:${postageBatchId}`;
+      console.log("Message to sign:", messageToSign);
+
+      const signedMessage = await walletClient.signMessage({
+        message: messageToSign, // Just sign the plain string directly
+      });
+
       const baseHeaders: Record<string, string> = {
         "Content-Type": isTarFile ? "application/x-tar" : selectedFile.type,
         "swarm-postage-batch-id": postageBatchId,
@@ -1076,20 +1083,10 @@ const SwapComponent: React.FC = () => {
       }
 
       if (!isLocalhost) {
-        const messageHash = keccak256(
-          encodeAbiParameters(parseAbiParameters(["string", "bytes32"]), [
-            selectedFile.name,
-            `0x${postageBatchId}`,
-          ])
-        );
-
-        const signedMessage = await walletClient.signMessage({
-          message: { raw: messageHash },
-        });
-
         baseHeaders["x-upload-signed-message"] = signedMessage;
         baseHeaders["x-uploader-address"] = address as string;
         baseHeaders["x-file-name"] = selectedFile.name;
+        baseHeaders["x-message-content"] = messageToSign; // Send the original message for verification
       }
 
       if (isWebpageUpload && isTarFile) {
