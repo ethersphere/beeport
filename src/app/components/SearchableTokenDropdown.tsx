@@ -105,7 +105,11 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   return (
     <div className={styles.dropdownContainer}>
       <div
-        className={`${styles.dropdownButton} ${isOpen ? styles.open : ""}`}
+        className={`${styles.dropdownButton} ${isOpen ? styles.open : ""} ${
+          availableTokensList && availableTokensList.length > 1
+            ? styles.clickable
+            : ""
+        }`}
         onClick={() => {
           if (
             !isWalletLoading &&

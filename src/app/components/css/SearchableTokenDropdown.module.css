@@ -80,18 +80,16 @@
 }
 
 .dropdownButton {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
   background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: border-color 0.2s;
 }
 
-.dropdownButton:hover {
+.clickable:hover {
   border-color: #999;
 }
 
@@ -150,4 +148,8 @@
 
 .placeholder {
   color: #666;
+}
+
+.clickable {
+  cursor: pointer;
 }
