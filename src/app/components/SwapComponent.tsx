@@ -1412,15 +1412,17 @@ const SwapComponent: React.FC = () => {
 
           <button
             className={`${styles.button} ${
-              !selectedDays ? styles.buttonDisabled : ""
+              !selectedDays || isPriceEstimating ? styles.buttonDisabled : ""
             }`}
-            disabled={!selectedDays}
+            disabled={!selectedDays || isPriceEstimating}
             onClick={handleSwap}
           >
             {isLoading ? (
               <div>Loading...</div>
+            ) : !selectedDays ? (
+              "Choose Timespan"
             ) : isPriceEstimating ? (
-              "Execute Swap"
+              "Calculating Cost..."
             ) : liquidityError ? (
               "Cannot Swap - Can't Find Route"
             ) : (
