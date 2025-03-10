@@ -151,3 +151,41 @@ input::placeholder {
 .dropdownContainer {
   z-index: 100;
 }
+
+/* Rainbow Kit Custom Styles */
+[data-rk] .ju367v4c {
+  /* Custom connect button styles */
+  background-color: var(--swarm-accent) !important;
+  transition: background-color 0.3s ease;
+}
+
+[data-rk] .ju367v4c:hover {
+  background-color: var(--swarm-accent-hover) !important;
+}
+
+/* Modal styles */
+[data-rk] .ju367v1j {
+  background-color: var(--swarm-black) !important;
+  border: 1px solid var(--swarm-border) !important;
+}
+
+/* List items in the modal */
+[data-rk] .ju367v0 {
+  background-color: var(--swarm-dark) !important;
+  border: 1px solid var(--swarm-border) !important;
+}
+
+/* List item hover */
+[data-rk] .ju367v0:hover {
+  background-color: var(--swarm-dark-gray) !important;
+}
+
+/* Button text */
+[data-rk] .ju367va0 {
+  color: var(--swarm-text-primary) !important;
+}
+
+/* Selected Wallet Icon background */
+[data-rk] .ju367v2s {
+  background-color: var(--swarm-dark) !important;
+}
