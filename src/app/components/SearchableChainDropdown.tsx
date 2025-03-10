@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import styles from "./css/SearchableChainDropdown.module.css";
 import { Chain } from "@lifi/sdk";
 
-interface ChainDropdownProps {
+export interface ChainDropdownProps {
   selectedChainId: number;
   isLoading: boolean;
   availableChains: Chain[];
   onChainSelect: (chainId: number) => void;
+  isChainsLoading: boolean;
 }
 
 const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
