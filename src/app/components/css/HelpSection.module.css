@@ -7,27 +7,28 @@
 
 .title {
   text-align: center;
-  color: #333;
+  color: #ffffff;
   margin-bottom: 20px;
 }
 
 .helpContent {
-  background-color: #ffffff;
-  border-radius: 8px;
+  background-color: #0f131a;
+  border-radius: 12px;
   padding: 2rem;
   margin: 2rem 0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border: 1px solid #30363d;
 }
 
 .helpContent h2 {
-  color: #2d3748;
+  color: #ffffff;
   margin-bottom: 1.5rem;
   font-size: 1.5rem;
   font-weight: 600;
 }
 
 .helpContent h3 {
-  color: #4a5568;
+  color: #ffffff;
   margin-bottom: 0.5rem;
   font-size: 1.2rem;
   font-weight: 500;
@@ -41,10 +42,11 @@
 
 .helpContent li {
   margin-bottom: 1.5rem;
+  color: #8b949e;
 }
 
 .helpContent p {
-  color: #4a5568;
+  color: #8b949e;
   line-height: 1.6;
 }
 
@@ -64,25 +66,35 @@
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
+  color: #ffffff;
 }
 
 .input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 12px 16px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #ffffff;
   font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input:focus {
+  border-color: #ff7a00;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 122, 0, 0.2);
 }
 
 .hint {
   margin-top: 8px;
   font-size: 12px;
-  color: #666;
+  color: #8b949e;
 }
 
 .divider {
   height: 1px;
-  background: #eee;
+  background: #30363d;
   margin: 20px 0;
 }
 
@@ -95,17 +107,18 @@
 }
 
 .faqItem h3 {
-  color: #333;
+  color: #ffffff;
   margin-bottom: 10px;
 }
 
 .link {
-  color: #2196f3;
+  color: #ff7a00;
   text-decoration: none;
 }
 
 .link:hover {
   text-decoration: underline;
+  color: #e56e00;
 }
 
 .buttonWrapper {
@@ -117,20 +130,22 @@
 }
 
 .button {
-  padding: 8px 16px;
+  padding: 10px 16px;
   border: none;
-  border-radius: 4px;
-  background-color: #f0f0f0;
+  border-radius: 8px;
+  background-color: #161b22;
+  color: #ffffff;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
 
 .button:hover {
-  background-color: #e0e0e0;
+  background-color: #1f2937;
 }
 
 .helpButton {
   margin-top: 0rem;
-  background-color: #4a5568;
+  background-color: #ff7a00;
   color: white;
   width: auto;
   min-width: 120px;
@@ -138,7 +153,7 @@
 }
 
 .helpButton:hover {
-  background-color: #2d3748;
+  background-color: #e56e00;
 }
 
 .configContainer {
@@ -161,7 +176,7 @@
 }
 
 .configButton svg {
-  color: #666;
+  color: #8b949e;
 }
 
 .configButton:hover {
@@ -197,7 +212,7 @@
 
 .switchLabel {
   font-weight: 500;
-  color: #333;
+  color: #ffffff;
 }
 
 /* Switch styles */
@@ -221,7 +236,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #30363d;
   transition: 0.4s;
   border-radius: 34px;
 }
@@ -239,7 +254,7 @@
 }
 
 input:checked + .slider {
-  background-color: #4caf50;
+  background-color: #ff7a00;
 }
 
 input:checked + .slider:before {
@@ -247,21 +262,23 @@ input:checked + .slider:before {
 }
 
 .customNodeConfig {
-  background-color: #f5f5f5;
+  background-color: #161b22;
   padding: 20px;
   border-radius: 8px;
   margin-top: 10px;
+  border: 1px solid #30363d;
 }
 
 .nodeAddress {
   margin-top: 8px;
   font-size: 12px;
-  color: #666;
+  color: #8b949e;
 }
 
 .nodeAddress span {
   font-family: monospace;
-  background-color: #eee;
+  background-color: #1f2937;
   padding: 2px 4px;
   border-radius: 3px;
+  color: #ffffff;
 }
