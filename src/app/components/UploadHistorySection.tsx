@@ -59,10 +59,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
   };
 
   return (
-    <div className={styles.historyContainer}>
-      <div className={styles.header}>
-        <h2>Upload History</h2>
-      </div>
+    <div className={styles.container}>
+      <h2 className={styles.title}>Upload History</h2>
 
       {history.length === 0 ? (
         <div className={styles.emptyState}>
@@ -90,17 +88,13 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                     className={styles.link}
                     title={record.reference}
                   >
-                    {record.reference
-                      ? formatReference(record.reference)
-                      : "No Reference"}
+                    {record.reference}
                   </a>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamp ID:</span>
                   <span className={styles.stampId} title={record.stampId}>
-                    {record.stampId
-                      ? formatStampId(record.stampId)
-                      : "No Stamp ID"}
+                    {record.stampId}
                   </span>
                 </div>
                 <div className={styles.expiryRow}>
@@ -114,6 +108,13 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
           ))}
         </div>
       )}
+
+      <button
+        className={styles.backButton}
+        onClick={() => setShowUploadHistory(false)}
+      >
+        Back
+      </button>
     </div>
   );
 };

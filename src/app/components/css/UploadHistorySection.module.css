@@ -1,11 +1,14 @@
 .container {
   color: #ffffff;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .title {
   margin-bottom: 20px;
   font-size: 20px;
   text-align: center;
+  color: #ffffff;
 }
 
 .emptyState {
@@ -21,60 +24,91 @@
 .historyList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .historyItem {
-  padding: 15px;
+  padding: 20px;
   background-color: #161b22;
   border-radius: 8px;
   border: 1px solid #30363d;
+  transition: border-color 0.2s;
+}
+
+.historyItem:hover {
+  border-color: #424a53;
 }
 
 .itemHeader {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
+  align-items: baseline;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #30363d;
 }
 
 .filename {
-  font-weight: 500;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 18px;
+  color: #ffffff;
   word-break: break-all;
 }
 
-.timestamp {
-  font-size: 12px;
+.date {
   color: #8b949e;
-}
-
-.reference {
-  font-family: monospace;
-  background-color: #0d1117;
-  padding: 8px;
-  border-radius: 4px;
   font-size: 14px;
-  word-break: break-all;
-  margin-bottom: 12px;
 }
 
-.actionLinks {
+.itemDetails {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.actionLink {
+.referenceRow,
+.stampRow,
+.expiryRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.label {
+  width: 100px;
+  font-weight: 500;
+  color: #8b949e;
+  flex-shrink: 0;
+}
+
+.link {
   display: inline-block;
   color: #ff7a00;
   text-decoration: none;
-  font-size: 14px;
-  transition: color 0.2s;
+  font-family: monospace;
+  background-color: #1f2937;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  word-break: break-all;
 }
 
-.actionLink:hover {
-  color: #e56e00;
+.link:hover {
+  background-color: #2d3748;
   text-decoration: underline;
+}
+
+.stampId {
+  font-family: monospace;
+  background-color: #1f2937;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: #ffffff;
+  word-break: break-all;
+}
+
+.expiryDate {
+  color: #8b949e;
 }
 
 .backButton {
@@ -92,14 +126,4 @@
 
 .backButton:hover {
   background-color: rgba(48, 54, 61, 0.5);
-}
-
-.expiry {
-  font-size: 12px;
-  color: #8b949e;
-  margin-top: 8px;
-}
-
-.expired {
-  color: #ff5a52;
 }
