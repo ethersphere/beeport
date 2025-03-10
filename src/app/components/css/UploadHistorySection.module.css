@@ -1,125 +1,105 @@
-.historyContainer {
-  max-width: 800px;
-  margin: 0 auto;
-  background-color: #ffffff;
-  border-radius: 8px;
-  padding: 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.container {
+  color: #ffffff;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.title {
   margin-bottom: 20px;
+  font-size: 20px;
+  text-align: center;
 }
 
-.header h2 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #2d3748;
-}
-
-.backButton {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  background-color: #f0f0f0;
-  cursor: pointer;
-}
-
-.backButton:hover {
-  background-color: #e0e0e0;
+.emptyState {
+  text-align: center;
+  padding: 30px;
+  color: #8b949e;
+  font-size: 16px;
+  background-color: #161b22;
+  border-radius: 8px;
+  border: 1px dashed #30363d;
 }
 
 .historyList {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .historyItem {
-  background-color: #f5f5f5;
-  padding: 16px;
+  padding: 15px;
+  background-color: #161b22;
   border-radius: 8px;
-  overflow: hidden;
+  border: 1px solid #30363d;
 }
 
 .itemHeader {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
 }
 
 .filename {
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 70%;
+  font-size: 16px;
+  word-break: break-all;
 }
 
-.date {
-  color: #666;
-  font-size: 0.9em;
+.timestamp {
+  font-size: 12px;
+  color: #8b949e;
 }
 
-.link {
-  color: #2196f3;
-  text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
+.reference {
+  font-family: monospace;
+  background-color: #0d1117;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+
+.actionLinks {
+  display: flex;
+  gap: 10px;
+}
+
+.actionLink {
   display: inline-block;
+  color: #ff7a00;
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.2s;
 }
 
-.link:hover {
+.actionLink:hover {
+  color: #e56e00;
   text-decoration: underline;
 }
 
-.emptyState {
-  text-align: center;
-  color: #666;
-  padding: 40px;
+.backButton {
+  margin-top: 20px;
+  padding: 10px 16px;
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: block;
+  margin: 20px auto 0;
 }
 
-.itemDetails {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
+.backButton:hover {
+  background-color: rgba(48, 54, 61, 0.5);
 }
 
-.referenceRow,
-.stampRow,
-.expiryRow {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  width: 100%;
-  overflow: hidden;
+.expiry {
+  font-size: 12px;
+  color: #8b949e;
+  margin-top: 8px;
 }
 
-.label {
-  font-weight: 500;
-  min-width: 80px;
-  color: #666;
-  flex-shrink: 0;
-}
-
-.stampId {
-  font-family: monospace;
-  background-color: #eee;
-  padding: 2px 4px;
-  border-radius: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-}
-
-.expiryDate {
-  color: #666;
+.expired {
+  color: #ff5a52;
 }
