@@ -857,7 +857,7 @@ const SwapComponent: React.FC = () => {
     const requiredFromAmount = initialQuoteResponse.estimate.fromAmount;
 
     // Check if user has any balance on Gnosis for gas forwarding
-    let fromAmountForGas = "0";
+    let fromAmountForGas = 0n;
     try {
       const gnosisProvider = createPublicClient({
         chain: gnosis,
@@ -876,9 +876,12 @@ const SwapComponent: React.FC = () => {
         const gasData = await gasResponse.json();
 
         if (gasData.available && gasData.recommended) {
-          fromAmountForGas = gasData.fromAmount;
+          // Double the recommended gas amount to ensure sufficient funds
+          fromAmountForGas = BigInt(gasData.fromAmount) * 2n;
           console.log(
-            `Adding gas forwarding: ${fromAmountForGas} (~ $${gasData.recommended.amountUsd})`
+            `Adding gas forwarding: ${fromAmountForGas} (~ $${
+              Number(gasData.recommended.amountUsd) * 2
+            })`
           );
         }
       } else {

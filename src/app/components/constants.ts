@@ -18,7 +18,7 @@ export const GNOSIS_PRICE_ORACLE_ADDRESS =
 // We are using USDC as this is what LIFI mostly uses now with Relay bridge for Gnosis
 export const GNOSIS_DESTINATION_TOKEN =
   "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83";
-export const MIN_TOKEN_BALANCE_USD = 1; // Minimum USD balance to show token in dropdown
+export const MIN_TOKEN_BALANCE_USD = 0.5; // Minimum USD balance to show token in dropdown
 
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
 
