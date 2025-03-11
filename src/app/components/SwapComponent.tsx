@@ -539,10 +539,9 @@ const SwapComponent: React.FC = () => {
           await publicClient.simulateContract({
             address: contractUsed as `0x${string}`,
             abi: parseAbi(swarmConfig.swarmContractAbi),
-            functionName: "createBatchRegistry",
+            functionName: "createBatch",
             args: [
               address,
-              nodeAddress,
               swarmConfig.swarmBatchInitialBalance,
               swarmConfig.swarmBatchDepth,
               swarmConfig.swarmBatchBucketDepth,
