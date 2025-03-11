@@ -244,11 +244,17 @@ const SwapComponent: React.FC = () => {
 
     const updatePriceEstimate = async () => {
       try {
+        // Generate a new nonce for the batch
         const newNonce =
           "0x" +
           Array.from(crypto.getRandomValues(new Uint8Array(32)))
             .map((b) => b.toString(16).padStart(2, "0"))
             .join("");
+
+        setSwarmConfig((prev) => ({
+          ...prev,
+          swarmBatchNonce: newNonce,
+        }));
 
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
@@ -263,10 +269,7 @@ const SwapComponent: React.FC = () => {
               address,
               bzzAmount,
               nodeAddress,
-              swarmConfig: {
-                ...swarmConfig,
-                swarmBatchNonce: newNonce,
-              },
+              swarmConfig,
             }),
           "getGnosisQuote"
         );
@@ -315,6 +318,7 @@ const SwapComponent: React.FC = () => {
     address,
     swarmConfig.swarmBatchInitialBalance,
     selectedDepth,
+    selectedDays,
   ]);
 
   // Initialize LiFi function
@@ -1223,6 +1227,7 @@ const SwapComponent: React.FC = () => {
       });
 
       setUploadStep("complete");
+      setSelectedDays(null);
       setTimeout(() => {
         setUploadStep("idle");
         setShowOverlay(false);
