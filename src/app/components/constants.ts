@@ -4,7 +4,7 @@ import { StorageOption, SwarmConfigType } from "./types";
 // This is node address used as gateway swarm provides for end users
 export const DEFAULT_NODE_ADDRESS =
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";
-export const BATCH_REGISTRY_ADDRESS =
+export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
   "0x1a3dc4cef861a7d3dcdc0d7c5adebf76c2197f20";
 export const LIFI_CONTRACT_ADDRESS =
   "0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D";
@@ -33,7 +33,7 @@ export const STORAGE_OPTIONS: StorageOption[] = [
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,
-  swarmPostageStampAddress: BATCH_REGISTRY_ADDRESS,
+  swarmPostageStampAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   swarmToken: "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da",
   swarmContractGasLimit: "2000000",
   swarmContractAbi: [

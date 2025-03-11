@@ -46,7 +46,7 @@ import {
   BEE_GATEWAY_URL,
   GNOSIS_DESTINATION_TOKEN,
   DAY_OPTIONS,
-  BATCH_REGISTRY_ADDRESS,
+  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
 } from "./constants";
@@ -117,7 +117,7 @@ const SwapComponent: React.FC = () => {
   const [selectedStampTTL, setSelectedStampTTL] = useState<number>(0);
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
   const [contractUsed, setContractUsed] = useState<string>(
-    BATCH_REGISTRY_ADDRESS
+    GNOSIS_CUSTOM_REGISTRY_ADDRESS
   );
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
@@ -573,7 +573,7 @@ const SwapComponent: React.FC = () => {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
               swarmConfig.swarmBatchNonce,
-              BATCH_REGISTRY_ADDRESS,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
             console.log("Created batch ID:", batchId);
@@ -631,7 +631,7 @@ const SwapComponent: React.FC = () => {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
               swarmConfig.swarmBatchNonce,
-              BATCH_REGISTRY_ADDRESS,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
             console.log("Created batch ID:", batchId);
@@ -745,7 +745,7 @@ const SwapComponent: React.FC = () => {
               // Batch will be created from registry contract for all cases
               const batchId = await createBatchId(
                 swarmConfig.swarmBatchNonce,
-                BATCH_REGISTRY_ADDRESS,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
                 setPostageBatchId
               );
               console.log("Created batch ID:", batchId);
@@ -1100,7 +1100,7 @@ const SwapComponent: React.FC = () => {
         "Content-Type": isTarFile ? "application/x-tar" : selectedFile.type,
         "swarm-postage-batch-id": postageBatchId,
         "swarm-pin": "false",
-        "registry-address": BATCH_REGISTRY_ADDRESS,
+        "registry-address": GNOSIS_CUSTOM_REGISTRY_ADDRESS,
       };
 
       if (isTarFile) {

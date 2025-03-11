@@ -3,7 +3,7 @@ import styles from "./css/StampListSection.module.css";
 import { createPublicClient, http, formatUnits } from "viem";
 import { gnosis } from "viem/chains";
 
-import { BATCH_REGISTRY_ADDRESS } from "./constants";
+import { GNOSIS_CUSTOM_REGISTRY_ADDRESS } from "./constants";
 import { UploadStep } from "./types";
 
 interface StampListSectionProps {
@@ -74,7 +74,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
       try {
         const logs = await gnosisClient.getLogs({
-          address: BATCH_REGISTRY_ADDRESS,
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
           event: {
             anonymous: false,
             inputs: [
