@@ -46,10 +46,10 @@ export type GetGnosisQuoteParams = {
   };
 };
 
-export type GetCrossChainQuoteParams = {
+export interface GetCrossChainQuoteParams {
   selectedChainId: number;
   fromToken: string;
   address: string;
   toAmount: string;
   gnosisDestinationToken: string;
-};
+}

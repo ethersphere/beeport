@@ -291,6 +291,7 @@ const SwapComponent: React.FC = () => {
             "getCrossChainQuote"
           );
 
+          // Add to total amount bridge fees
           const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
             ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
                 (total, fee) => total + Number(fee.amountUSD || 0),
@@ -833,6 +834,47 @@ const SwapComponent: React.FC = () => {
     toAmount,
     gnosisDestinationToken,
   }: GetCrossChainQuoteParams) => {
+    // Check if user has any balance on Gnosis
+    let fromAmountForGas = "0";
+
+    try {
+      // Get user's balance on Gnosis
+      const gnosisProvider = createPublicClient({
+        chain: gnosis,
+        transport: http(),
+      });
+
+      const balance = await gnosisProvider.getBalance({
+        address: address as `0x${string}`,
+      });
+
+      // If balance is 0, get recommended gas amount
+      if (balance === 0n) {
+        console.log("No balance on Gnosis, adding gas forwarding");
+
+        // Fetch recommended gas amount from Li.Fi API
+        const gasApiUrl = `https://li.quest/v1/gas/suggestion/100?fromChain=${selectedChainId}&fromToken=${fromToken}`;
+        const gasResponse = await fetch(gasApiUrl);
+        const gasData = await gasResponse.json();
+
+        if (gasData.available && gasData.recommended) {
+          fromAmountForGas = gasData.recommended.amount;
+          console.log(
+            `Adding gas forwarding: ${fromAmountForGas} (~ $${gasData.recommended.amountUsd})`
+          );
+        }
+      } else {
+        console.log(
+          "User already has balance on Gnosis, no gas forwarding needed"
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Error checking Gnosis balance or fetching gas suggestion:",
+        error
+      );
+    }
+
     const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
       fromChain: selectedChainId.toString(),
       fromToken: fromToken,
@@ -841,7 +883,8 @@ const SwapComponent: React.FC = () => {
       toToken: gnosisDestinationToken,
       toAmount: toAmount,
       contractCalls: [],
-      slippage: 0.5, //  0.005 represents 0.5%
+      slippage: 0.5, // 0.005 represents 0.5%
+      // fromAmountForGas: fromAmountForGas, // Add the gas forwarding amount
     };
 
     const crossChainContractQuoteResponse = await getContractCallsQuote(
