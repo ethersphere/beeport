@@ -116,9 +116,6 @@ const SwapComponent: React.FC = () => {
   const [postageBatchId, setPostageBatchId] = useState<string>("");
   const [selectedStampTTL, setSelectedStampTTL] = useState<number>(0);
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
-  const [contractUsed, setContractUsed] = useState<string>(
-    GNOSIS_CUSTOM_REGISTRY_ADDRESS
-  );
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -511,7 +508,7 @@ const SwapComponent: React.FC = () => {
           "function approve(address spender, uint256 amount) external returns (bool)",
         ]),
         functionName: "approve",
-        args: [contractUsed as `0x${string}`, BigInt(bzzAmount)],
+        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, BigInt(bzzAmount)],
         account: address,
       });
 
@@ -537,11 +534,12 @@ const SwapComponent: React.FC = () => {
         // Second transaction: Create Batch
         const { request: createBatchRequest } =
           await publicClient.simulateContract({
-            address: contractUsed as `0x${string}`,
+            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
             abi: parseAbi(swarmConfig.swarmContractAbi),
-            functionName: "createBatch",
+            functionName: "createBatchRegistry",
             args: [
               address,
+              nodeAddress,
               swarmConfig.swarmBatchInitialBalance,
               swarmConfig.swarmBatchDepth,
               swarmConfig.swarmBatchBucketDepth,
@@ -808,7 +806,7 @@ const SwapComponent: React.FC = () => {
         {
           fromAmount: bzzAmount,
           fromTokenAddress: swarmConfig.swarmToken,
-          toContractAddress: contractUsed,
+          toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
           toContractCallData: postagStampTxData,
           toContractGasLimit: swarmConfig.swarmContractGasLimit,
         },
