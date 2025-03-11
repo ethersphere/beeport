@@ -24,6 +24,7 @@ import {
   TokensResponse,
   getTokenBalancesByChain,
   Chain,
+  getQuote,
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, encodeFunctionData, formatUnits } from "viem";
@@ -834,11 +835,30 @@ const SwapComponent: React.FC = () => {
     toAmount,
     gnosisDestinationToken,
   }: GetCrossChainQuoteParams) => {
-    // Check if user has any balance on Gnosis
-    let fromAmountForGas = "0";
+    // First get a regular quote to calculate the required fromAmount
+    const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
+      fromChain: selectedChainId.toString(),
+      fromToken: fromToken,
+      fromAddress: address.toString(),
+      toChain: ChainId.DAI.toString(),
+      toToken: gnosisDestinationToken,
+      toAmount: toAmount,
+      contractCalls: [],
+      slippage: 0.5,
+    };
 
+    const initialQuoteResponse = await getContractCallsQuote(
+      crossChainContractQuoteRequest
+    );
+
+    console.info(">> Initial Cross Chain Quote", initialQuoteResponse);
+
+    // Extract the fromAmount from the initial quote
+    const requiredFromAmount = initialQuoteResponse.estimate.fromAmount;
+
+    // Check if user has any balance on Gnosis for gas forwarding
+    let fromAmountForGas = "0";
     try {
-      // Get user's balance on Gnosis
       const gnosisProvider = createPublicClient({
         chain: gnosis,
         transport: http(),
@@ -848,17 +868,15 @@ const SwapComponent: React.FC = () => {
         address: address as `0x${string}`,
       });
 
-      // If balance is 0, get recommended gas amount
       if (balance === 0n) {
         console.log("No balance on Gnosis, adding gas forwarding");
 
-        // Fetch recommended gas amount from Li.Fi API
         const gasApiUrl = `https://li.quest/v1/gas/suggestion/100?fromChain=${selectedChainId}&fromToken=${fromToken}`;
         const gasResponse = await fetch(gasApiUrl);
         const gasData = await gasResponse.json();
 
         if (gasData.available && gasData.recommended) {
-          fromAmountForGas = gasData.recommended.amount;
+          fromAmountForGas = gasData.fromAmount;
           console.log(
             `Adding gas forwarding: ${fromAmountForGas} (~ $${gasData.recommended.amountUsd})`
           );
@@ -875,26 +893,27 @@ const SwapComponent: React.FC = () => {
       );
     }
 
-    const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
+    // Create the actual quote request with gas forwarding
+    const quoteRequest = {
       fromChain: selectedChainId.toString(),
       fromToken: fromToken,
       fromAddress: address.toString(),
+      fromAmount: requiredFromAmount,
       toChain: ChainId.DAI.toString(),
       toToken: gnosisDestinationToken,
-      toAmount: toAmount,
-      contractCalls: [],
-      slippage: 0.5, // 0.005 represents 0.5%
-      // fromAmountForGas: fromAmountForGas, // Add the gas forwarding amount
+      fromAmountForGas: fromAmountForGas,
+      slippage: 0.5,
     };
 
-    const crossChainContractQuoteResponse = await getContractCallsQuote(
-      crossChainContractQuoteRequest
-    );
+    const crossChainContractQuoteResponse = await getQuote(quoteRequest);
 
-    console.info(">> Cross Chain Quote", crossChainContractQuoteResponse);
+    console.info(
+      ">> Cross Chain Quote with Gas Forwarding",
+      crossChainContractQuoteResponse
+    );
     logTokenRoute(
       crossChainContractQuoteResponse.includedSteps,
-      "Cross Chain Quote"
+      "Cross Chain Quote with Gas Forwarding"
     );
 
     return {
