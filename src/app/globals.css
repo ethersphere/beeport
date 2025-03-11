@@ -22,3 +22,52 @@
   position: relative;
   z-index: 1;
 }
+
+/* Global rule to remove all dropdown arrows */
+select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: none !important;
+}
+
+/* Hide all pseudo-elements that might be used for arrows */
+select::-ms-expand,
+.select::-ms-expand,
+.dropdown::-ms-expand {
+  display: none !important;
+}
+
+/* Target all dropdown elements */
+select,
+[role="listbox"],
+[role="combobox"],
+.dropdown,
+.select,
+.searchable-dropdown,
+.chain-dropdown,
+.token-dropdown {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: none !important;
+}
+
+/* Target dropdown icons and arrows */
+.dropdown-icon,
+.arrow-icon,
+.caret-icon,
+.chevron-icon,
+svg[class*="arrow"],
+svg[class*="caret"],
+svg[class*="chevron"],
+svg[class*="dropdown"] {
+  display: none !important;
+}
+
+/* This will catch any custom arrow implementations */
+[class*="dropdown"] svg,
+[class*="select"] svg,
+[class*="combobox"] svg {
+  display: none !important;
+}

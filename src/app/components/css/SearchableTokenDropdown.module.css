@@ -194,3 +194,18 @@
   font-size: 12px;
   color: #8b949e;
 }
+
+/* Add these styles to remove dropdown arrows */
+.dropdown,
+.searchInput {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: none !important;
+  background: #161b22 !important; /* Override any background that might have an arrow */
+}
+
+/* For Firefox */
+.dropdown::-ms-expand {
+  display: none;
+}
