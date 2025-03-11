@@ -669,7 +669,7 @@ const SwapComponent: React.FC = () => {
 
     setStatusMessage({
       step: "Route",
-      message: "Executing bridging transaction... This will take 3-5 minutes.",
+      message: "Executing bridging transaction... This will take few minutes.",
     });
 
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
@@ -684,7 +684,7 @@ const SwapComponent: React.FC = () => {
           message: `Bridging in progress: ${step1Status?.replace(
             /_/g,
             " "
-          )}. This can take 3-5 minutes.`,
+          )}. This can take few minutes.`,
         });
 
         if (step1Status === "DONE") {
@@ -731,7 +731,7 @@ const SwapComponent: React.FC = () => {
 
           setStatusMessage({
             step: "Route",
-            message: `Second route status: ${step2Status}`,
+            message: `Second route status: ${step2Status?.replace(/_/g, " ")}`,
           });
 
           if (step2Status === "DONE") {
