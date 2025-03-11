@@ -505,8 +505,8 @@ const SwapComponent: React.FC = () => {
         message: "Approving BZZ transfer...",
       });
 
-      // First transaction: Approve
-      const { request: approveRequest } = await publicClient.simulateContract({
+      // First transaction: Approve - directly write contract without simulation
+      const approveTxHash = await walletClient.writeContract({
         address: GNOSIS_BZZ_ADDRESS,
         abi: parseAbi([
           "function approve(address spender, uint256 amount) external returns (bool)",
@@ -516,7 +516,6 @@ const SwapComponent: React.FC = () => {
         account: address,
       });
 
-      const approveTxHash = await walletClient.writeContract(approveRequest);
       console.log("Approve transaction hash:", approveTxHash);
 
       setStatusMessage({
@@ -532,36 +531,27 @@ const SwapComponent: React.FC = () => {
       if (approveReceipt.status === "success") {
         setStatusMessage({
           step: "Batch",
-          message: "Creating batch...",
+          message: "Buying storage...",
         });
 
-        // Second transaction: Create Batch
-        const { request: createBatchRequest } =
-          await publicClient.simulateContract({
-            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-            abi: parseAbi(swarmConfig.swarmContractAbi),
-            functionName: "createBatchRegistry",
-            args: [
-              address,
-              nodeAddress,
-              swarmConfig.swarmBatchInitialBalance,
-              swarmConfig.swarmBatchDepth,
-              swarmConfig.swarmBatchBucketDepth,
-              swarmConfig.swarmBatchNonce,
-              swarmConfig.swarmBatchImmutable,
-            ],
-            account: address,
-          });
+        // Second transaction: Create Batch - directly write contract without simulation
+        const createBatchTxHash = await walletClient.writeContract({
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+          abi: parseAbi(swarmConfig.swarmContractAbi),
+          functionName: "createBatchRegistry",
+          args: [
+            address,
+            nodeAddress,
+            swarmConfig.swarmBatchInitialBalance,
+            swarmConfig.swarmBatchDepth,
+            swarmConfig.swarmBatchBucketDepth,
+            swarmConfig.swarmBatchNonce,
+            swarmConfig.swarmBatchImmutable,
+          ],
+          account: address,
+        });
 
-        const createBatchTxHash = await walletClient.writeContract(
-          createBatchRequest
-        );
         console.log("Create batch transaction hash:", createBatchTxHash);
-
-        setStatusMessage({
-          step: "Batch",
-          message: "Waiting for batch creation confirmation...",
-        });
 
         // Wait for create batch transaction to be mined
         const createBatchReceipt = await publicClient.waitForTransactionReceipt(
@@ -1135,7 +1125,7 @@ const SwapComponent: React.FC = () => {
             );
             setStatusMessage({
               step: "404",
-              message: "Searching for batch ID...",
+              message: "Searching for storage ID...",
             });
 
             const stampStatus = await checkStampStatus(postageBatchId);
@@ -1154,7 +1144,7 @@ const SwapComponent: React.FC = () => {
                 );
                 setStatusMessage({
                   step: "422",
-                  message: "Waiting for batch to be usable...",
+                  message: "Waiting for storage to be usable...",
                 });
 
                 const usabilityStatus = await checkStampStatus(postageBatchId);

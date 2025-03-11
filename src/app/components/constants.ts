@@ -14,7 +14,7 @@ export const GNOSIS_STAMP_ADDRESS =
 export const DEFAULT_BEE_API_URL = "https://swarming.site";
 export const BEE_GATEWAY_URL = `${DEFAULT_BEE_API_URL}/bzz/`;
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
-  "0x86de783bf23bc13daef5a55ec531c198da8f10cf";
+  "0x47EeF336e7fE5bED98499A4696bce8f28c1B0a8b";
 // We are using USDC as this is what LIFI mostly uses now with Relay bridge for Gnosis
 export const GNOSIS_DESTINATION_TOKEN =
   "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83";
