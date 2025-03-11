@@ -15,6 +15,8 @@ interface TokenDropdownProps {
   selectedTokenInfo: any;
   onTokenSelect: (address: string, tokenInfo: any) => void;
   minBalanceUsd?: number;
+  activeDropdown: string | null;
+  onOpenDropdown: (name: string) => void;
 }
 
 const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
@@ -28,6 +30,8 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   selectedTokenInfo,
   onTokenSelect,
   minBalanceUsd = MIN_TOKEN_BALANCE_USD,
+  activeDropdown,
+  onOpenDropdown,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [localSelectedToken, setLocalSelectedToken] =
@@ -100,6 +104,25 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
     }
   }, [availableTokensList, selectedTokenInfo, selectedChainId]);
 
+  useEffect(() => {
+    // Close this dropdown if another one opens
+    if (activeDropdown !== "token" && isOpen) {
+      setIsOpen(false);
+    }
+  }, [activeDropdown, isOpen]);
+
+  const toggleDropdown = () => {
+    const newIsOpen = !isOpen;
+    setIsOpen(newIsOpen);
+
+    // Notify parent component
+    if (newIsOpen) {
+      onOpenDropdown("token");
+    } else {
+      onOpenDropdown("");
+    }
+  };
+
   return (
     <div className={styles.dropdownContainer}>
       <div
@@ -108,16 +131,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
             ? styles.clickable
             : ""
         }`}
-        onClick={() => {
-          if (
-            !isWalletLoading &&
-            !isTokensLoading &&
-            availableTokensList &&
-            availableTokensList.length > 1
-          ) {
-            setIsOpen(!isOpen);
-          }
-        }}
+        onClick={toggleDropdown}
       >
         {selectedTokenInfo ? (
           renderTokenContent(
@@ -159,7 +173,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
                   (t: any) => toChecksumAddress(t.address) === address
                 );
                 onTokenSelect(address, selectedToken);
-                setIsOpen(false);
+                toggleDropdown();
               }}
             >
               {renderTokenContent(token, balance, usdValue)}

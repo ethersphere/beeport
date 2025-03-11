@@ -8,6 +8,8 @@ export interface ChainDropdownProps {
   availableChains: Chain[];
   onChainSelect: (chainId: number) => void;
   isChainsLoading: boolean;
+  activeDropdown: string | null;
+  onOpenDropdown: (name: string) => void;
 }
 
 const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
@@ -15,6 +17,8 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
   isLoading,
   availableChains,
   onChainSelect,
+  activeDropdown,
+  onOpenDropdown,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,11 +50,30 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    // Close this dropdown if another one opens
+    if (activeDropdown !== "chain" && isOpen) {
+      setIsOpen(false);
+    }
+  }, [activeDropdown, isOpen]);
+
+  const toggleDropdown = () => {
+    const newIsOpen = !isOpen;
+    setIsOpen(newIsOpen);
+
+    // Notify parent component
+    if (newIsOpen) {
+      onOpenDropdown("chain");
+    } else {
+      onOpenDropdown("");
+    }
+  };
+
   return (
     <div className={styles.dropdownContainer} ref={dropdownRef}>
       <div
         className={`${styles.dropdownButton} ${isOpen ? styles.open : ""}`}
-        onClick={() => !isLoading && setIsOpen(!isOpen)}
+        onClick={toggleDropdown}
       >
         {selectedChain ? (
           <div className={styles.selectedChain}>

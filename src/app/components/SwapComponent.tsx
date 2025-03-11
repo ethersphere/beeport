@@ -124,6 +124,8 @@ const SwapComponent: React.FC = () => {
 
   const [showUploadHistory, setShowUploadHistory] = useState(false);
 
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
     transport: http(),
@@ -1330,6 +1332,10 @@ const SwapComponent: React.FC = () => {
     </div>
   );
 
+  const handleOpenDropdown = (dropdownName: string) => {
+    setActiveDropdown(dropdownName);
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.tabContainer}>
@@ -1409,6 +1415,8 @@ const SwapComponent: React.FC = () => {
               }}
               isChainsLoading={isChainsLoading}
               isLoading={isChainsLoading}
+              activeDropdown={activeDropdown}
+              onOpenDropdown={handleOpenDropdown}
             />
           </div>
 
@@ -1428,6 +1436,8 @@ const SwapComponent: React.FC = () => {
                 setSelectedTokenInfo(token);
               }}
               minBalanceUsd={MIN_TOKEN_BALANCE_USD}
+              activeDropdown={activeDropdown}
+              onOpenDropdown={handleOpenDropdown}
             />
           </div>
 
