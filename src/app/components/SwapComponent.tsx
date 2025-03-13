@@ -1290,7 +1290,7 @@ const SwapComponent: React.FC = () => {
         setShowOverlay(false);
         setIsLoading(false);
         setUploadProgress(0);
-      }, 255000);
+      }, 900000);
 
       if (parsedReference.reference) {
         const stamp = await checkStampStatus(postageBatchId);
