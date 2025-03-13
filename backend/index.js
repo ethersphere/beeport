@@ -38,6 +38,8 @@ const gnosisPublicClient = createPublicClient({
 });
 
 const verifySignature = async (req, res, next) => {
+    console.log("Processing request at path:", req.path);
+
     if (req.method === "POST") {
         console.log("Processing upload request");
 
