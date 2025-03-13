@@ -5,6 +5,7 @@ const {
     http,
 } = require("viem");
 const { gnosis } = require("viem/chains");
+const cors = require('cors');
 
 const BATCH_REGISTRY_ABI = [
     {
@@ -180,6 +181,10 @@ const proxy = createProxyMiddleware({
 });
 
 app.use("/", verifySignature, proxy);
+
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://swarming.site']
+}));
 
 const server = app.listen(3333, () => {
     console.log("Proxy server running on port 3333");
