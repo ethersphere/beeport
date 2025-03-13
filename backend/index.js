@@ -180,6 +180,8 @@ const proxy = createProxyMiddleware({
 });
 
 app.use("/", verifySignature, proxy);
+app.use("/stamps", proxy);
+app.use("/wallet", proxy);
 
 const server = app.listen(3333, () => {
     console.log("Proxy server running on port 3333");
