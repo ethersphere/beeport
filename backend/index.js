@@ -180,8 +180,26 @@ const proxy = createProxyMiddleware({
 });
 
 app.use("/", verifySignature, proxy);
-app.use("/stamps", proxy);
-app.use("/wallet", proxy);
+app.use(
+    "/stamps",
+    createProxyMiddleware({
+        target: "http://localhost:1633",
+        pathRewrite: { "^/stamps": "" },
+        changeOrigin: true,
+        // other options…
+    })
+);
+
+app.use(
+    "/wallet",
+    createProxyMiddleware({
+        target: "http://localhost:1633",
+        pathRewrite: { "^/wallet": "" },
+        changeOrigin: true,
+        // other options…
+    })
+);
+
 
 const server = app.listen(3333, () => {
     console.log("Proxy server running on port 3333");
