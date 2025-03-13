@@ -37,9 +37,8 @@ const gnosisPublicClient = createPublicClient({
     transport: http(),
 });
 
-// Modify verifySignature to only check POST requests to /bzz
 const verifySignature = async (req, res, next) => {
-    if (req.path === "/bzz" && req.method === "POST") {
+    if (req.method === "POST") {
         console.log("Processing upload request");
 
         const signedMessage = req.headers["x-upload-signed-message"];
