@@ -1,6 +1,9 @@
 import { ChainId } from "@lifi/sdk";
 import { StorageOption, SwarmConfigType } from "./types";
 
+export const LIFI_API_KEY =
+  "83f85c7b-97d2-4130-95b0-f72af1f0261e.b11f7330-ebb1-4684-af33-f28759ec6853";
+
 // This is node address used as gateway swarm provides for end users
 export const DEFAULT_NODE_ADDRESS =
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";

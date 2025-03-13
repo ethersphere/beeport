@@ -50,6 +50,7 @@ import {
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
+  LIFI_API_KEY,
 } from "./constants";
 
 import HelpSection from "./HelpSection";
@@ -330,6 +331,7 @@ const SwapComponent: React.FC = () => {
     // Create new config instead of modifying existing one
     createConfig({
       integrator: "Swarm",
+      apiKey: LIFI_API_KEY,
       providers: [
         EVM({
           getWalletClient: async () => {
