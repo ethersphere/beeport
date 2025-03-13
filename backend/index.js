@@ -33,6 +33,10 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://swarming.site']
+}));
+
 const gnosisPublicClient = createPublicClient({
     chain: gnosis,
     transport: http(),
@@ -179,12 +183,6 @@ const proxy = createProxyMiddleware({
         });
     }
 });
-
-
-
-app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://swarming.site']
-}));
 
 app.use("/", verifySignature, proxy);
 
