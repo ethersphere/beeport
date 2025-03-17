@@ -6,6 +6,7 @@ export type ExecutionStatus = {
   isError?: boolean;
   isSuccess?: boolean;
   reference?: string;
+  filename?: string;
 };
 
 export type UploadStep = "idle" | "ready" | "uploading" | "complete";

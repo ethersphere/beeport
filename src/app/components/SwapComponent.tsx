@@ -1288,6 +1288,7 @@ const SwapComponent: React.FC = () => {
         )}...${parsedReference.reference.slice(-4)}`,
         isSuccess: true,
         reference: parsedReference.reference,
+        filename: selectedFile?.name,
       });
 
       setUploadStep("complete");
@@ -1341,6 +1342,14 @@ const SwapComponent: React.FC = () => {
 
   const handleOpenDropdown = (dropdownName: string) => {
     setActiveDropdown(dropdownName);
+  };
+
+  const isArchiveFile = (filename?: string) => {
+    if (!filename) return false;
+    const archiveExtensions = [".zip", ".tar", ".gz", ".rar", ".7z", ".bz2"];
+    return archiveExtensions.some((ext) =>
+      filename.toLowerCase().endsWith(ext)
+    );
   };
 
   return (
@@ -1659,7 +1668,12 @@ const SwapComponent: React.FC = () => {
                       <p>Reference:</p>
                       <code>{statusMessage.reference}</code>
                       <a
-                        href={`${BEE_GATEWAY_URL}${statusMessage.reference}/`}
+                        href={
+                          statusMessage.filename &&
+                          !isArchiveFile(statusMessage.filename)
+                            ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                            : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
+                        }
                         target="_blank"
                         rel="noopener noreferrer"
                         className={styles.referenceLink}
