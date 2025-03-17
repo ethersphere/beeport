@@ -821,6 +821,20 @@ const SwapComponent: React.FC = () => {
     toAmount,
     gnosisDestinationToken,
   }: GetCrossChainQuoteParams) => {
+    // Create postage stamp transaction data for simulation
+    const postagStampTxData = encodeFunctionData({
+      abi: parseAbi(swarmConfig.swarmContractAbi),
+      functionName: "createBatchRegistry",
+      args: [
+        address,
+        nodeAddress,
+        swarmConfig.swarmBatchInitialBalance,
+        swarmConfig.swarmBatchDepth,
+        swarmConfig.swarmBatchBucketDepth,
+        swarmConfig.swarmBatchNonce,
+        swarmConfig.swarmBatchImmutable,
+      ],
+    });
     // First get a regular quote to calculate the required fromAmount
     const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
       fromChain: selectedChainId.toString(),
@@ -829,7 +843,15 @@ const SwapComponent: React.FC = () => {
       toChain: ChainId.DAI.toString(),
       toToken: gnosisDestinationToken,
       toAmount: toAmount,
-      contractCalls: [],
+      contractCalls: [
+        {
+          fromAmount: toAmount,
+          fromTokenAddress: swarmConfig.swarmToken,
+          toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+          toContractCallData: postagStampTxData,
+          toContractGasLimit: swarmConfig.swarmContractGasLimit,
+        },
+      ],
       slippage: 0.5,
     };
 
@@ -843,7 +865,7 @@ const SwapComponent: React.FC = () => {
     const requiredFromAmount = initialQuoteResponse.estimate.fromAmount;
 
     // Check if user has any balance on Gnosis for gas forwarding
-    let fromAmountForGas = 0n;
+    let fromAmountForGas: bigint = 0n;
     try {
       const gnosisProvider = createPublicClient({
         chain: gnosis,
@@ -887,13 +909,14 @@ const SwapComponent: React.FC = () => {
       fromChain: selectedChainId.toString(),
       fromToken: fromToken,
       fromAddress: address.toString(),
-      fromAmount: requiredFromAmount.toString(),
+      fromAmount: (BigInt(requiredFromAmount) + fromAmountForGas).toString(),
       toChain: ChainId.DAI.toString(),
       toToken: gnosisDestinationToken,
-      fromAmountForGas: fromAmountForGas.toString(),
+      fromAmountForGas: fromAmountForGas,
       slippage: 0.5,
     };
 
+    // Cant comply becaue of https://github.com/lifinance/sdk/issues/239
     const crossChainContractQuoteResponse = await getQuote(quoteRequest);
 
     console.info(
