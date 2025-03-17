@@ -221,7 +221,7 @@ const SwapComponent: React.FC = () => {
       setIsPriceEstimating(false);
     }
     // When we change days or depth, then we also change swarmBatchInitialBalance, which will trigger this effect
-  }, [currentPrice, swarmConfig.swarmBatchInitialBalance]);
+  }, [currentPrice, swarmConfig.swarmBatchInitialBalance, selectedDays]);
 
   // Get PRICE estimation for currently choosen options
   useEffect(() => {
@@ -830,7 +830,7 @@ const SwapComponent: React.FC = () => {
       contractCalls: [
         {
           fromAmount: toAmount,
-          fromTokenAddress: swarmConfig.swarmToken,
+          fromTokenAddress: gnosisDestinationToken,
           toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
           toContractCallData: postagStampTxData,
           toContractGasLimit: swarmConfig.swarmContractGasLimit,

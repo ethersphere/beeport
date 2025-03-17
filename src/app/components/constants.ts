@@ -37,7 +37,7 @@ export const STORAGE_OPTIONS: StorageOption[] = [
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,
   swarmPostageStampAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-  swarmToken: "0xdbf3ea6f5bee45c02255b2c26a16f300502f68da",
+  swarmToken: GNOSIS_BZZ_ADDRESS,
   swarmContractGasLimit: "2000000",
   swarmContractAbi: [
     "function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external",
