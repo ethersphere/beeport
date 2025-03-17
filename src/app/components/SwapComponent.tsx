@@ -220,7 +220,8 @@ const SwapComponent: React.FC = () => {
     } finally {
       setIsPriceEstimating(false);
     }
-  }, [currentPrice, selectedDays, selectedDepth]);
+    // When we change days or depth, then we also change swarmBatchInitialBalance, which will trigger this effect
+  }, [currentPrice, swarmConfig.swarmBatchInitialBalance]);
 
   // Get PRICE estimation for currently choosen options
   useEffect(() => {
@@ -231,18 +232,6 @@ const SwapComponent: React.FC = () => {
 
     const updatePriceEstimate = async () => {
       try {
-        // Generate a new nonce for the batch
-        const newNonce =
-          "0x" +
-          Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-
-        setSwarmConfig((prev) => ({
-          ...prev,
-          swarmBatchNonce: newNonce,
-        }));
-
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
           selectedChainId === ChainId.DAI
@@ -288,6 +277,7 @@ const SwapComponent: React.FC = () => {
           totalAmount += bridgeFees;
         }
 
+        console.log("Total amount:", totalAmount);
         setTotalUsdAmount(totalAmount.toString());
       } catch (error) {
         console.error("Error getting price estimate after all retries:", error);
@@ -301,13 +291,7 @@ const SwapComponent: React.FC = () => {
     if (isConnected && selectedChainId && fromToken && selectedDays) {
       updatePriceEstimate();
     }
-  }, [
-    isConnected,
-    address,
-    swarmConfig.swarmBatchInitialBalance,
-    selectedDepth,
-    selectedDays,
-  ]);
+  }, [selectedDepth, selectedDays]);
 
   // Initialize LiFi function
   const initializeLiFi = () => {
@@ -447,12 +431,6 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const calculateTotalAmount = () => {
-    return (
-      BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
-    );
-  };
-
   const updateSwarmBatchInitialBalance = () => {
     if (currentPrice !== null) {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
@@ -463,6 +441,12 @@ const SwapComponent: React.FC = () => {
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
       }));
     }
+  };
+
+  const calculateTotalAmount = () => {
+    return (
+      BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
+    );
   };
 
   const handleDepthChange = (newDepth: number) => {
