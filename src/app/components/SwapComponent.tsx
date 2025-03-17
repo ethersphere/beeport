@@ -1101,9 +1101,14 @@ const SwapComponent: React.FC = () => {
     const uploadLargeFile = async (
       file: File,
       headers: Record<string, string>,
-      url: string
+      baseUrl: string
     ): Promise<XHRResponse> => {
       console.log("Starting file upload...");
+
+      // Add the filename as a query parameter
+      const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
+      console.log("Upload URL with filename:", url);
+
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
 
