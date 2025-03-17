@@ -191,6 +191,7 @@ const SwapComponent: React.FC = () => {
     fetchChains();
   }, []);
 
+  // Update required BZZ for currently selected option
   useEffect(() => {
     if (!selectedDays || selectedDays === 0) {
       setTotalUsdAmount(null);
@@ -201,7 +202,6 @@ const SwapComponent: React.FC = () => {
     if (!currentPrice) return;
 
     try {
-      setIsPriceEstimating(true);
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays);
@@ -217,11 +217,13 @@ const SwapComponent: React.FC = () => {
       console.error("Error calculating total cost:", error);
       setTotalUsdAmount(null);
       setSwarmConfig(DEFAULT_SWARM_CONFIG);
-    } finally {
-      setIsPriceEstimating(false);
     }
-    // When we change days or depth, then we also change swarmBatchInitialBalance, which will trigger this effect
-  }, [currentPrice, swarmConfig.swarmBatchInitialBalance, selectedDays]);
+  }, [
+    currentPrice,
+    swarmConfig.swarmBatchInitialBalance,
+    selectedDays,
+    selectedDepth,
+  ]);
 
   // Get PRICE estimation for currently choosen options
   useEffect(() => {
@@ -280,16 +282,20 @@ const SwapComponent: React.FC = () => {
         console.log("Total amount:", totalAmount);
         setTotalUsdAmount(totalAmount.toString());
       } catch (error) {
-        console.error("Error getting price estimate after all retries:", error);
+        console.error("Error estimating price:", error);
         setTotalUsdAmount(null);
         setLiquidityError(true);
       } finally {
-        setIsPriceEstimating(false); // Set to false when done
+        // Make sure we set isPriceEstimating to false when the function completes
+        setIsPriceEstimating(false);
       }
     };
 
-    if (isConnected && selectedChainId && fromToken && selectedDays) {
+    if (selectedDays) {
       updatePriceEstimate();
+    } else {
+      // If no days selected, still reset the loading state
+      setIsPriceEstimating(false);
     }
   }, [selectedDepth, selectedDays]);
 
