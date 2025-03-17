@@ -137,9 +137,9 @@ const SwapComponent: React.FC = () => {
       setIsWalletLoading(true);
       if (isConnected && address) {
         setSelectedDays(null);
-        await fetchTokensAndBalances();
         setFromToken("");
         setSelectedTokenInfo(null);
+        fetchTokensAndBalances();
       }
       setIsWalletLoading(false);
     };
@@ -179,12 +179,6 @@ const SwapComponent: React.FC = () => {
       setLifiConfigInitialized(false);
     }
   }, [isConnected, publicClient, walletClient, address]);
-
-  useEffect(() => {
-    // Execute first two functions immediately
-    fetchCurrentPrice();
-    fetchNodeWalletAddress();
-  }, []);
 
   useEffect(() => {
     // Execute first two functions immediately
@@ -1321,24 +1315,6 @@ const SwapComponent: React.FC = () => {
       setUploadProgress(0);
     }
   };
-
-  const displayTokenBalance = selectedTokenInfo && (
-    <div className={styles.tokenBalance}>
-      {(() => {
-        const { formatted, usdValue } = formatTokenBalance(
-          selectedTokenInfo.amount,
-          selectedTokenInfo.decimals,
-          selectedTokenInfo.priceUSD
-        );
-        return (
-          <>
-            <div className={styles.balanceAmount}>{formatted}</div>
-            <div className={styles.balanceUsd}>${usdValue}</div>
-          </>
-        );
-      })()}
-    </div>
-  );
 
   const handleOpenDropdown = (dropdownName: string) => {
     setActiveDropdown(dropdownName);

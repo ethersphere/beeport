@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { formatUnits } from "viem";
 import styles from "./css/SearchableTokenDropdown.module.css";
-import { toChecksumAddress, formatTokenBalance } from "./utils";
+import { toChecksumAddress } from "./utils";
 import { MIN_TOKEN_BALANCE_USD } from "./constants";
 
 interface TokenDropdownProps {
@@ -34,8 +34,6 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   onOpenDropdown,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [localSelectedToken, setLocalSelectedToken] =
-    useState(selectedTokenInfo);
 
   const getLoadingText = () => {
     if (isWalletLoading || isTokensLoading) {
@@ -88,7 +86,6 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
   useEffect(() => {
     // Reset token selection when chain changes
-    setLocalSelectedToken(null);
     onTokenSelect("", null);
   }, [selectedChainId]);
 

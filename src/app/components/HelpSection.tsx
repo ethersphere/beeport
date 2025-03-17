@@ -93,7 +93,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <p>
               Connect to your local node, you need a PAID plan for NGROK to
               expose it to world and then start it with this command "ngrok http
-              1633 --request-header-add="ngrok-skip-browser-warning:1"
+              1633
+              --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;"
             </p>
           </li>
           <li>
