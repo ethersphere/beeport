@@ -905,10 +905,10 @@ const SwapComponent: React.FC = () => {
       fromChain: selectedChainId.toString(),
       fromToken: fromToken,
       fromAddress: address.toString(),
-      fromAmount: requiredFromAmount,
+      fromAmount: requiredFromAmount.toString(),
       toChain: ChainId.DAI.toString(),
       toToken: gnosisDestinationToken,
-      fromAmountForGas: fromAmountForGas,
+      fromAmountForGas: fromAmountForGas.toString(),
       slippage: 0.5,
     };
 
