@@ -4,7 +4,6 @@ import {
   encodeAbiParameters,
   parseAbiParameters,
 } from "viem";
-import { formatUnits } from "viem";
 
 export const toChecksumAddress = (
   address: string | undefined | null
@@ -44,21 +43,6 @@ export const createBatchId = async (
     console.error("Error creating batch ID:", error);
     throw error;
   }
-};
-
-export const formatTokenBalance = (
-  amount: bigint | undefined,
-  decimals: number,
-  priceUSD: string | number
-): { formatted: string; usdValue: string } => {
-  if (!amount) {
-    return { formatted: "0", usdValue: "0" };
-  }
-
-  const formatted = Number(formatUnits(amount, decimals)).toFixed(4);
-  const usdValue = (Number(formatted) * Number(priceUSD)).toFixed(2);
-
-  return { formatted, usdValue };
 };
 
 export const performWithRetry = async <T>(

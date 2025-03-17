@@ -10,7 +10,6 @@ interface TokenDropdownProps {
   isWalletLoading: boolean;
   isTokensLoading: boolean;
   isConnected: boolean;
-  availableTokens: any;
   tokenBalances: any;
   selectedTokenInfo: any;
   onTokenSelect: (address: string, tokenInfo: any) => void;
@@ -25,7 +24,6 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   isWalletLoading,
   isTokensLoading,
   isConnected,
-  availableTokens,
   tokenBalances,
   selectedTokenInfo,
   onTokenSelect,

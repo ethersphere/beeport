@@ -5,9 +5,7 @@ import { DEFAULT_BEE_API_URL } from "./constants";
 interface HelpSectionProps {
   nodeAddress: string;
   beeApiUrl: string;
-  setNodeAddress: (value: string) => void;
   setBeeApiUrl: (value: string) => void;
-  setShowHelp: (value: boolean) => void;
   isCustomNode: boolean;
   setIsCustomNode: (value: boolean) => void;
 }
@@ -15,9 +13,7 @@ interface HelpSectionProps {
 const HelpSection: React.FC<HelpSectionProps> = ({
   nodeAddress,
   beeApiUrl,
-  setNodeAddress,
   setBeeApiUrl,
-  setShowHelp,
   isCustomNode,
   setIsCustomNode,
 }) => {
@@ -92,9 +88,9 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <h3>Using local node</h3>
             <p>
               Connect to your local node, you need a PAID plan for NGROK to
-              expose it to world and then start it with this command "ngrok http
-              1633
-              --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;"
+              expose it to world and then start it with this command &quot;ngrok
+              http 1633
+              --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;&quot;
             </p>
           </li>
           <li>
@@ -136,20 +132,20 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3>I get "no routes available", why? </h3>
+            <h3>I get &quot;no routes available&quot;, why? </h3>
             <p>
-              If messaged "no routes available", this usually means that you
-              choose too low amount of USD value to be crossed between chains.
-              For below $0.5 you should try to swap and upload directly from
-              Gnosis chain.
+              If messaged &quot;no routes available&quot;, this usually means
+              that you choose too low amount of USD value to be crossed between
+              chains. For below $0.5 you should try to swap and upload directly
+              from Gnosis chain.
             </p>
           </div>
           <div className={styles.faqItem}>
             <h3>How to prepare TAR archive? </h3>
             <p>
-              Use "tar -C my_folder -cf my_folder.tar ." command to make your
-              folder ready for upload as TAR file. Swarm doesnt suppor gzip so
-              dont include -z flag
+              Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to
+              make your folder ready for upload as TAR file. Swarm doesnt suppor
+              gzip so dont include -z flag
             </p>
           </div>
         </div>

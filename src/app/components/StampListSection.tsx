@@ -13,7 +13,6 @@ interface StampListSectionProps {
   setPostageBatchId: (id: string) => void;
   setShowOverlay: (show: boolean) => void;
   setUploadStep: (step: UploadStep) => void;
-  setSelectedStampTTL: (ttl: number) => void;
 }
 
 interface BatchEvent {
@@ -46,7 +45,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setPostageBatchId,
   setShowOverlay,
   setUploadStep,
-  setSelectedStampTTL,
 }) => {
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -133,7 +131,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
   const handleStampSelect = (stamp: any) => {
     setPostageBatchId(stamp.batchId.slice(2));
-    setSelectedStampTTL(stamp.batchTTL);
     setShowOverlay(true);
     setUploadStep("ready");
     setShowStampList(false);

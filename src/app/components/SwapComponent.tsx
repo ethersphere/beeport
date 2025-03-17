@@ -63,7 +63,6 @@ import {
   formatErrorMessage,
   createBatchId,
   performWithRetry,
-  formatTokenBalance,
   toChecksumAddress,
   logTokenRoute,
 } from "./utils";
@@ -80,10 +79,7 @@ const SwapComponent: React.FC = () => {
     "0x0000000000000000000000000000000000000000"
   );
   const [executionResult, setExecutionResult] = useState<any | null>(null);
-  const [lifiConfigInitialized, setLifiConfigInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [showAddress, setShowAddress] = useState(false);
-  const [isClientConnected, setIsClientConnected] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
   const [selectedDays, setSelectedDays] = useState<number | null>(null);
   const [selectedDepth, setSelectedDepth] = useState(20);
@@ -116,7 +112,7 @@ const SwapComponent: React.FC = () => {
 
   const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>("");
-  const [selectedStampTTL, setSelectedStampTTL] = useState<number>(0);
+
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
@@ -148,11 +144,6 @@ const SwapComponent: React.FC = () => {
   }, [isConnected, address, selectedChainId]);
 
   useEffect(() => {
-    setShowAddress(true);
-    setIsClientConnected(isConnected);
-  }, [isConnected]);
-
-  useEffect(() => {
     if (chainId) {
       setSelectedChainId(chainId);
       setSelectedDays(null);
@@ -175,8 +166,6 @@ const SwapComponent: React.FC = () => {
       // Reinitialize LiFi whenever the wallet changes
       initializeLiFi();
     } else {
-      // Reset the initialization flag when disconnected
-      setLifiConfigInitialized(false);
     }
   }, [isConnected, publicClient, walletClient, address]);
 
@@ -344,7 +333,6 @@ const SwapComponent: React.FC = () => {
         }),
       ],
     });
-    setLifiConfigInitialized(true);
   };
 
   const fetchNodeWalletAddress = async () => {
@@ -1420,7 +1408,6 @@ const SwapComponent: React.FC = () => {
               isWalletLoading={isWalletLoading}
               isTokensLoading={isTokensLoading}
               isConnected={isConnected}
-              availableTokens={availableTokens}
               tokenBalances={tokenBalances}
               selectedTokenInfo={selectedTokenInfo}
               onTokenSelect={(address, token) => {
@@ -1680,9 +1667,7 @@ const SwapComponent: React.FC = () => {
         <HelpSection
           nodeAddress={nodeAddress}
           beeApiUrl={beeApiUrl}
-          setNodeAddress={setNodeAddress}
           setBeeApiUrl={setBeeApiUrl}
-          setShowHelp={setShowHelp}
           isCustomNode={isCustomNode}
           setIsCustomNode={setIsCustomNode}
         />
@@ -1694,7 +1679,6 @@ const SwapComponent: React.FC = () => {
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
-          setSelectedStampTTL={setSelectedStampTTL}
         />
       ) : showUploadHistory ? (
         <UploadHistorySection
