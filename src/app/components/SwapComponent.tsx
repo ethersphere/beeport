@@ -1467,7 +1467,7 @@ const SwapComponent: React.FC = () => {
               <p className={styles.priceInfo}>
                 {liquidityError
                   ? "Not enough liquidity for this swap"
-                  : `Total cost ~ $${Number(totalUsdAmount).toFixed(2)}`}
+                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
               </p>
             )}
 
