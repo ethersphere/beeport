@@ -58,6 +58,28 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
     return `${Math.floor(ttl / 86400)} days`;
   };
 
+  const isArchiveFile = (filename?: string) => {
+    if (!filename) return false;
+    const archiveExtensions = [".zip", ".tar", ".gz", ".rar", ".7z", ".bz2"];
+    return archiveExtensions.some((ext) =>
+      filename.toLowerCase().endsWith(ext)
+    );
+  };
+
+  const getReferenceUrl = (record: UploadRecord) => {
+    // Check if DEFAULT_BEE_API_URL already contains /bzz/
+    const baseUrl = DEFAULT_BEE_API_URL.endsWith("/bzz/")
+      ? DEFAULT_BEE_API_URL.slice(0, -5)
+      : DEFAULT_BEE_API_URL;
+
+    // For non-archive files with a filename, include the filename in the URL
+    if (record.filename && !isArchiveFile(record.filename)) {
+      return `${baseUrl}/bzz/${record.reference}/${record.filename}`;
+    }
+    // Otherwise use the default URL for the reference
+    return `${baseUrl}/bzz/${record.reference}/`;
+  };
+
   return (
     <div className={styles.container}>
       <h2 className={styles.title}>Upload History</h2>
@@ -82,19 +104,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
                   <a
-                    href={`${DEFAULT_BEE_API_URL}/bzz/${record.reference}/`}
+                    href={getReferenceUrl(record)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.link}
                     title={record.reference}
                   >
-                    {record.reference}
+                    {formatReference(record.reference)}
+                    {record.filename && !isArchiveFile(record.filename)
+                      ? `/${record.filename}`
+                      : ""}
                   </a>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamp ID:</span>
                   <span className={styles.stampId} title={record.stampId}>
-                    {record.stampId}
+                    {formatStampId(record.stampId)}
                   </span>
                 </div>
                 <div className={styles.expiryRow}>
