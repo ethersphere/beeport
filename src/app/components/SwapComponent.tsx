@@ -587,7 +587,7 @@ const SwapComponent: React.FC = () => {
 
   const handleGnosisTokenSwap = async (contractCallsRoute: any) => {
     setStatusMessage({
-      step: "Executing",
+      step: "Route",
       message: "Executing contract calls...",
     });
 
@@ -598,11 +598,14 @@ const SwapComponent: React.FC = () => {
         console.log(`Status: ${status}`);
 
         setStatusMessage({
-          step: "Contract",
+          step: "Route",
           message: `Status update: ${status?.replace(/_/g, " ")}`,
         });
 
         if (status === "DONE") {
+          // Reset timer when done
+          resetBridgeTimer();
+
           const txHash = updatedRoute.steps[0]?.execution?.process[0]?.txHash;
           console.log("Created new Batch at trx", txHash);
 
@@ -624,6 +627,9 @@ const SwapComponent: React.FC = () => {
             isSuccess: true,
           });
           setUploadStep("ready");
+        } else if (status === "FAILED") {
+          // Reset timer if failed
+          resetBridgeTimer();
         }
       },
     });
@@ -808,6 +814,17 @@ const SwapComponent: React.FC = () => {
       gnosisContactCallsQuoteResponse.includedSteps,
       "Gnosis Calls Quote"
     );
+
+    // Extract the estimated execution duration
+    if (gnosisContactCallsQuoteResponse.estimate?.executionDuration) {
+      setEstimatedBridgeTime(
+        gnosisContactCallsQuoteResponse.estimate.executionDuration
+      );
+      console.log(
+        "Gnosis Estimated Time:",
+        gnosisContactCallsQuoteResponse.estimate.executionDuration
+      );
+    }
 
     return {
       gnosisContactCallsQuoteResponse,
@@ -1360,7 +1377,7 @@ const SwapComponent: React.FC = () => {
       timerIntervalRef.current = null;
     }
 
-    // Start a new timer if we have an estimated time
+    // Start a new timer if we have an estimated time and we're in the Route step
     if (estimatedBridgeTime !== null && statusMessage.step === "Route") {
       console.log("Starting timer with duration:", estimatedBridgeTime);
 
@@ -1373,7 +1390,10 @@ const SwapComponent: React.FC = () => {
       timerIntervalRef.current = setInterval(() => {
         setRemainingBridgeTime((prevTime) => {
           const newTime = prevTime !== null ? prevTime - 1 : 0;
-          console.log("Timer tick, remaining time:", newTime);
+          // Reduce log frequency to avoid console spam
+          if (newTime % 5 === 0) {
+            console.log("Timer tick, remaining time:", newTime);
+          }
 
           if (newTime <= 0) {
             if (timerIntervalRef.current) {
@@ -1631,7 +1651,8 @@ const SwapComponent: React.FC = () => {
                       )}
 
                       {remainingBridgeTime !== null &&
-                        estimatedBridgeTime !== null && (
+                        estimatedBridgeTime !== null &&
+                        statusMessage.step === "Route" && (
                           <div className={styles.bridgeTimer}>
                             <p>
                               Estimated time remaining:{" "}
