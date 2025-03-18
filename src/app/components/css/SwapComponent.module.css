@@ -644,3 +644,27 @@
     left: 100%;
   }
 }
+
+.bridgeTimer {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid #30363d;
+}
+
+.bridgeTimer p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #8b949e;
+}
+
+/* If you want different styles for the bridge timer's progress bar, you can use these: */
+.bridgeTimer .progressBarContainer {
+  height: 6px;
+  background-color: #1e2328;
+}
+
+.bridgeTimer .progressBar {
+  background-color: #3fb950; /* Green color for the bridge timer */
+}

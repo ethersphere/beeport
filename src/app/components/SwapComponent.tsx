@@ -123,6 +123,13 @@ const SwapComponent: React.FC = () => {
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
+  const [estimatedBridgeTime, setEstimatedBridgeTime] = useState<number | null>(
+    null
+  );
+  const [remainingBridgeTime, setRemainingBridgeTime] = useState<number | null>(
+    null
+  );
+
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
     transport: http(),
@@ -639,6 +646,9 @@ const SwapComponent: React.FC = () => {
         gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
       });
 
+    // Reset the timer when starting the bridging process
+    setRemainingBridgeTime(estimatedBridgeTime);
+
     setStatusMessage({
       step: "Route",
       message: "Executing bridging transaction... This will take few minutes.",
@@ -914,6 +924,14 @@ const SwapComponent: React.FC = () => {
       crossChainContractQuoteResponse.includedSteps,
       "Cross Chain Quote with Gas Forwarding"
     );
+
+    // Extract the estimated execution duration
+    if (crossChainContractQuoteResponse.estimate?.executionDuration) {
+      setEstimatedBridgeTime(
+        crossChainContractQuoteResponse.estimate.executionDuration
+      );
+    }
+    console.log("Estimated Bridge Time:", estimatedBridgeTime);
 
     return {
       crossChainContractQuoteResponse,
@@ -1326,6 +1344,37 @@ const SwapComponent: React.FC = () => {
     );
   };
 
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    if (estimatedBridgeTime !== null) {
+      // Initialize remaining time when bridging starts
+      setRemainingBridgeTime(estimatedBridgeTime);
+
+      // Set up a countdown timer
+      timer = setInterval(() => {
+        setRemainingBridgeTime((prevTime) => {
+          if (prevTime === null || prevTime <= 0) {
+            if (timer) clearInterval(timer);
+            return 0;
+          }
+          return prevTime - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [estimatedBridgeTime, statusMessage]);
+
+  const formatTime = (seconds: number): string => {
+    if (seconds <= 0) return "0:00";
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.tabContainer}>
@@ -1539,6 +1588,32 @@ const SwapComponent: React.FC = () => {
                       {statusMessage.error && (
                         <div className={styles.errorMessage}>
                           {statusMessage.error}
+                        </div>
+                      )}
+
+                      {remainingBridgeTime !== null && (
+                        <div className={styles.bridgeTimer}>
+                          <p>
+                            Estimated time remaining:{" "}
+                            {formatTime(remainingBridgeTime)}
+                          </p>
+                          <div className={styles.progressBarContainer}>
+                            <div
+                              className={styles.progressBar}
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    (1 -
+                                      remainingBridgeTime /
+                                        (estimatedBridgeTime || 1)) *
+                                      100
+                                  )
+                                )}%`,
+                              }}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
