@@ -585,11 +585,17 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const handleGnosisTokenSwap = async (contractCallsRoute: any) => {
+  const handleGnosisTokenSwap = async (
+    contractCallsRoute: any,
+    currentConfig: any
+  ) => {
     setStatusMessage({
       step: "Route",
       message: "Executing contract calls...",
     });
+
+    // Use the config that was passed in
+    let configToUse = currentConfig;
 
     const executedRoute = await executeRoute(contractCallsRoute, {
       updateRouteHook: async (updatedRoute) => {
@@ -612,7 +618,7 @@ const SwapComponent: React.FC = () => {
           try {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
-              swarmConfig.swarmBatchNonce,
+              configToUse.swarmBatchNonce,
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
@@ -628,6 +634,22 @@ const SwapComponent: React.FC = () => {
           });
           setUploadStep("ready");
         } else if (status === "FAILED") {
+          // Generate a new proper nonce if the transaction fails
+          const recoveryNonce = generateProperNonce();
+          console.log(
+            "Transaction failed, setting new recovery nonce:",
+            recoveryNonce
+          );
+
+          // Create a new config with the recovery nonce
+          configToUse = {
+            ...configToUse,
+            swarmBatchNonce: recoveryNonce,
+          };
+
+          // Update the state
+          setSwarmConfig(configToUse);
+
           // Reset timer if failed
           resetBridgeTimer();
         }
@@ -964,6 +986,34 @@ const SwapComponent: React.FC = () => {
     };
   };
 
+  // Add this function to generate a proper 32-byte nonce
+  const generateProperNonce = () => {
+    // Create a new Uint8Array of 32 bytes
+    const randomBytes = new Uint8Array(32);
+
+    // Fill with random values
+    crypto.getRandomValues(randomBytes);
+
+    // To ensure uniqueness with timestamp, replace last 8 bytes with timestamp
+    // Current timestamp in milliseconds as 8 bytes (64 bits)
+    const timestamp = Date.now();
+    const timestampBuffer = new ArrayBuffer(8);
+    const timestampView = new DataView(timestampBuffer);
+    timestampView.setBigUint64(0, BigInt(timestamp), false); // false = big-endian
+
+    // Replace last 8 bytes of randomBytes with timestamp bytes
+    const timestampArray = new Uint8Array(timestampBuffer);
+    randomBytes.set(timestampArray, 24); // 24 = 32 - 8, to replace last 8 bytes
+
+    // Convert to hex string with 0x prefix
+    return (
+      "0x" +
+      Array.from(randomBytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")
+    );
+  };
+
   const handleSwap = async () => {
     if (!isConnected || !address || !publicClient || !walletClient) {
       console.error("Wallet not connected or clients not available");
@@ -973,15 +1023,22 @@ const SwapComponent: React.FC = () => {
     // Reset the bridge timer when starting a new transaction
     resetBridgeTimer();
 
-    // Set new nonce first
-    setSwarmConfig((prev) => ({
-      ...prev,
-      swarmBatchNonce:
-        "0x" +
-        Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join(""),
-    }));
+    console.log("swarmBatchNoncePRev", swarmConfig.swarmBatchNonce);
+
+    // Generate a properly sized nonce (exactly 32 bytes)
+    const uniqueNonce = generateProperNonce();
+    console.log("Generated new nonce:", uniqueNonce);
+
+    // Set the nonce directly in the config we'll use for this transaction
+    const updatedConfig = {
+      ...swarmConfig,
+      swarmBatchNonce: uniqueNonce,
+    };
+
+    // Update the state for future reference
+    setSwarmConfig(updatedConfig);
+
+    console.log("Will use swarm batch nonce:", updatedConfig.swarmBatchNonce);
 
     setIsLoading(true);
     setShowOverlay(true);
@@ -1017,7 +1074,7 @@ const SwapComponent: React.FC = () => {
 
       const bzzAmount = calculateTotalAmount().toString();
       console.log("bzzAmount", bzzAmount);
-      console.log("swarmBatchNonce", swarmConfig.swarmBatchNonce);
+      console.log("Using swarmBatchNonce:", updatedConfig.swarmBatchNonce);
 
       // Deciding if we are buying stamp directly or swaping/bridging
       if (
@@ -1042,12 +1099,12 @@ const SwapComponent: React.FC = () => {
             address,
             bzzAmount,
             nodeAddress,
-            swarmConfig,
+            swarmConfig: updatedConfig,
           });
 
         // Check are we solving Gnosis chain or other chain Swap
         if (selectedChainId === ChainId.DAI) {
-          await handleGnosisTokenSwap(gnosisContractCallsRoute);
+          await handleGnosisTokenSwap(gnosisContractCallsRoute, updatedConfig);
         } else {
           // This is gnosisSourceToken/gnosisDesatinationToken amount value
           const toAmount = gnosisContactCallsQuoteResponse.estimate.fromAmount;
