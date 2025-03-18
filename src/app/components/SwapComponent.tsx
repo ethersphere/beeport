@@ -653,10 +653,7 @@ const SwapComponent: React.FC = () => {
 
         setStatusMessage({
           step: "Route",
-          message: `Bridging in progress: ${step1Status?.replace(
-            /_/g,
-            " "
-          )}. This can take few minutes.`,
+          message: `Bridging in progress: ${step1Status?.replace(/_/g, " ")}.`,
         });
 
         if (step1Status === "DONE") {
