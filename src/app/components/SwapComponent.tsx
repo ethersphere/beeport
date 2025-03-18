@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   useAccount,
   useChainId,
@@ -129,6 +129,8 @@ const SwapComponent: React.FC = () => {
   const [remainingBridgeTime, setRemainingBridgeTime] = useState<number | null>(
     null
   );
+
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const gnosisPublicClient = createPublicClient({
     chain: gnosis,
@@ -646,9 +648,6 @@ const SwapComponent: React.FC = () => {
         gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
       });
 
-    // Reset the timer when starting the bridging process
-    setRemainingBridgeTime(estimatedBridgeTime);
-
     setStatusMessage({
       step: "Route",
       message: "Executing bridging transaction... This will take few minutes.",
@@ -668,6 +667,9 @@ const SwapComponent: React.FC = () => {
 
         if (step1Status === "DONE") {
           await handleChainSwitch(gnosisContractCallsRoute);
+        } else if (step1Status === "FAILED") {
+          // Add reset if the execution fails
+          resetBridgeTimer();
         }
       },
     });
@@ -677,6 +679,10 @@ const SwapComponent: React.FC = () => {
 
   const handleChainSwitch = async (contractCallsRoute: any) => {
     console.log("First route completed, triggering chain switch to Gnosis...");
+
+    // Reset the timer when the bridge completes
+    resetBridgeTimer();
+
     setStatusMessage({
       step: "Switch",
       message: "First route completed. Switching chain to Gnosis...",
@@ -946,6 +952,9 @@ const SwapComponent: React.FC = () => {
       console.error("Wallet not connected or clients not available");
       return;
     }
+
+    // Reset the bridge timer when starting a new transaction
+    resetBridgeTimer();
 
     // Set new nonce first
     setSwarmConfig((prev) => ({
@@ -1345,34 +1354,64 @@ const SwapComponent: React.FC = () => {
   };
 
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    // Clear any existing timer first
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
 
-    if (estimatedBridgeTime !== null) {
-      // Initialize remaining time when bridging starts
-      setRemainingBridgeTime(estimatedBridgeTime);
+    // Start a new timer if we have an estimated time
+    if (estimatedBridgeTime !== null && statusMessage.step === "Route") {
+      console.log("Starting timer with duration:", estimatedBridgeTime);
 
-      // Set up a countdown timer
-      timer = setInterval(() => {
+      // Initialize the remaining time if it's not set
+      if (remainingBridgeTime === null) {
+        setRemainingBridgeTime(estimatedBridgeTime);
+      }
+
+      // Create the interval
+      timerIntervalRef.current = setInterval(() => {
         setRemainingBridgeTime((prevTime) => {
-          if (prevTime === null || prevTime <= 0) {
-            if (timer) clearInterval(timer);
+          const newTime = prevTime !== null ? prevTime - 1 : 0;
+          console.log("Timer tick, remaining time:", newTime);
+
+          if (newTime <= 0) {
+            if (timerIntervalRef.current) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
             return 0;
           }
-          return prevTime - 1;
+          return newTime;
         });
       }, 1000);
     }
 
+    // Clean up function
     return () => {
-      if (timer) clearInterval(timer);
+      if (timerIntervalRef.current) {
+        console.log("Cleaning up timer");
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
     };
-  }, [estimatedBridgeTime, statusMessage]);
+  }, [estimatedBridgeTime, statusMessage.step]);
 
   const formatTime = (seconds: number): string => {
     if (seconds <= 0) return "0:00";
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
+
+  // 3. Update the reset function to also clear the interval
+  const resetBridgeTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    setEstimatedBridgeTime(null);
+    setRemainingBridgeTime(null);
   };
 
   return (
@@ -1591,31 +1630,32 @@ const SwapComponent: React.FC = () => {
                         </div>
                       )}
 
-                      {remainingBridgeTime !== null && (
-                        <div className={styles.bridgeTimer}>
-                          <p>
-                            Estimated time remaining:{" "}
-                            {formatTime(remainingBridgeTime)}
-                          </p>
-                          <div className={styles.progressBarContainer}>
-                            <div
-                              className={styles.progressBar}
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(
-                                    100,
-                                    (1 -
-                                      remainingBridgeTime /
-                                        (estimatedBridgeTime || 1)) *
-                                      100
-                                  )
-                                )}%`,
-                              }}
-                            />
+                      {remainingBridgeTime !== null &&
+                        estimatedBridgeTime !== null && (
+                          <div className={styles.bridgeTimer}>
+                            <p>
+                              Estimated time remaining:{" "}
+                              {formatTime(remainingBridgeTime)}
+                            </p>
+                            <div className={styles.progressBarContainer}>
+                              <div
+                                className={styles.progressBar}
+                                style={{
+                                  width: `${Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      (1 -
+                                        remainingBridgeTime /
+                                          estimatedBridgeTime) *
+                                        100
+                                    )
+                                  )}%`,
+                                }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
                     </div>
                   </>
                 )}
