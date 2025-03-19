@@ -3,7 +3,17 @@ import {
   keccak256,
   encodeAbiParameters,
   parseAbiParameters,
+  encodeFunctionData,
+  parseAbi,
 } from "viem";
+
+import {
+  getContractCallsQuote,
+  ContractCallsQuoteRequest,
+  ChainId,
+} from "@lifi/sdk";
+
+import { GNOSIS_CUSTOM_REGISTRY_ADDRESS } from "./constants";
 
 export interface ToAmountQuoteParams {
   fromChain: string | number;
@@ -303,4 +313,94 @@ export const generateProperNonce = (): `0x${string}` => {
     Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("")) as `0x${string}`;
+};
+
+// Add this new interface for the contract calls parameters
+export interface ContractCallQuoteParams extends ToAmountQuoteParams {
+  nodeAddress: string;
+  swarmConfig: any;
+}
+
+/**
+ * Gets a quote for ToAmount with contract calls as a backup method
+ * @param params Parameters for the quote
+ * @param apiKey Optional API key
+ * @returns Quote response
+ */
+export const getToAmountContractQuote = async (
+  params: ContractCallQuoteParams,
+  apiKey?: string
+): Promise<any> => {
+  return performWithRetry(
+    async () => {
+      const {
+        fromChain,
+        toChain,
+        fromToken,
+        toToken,
+        fromAddress,
+        toAmount,
+        nodeAddress,
+        swarmConfig,
+      } = params;
+
+      // Create postage stamp transaction data for simulation
+      const postagStampTxData = encodeFunctionData({
+        abi: parseAbi(swarmConfig.swarmContractAbi),
+        functionName: "createBatchRegistry",
+        args: [
+          fromAddress,
+          nodeAddress,
+          swarmConfig.swarmBatchInitialBalance,
+          swarmConfig.swarmBatchDepth,
+          swarmConfig.swarmBatchBucketDepth,
+          swarmConfig.swarmBatchNonce,
+          swarmConfig.swarmBatchImmutable,
+        ],
+      });
+
+      // Create quote request
+      const contractCallsQuoteRequest: ContractCallsQuoteRequest = {
+        fromChain: fromChain.toString(),
+        fromToken: fromToken,
+        fromAddress: fromAddress.toString(),
+        toChain: toChain.toString(),
+        toToken: toToken,
+        toAmount: toAmount.toString(),
+        contractCalls: [
+          {
+            fromAmount: toAmount.toString(),
+            fromTokenAddress: toToken,
+            toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+            toContractCallData: postagStampTxData,
+            toContractGasLimit: swarmConfig.swarmContractGasLimit,
+          },
+        ],
+        slippage: 0.5,
+      };
+
+      console.log(`Getting contract calls quote for toAmount`);
+      console.log("ContractCallsQuoteRequest:", contractCallsQuoteRequest);
+
+      // Get quote
+      const initialQuoteResponse = await getContractCallsQuote(
+        contractCallsQuoteRequest
+      );
+
+      console.info(">> Initial Contract Calls Quote", initialQuoteResponse);
+
+      return initialQuoteResponse;
+    },
+    "getToAmountContractQuote",
+    (result) => {
+      // Validate that we have a proper response with the required fields
+      return (
+        result &&
+        result.estimate &&
+        typeof result.estimate.fromAmount === "string"
+      );
+    },
+    5, // 5 retries
+    500 // 500ms delay between retries
+  );
 };
