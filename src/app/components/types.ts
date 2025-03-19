@@ -29,23 +29,14 @@ export type StorageOption = {
   size: string;
 };
 
-export type GetGnosisQuoteParams = {
+export interface GetGnosisQuoteParams {
   gnosisSourceToken: string;
   address: string;
   bzzAmount: string;
   nodeAddress: string;
-  swarmConfig: {
-    swarmToken: string;
-    swarmContractAbi: string[];
-    swarmBatchInitialBalance: string;
-    swarmBatchDepth: string;
-    swarmBatchBucketDepth: string;
-    swarmBatchNonce: string;
-    swarmBatchImmutable: boolean;
-    swarmPostageStampAddress: string;
-    swarmContractGasLimit: string;
-  };
-};
+  swarmConfig: any;
+  setEstimatedTime?: (time: number) => void;
+}
 
 export interface GetCrossChainQuoteParams {
   selectedChainId: number;
@@ -53,4 +44,5 @@ export interface GetCrossChainQuoteParams {
   address: string;
   toAmount: string;
   gnosisDestinationToken: string;
+  setEstimatedTime?: (time: number) => void;
 }
