@@ -27,16 +27,11 @@ import {
   getQuote,
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
-import { parseAbi, encodeFunctionData, formatUnits } from "viem";
+import { parseAbi, formatUnits } from "viem";
 import { getAddress, createPublicClient, http } from "viem";
 
 import { gnosis } from "viem/chains";
-import {
-  ExecutionStatus,
-  UploadStep,
-  GetGnosisQuoteParams,
-  GetCrossChainQuoteParams,
-} from "./types";
+import { ExecutionStatus, UploadStep } from "./types";
 import {
   GNOSIS_PRICE_ORACLE_ADDRESS,
   GNOSIS_PRICE_ORACLE_ABI,
@@ -64,9 +59,6 @@ import {
   createBatchId,
   performWithRetry,
   toChecksumAddress,
-  logTokenRoute,
-  getToAmountQuote,
-  ToAmountQuoteParams,
   generateProperNonce,
 } from "./utils";
 
@@ -558,7 +550,11 @@ const SwapComponent: React.FC = () => {
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
-            console.log("Created batch ID:", batchId);
+            console.log(
+              "Created batch ID:",
+              batchId,
+              swarmConfig.swarmBatchNonce
+            );
 
             setStatusMessage({
               step: "Complete",
@@ -597,9 +593,6 @@ const SwapComponent: React.FC = () => {
       message: "Executing contract calls...",
     });
 
-    // Use the config that was passed in
-    let configToUse = currentConfig;
-
     const executedRoute = await executeRoute(contractCallsRoute, {
       updateRouteHook: async (updatedRoute) => {
         console.log("Updated Route:", updatedRoute);
@@ -621,11 +614,15 @@ const SwapComponent: React.FC = () => {
           try {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
-              configToUse.swarmBatchNonce,
+              currentConfig.swarmBatchNonce,
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
-            console.log("Created batch ID:", batchId);
+            console.log(
+              "Created batch ID:",
+              batchId,
+              currentConfig.swarmBatchNonce
+            );
           } catch (error) {
             console.error("Failed to create batch ID:", error);
           }
@@ -645,13 +642,13 @@ const SwapComponent: React.FC = () => {
           );
 
           // Create a new config with the recovery nonce
-          configToUse = {
-            ...configToUse,
+          currentConfig = {
+            ...currentConfig,
             swarmBatchNonce: recoveryNonce,
           };
 
           // Update the state
-          setSwarmConfig(configToUse);
+          setSwarmConfig(currentConfig);
 
           // Reset timer if failed
           resetTimer();
@@ -663,7 +660,8 @@ const SwapComponent: React.FC = () => {
 
   const handleCrossChainSwap = async (
     gnosisContractCallsRoute: any,
-    toAmount: any
+    toAmount: any,
+    updatedConfig: any
   ) => {
     setStatusMessage({
       step: "Quote",
@@ -693,7 +691,7 @@ const SwapComponent: React.FC = () => {
         });
 
         if (step1Status === "DONE") {
-          await handleChainSwitch(gnosisContractCallsRoute);
+          await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
         } else if (step1Status === "FAILED") {
           // Add reset if the execution fails
           resetTimer();
@@ -704,7 +702,10 @@ const SwapComponent: React.FC = () => {
     console.log("First route execution completed:", executedRoute);
   };
 
-  const handleChainSwitch = async (contractCallsRoute: any) => {
+  const handleChainSwitch = async (
+    contractCallsRoute: any,
+    updatedConfig: any
+  ) => {
     console.log("First route completed, triggering chain switch to Gnosis...");
 
     // Reset the timer when the action completes
@@ -720,7 +721,7 @@ const SwapComponent: React.FC = () => {
         if (chainId === ChainId.DAI) {
           console.log("Detected switch to Gnosis, executing second route...");
           unwatch();
-          await handleGnosisRoute(contractCallsRoute);
+          await handleGnosisRoute(contractCallsRoute, updatedConfig);
         }
       },
     });
@@ -728,7 +729,10 @@ const SwapComponent: React.FC = () => {
     switchChain({ chainId: ChainId.DAI });
   };
 
-  const handleGnosisRoute = async (contractCallsRoute: any) => {
+  const handleGnosisRoute = async (
+    contractCallsRoute: any,
+    updatedConfig: any
+  ) => {
     setStatusMessage({
       step: "Route",
       message: "Chain switched. Executing second route...",
@@ -754,11 +758,15 @@ const SwapComponent: React.FC = () => {
             try {
               // Batch will be created from registry contract for all cases
               const batchId = await createBatchId(
-                swarmConfig.swarmBatchNonce,
+                updatedConfig.swarmBatchNonce,
                 GNOSIS_CUSTOM_REGISTRY_ADDRESS,
                 setPostageBatchId
               );
-              console.log("Created batch ID:", batchId);
+              console.log(
+                "Created batch ID:",
+                batchId,
+                updatedConfig.swarmBatchNonce
+              );
             } catch (error) {
               console.error("Failed to create batch ID:", error);
             }
@@ -793,7 +801,7 @@ const SwapComponent: React.FC = () => {
     // Reset the timer when starting a new transaction
     resetTimer();
 
-    console.log("swarmBatchNoncePRev", swarmConfig.swarmBatchNonce);
+    console.log("Current nonce", swarmConfig.swarmBatchNonce);
 
     // Generate a properly sized nonce (exactly 32 bytes)
     const uniqueNonce = generateProperNonce();
@@ -844,7 +852,6 @@ const SwapComponent: React.FC = () => {
 
       const bzzAmount = calculateTotalAmount().toString();
       console.log("bzzAmount", bzzAmount);
-      console.log("Using swarmBatchNonce:", updatedConfig.swarmBatchNonce);
 
       // Deciding if we are buying stamp directly or swaping/bridging
       if (
@@ -879,7 +886,11 @@ const SwapComponent: React.FC = () => {
         } else {
           // This is gnosisSourceToken/gnosisDesatinationToken amount value
           const toAmount = gnosisContactCallsQuoteResponse.estimate.fromAmount;
-          await handleCrossChainSwap(gnosisContractCallsRoute, toAmount);
+          await handleCrossChainSwap(
+            gnosisContractCallsRoute,
+            toAmount,
+            updatedConfig
+          );
         }
       }
     } catch (error) {
