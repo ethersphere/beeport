@@ -65,6 +65,8 @@ import {
   performWithRetry,
   toChecksumAddress,
   logTokenRoute,
+  getToAmountQuote,
+  ToAmountQuoteParams,
 } from "./utils";
 
 const SwapComponent: React.FC = () => {
@@ -863,48 +865,29 @@ const SwapComponent: React.FC = () => {
     toAmount,
     gnosisDestinationToken,
   }: GetCrossChainQuoteParams) => {
-    // Create postage stamp transaction data for simulation
-    const postagStampTxData = encodeFunctionData({
-      abi: parseAbi(swarmConfig.swarmContractAbi),
-      functionName: "createBatchRegistry",
-      args: [
-        address,
-        nodeAddress,
-        swarmConfig.swarmBatchInitialBalance,
-        swarmConfig.swarmBatchDepth,
-        swarmConfig.swarmBatchBucketDepth,
-        swarmConfig.swarmBatchNonce,
-        swarmConfig.swarmBatchImmutable,
-      ],
-    });
-    // First get a regular quote to calculate the required fromAmount
-    const crossChainContractQuoteRequest: ContractCallsQuoteRequest = {
+    // Use the new getToAmountQuote function to get required fromAmount
+    const toAmountQuoteParams: ToAmountQuoteParams = {
       fromChain: selectedChainId.toString(),
-      fromToken: fromToken,
-      fromAddress: address.toString(),
       toChain: ChainId.DAI.toString(),
+      fromToken: fromToken,
       toToken: gnosisDestinationToken,
+      fromAddress: address as string,
       toAmount: toAmount,
-      contractCalls: [
-        {
-          fromAmount: toAmount,
-          fromTokenAddress: gnosisDestinationToken,
-          toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-          toContractCallData: postagStampTxData,
-          toContractGasLimit: swarmConfig.swarmContractGasLimit,
-        },
-      ],
-      slippage: 0.5,
     };
 
-    const initialQuoteResponse = await getContractCallsQuote(
-      crossChainContractQuoteRequest
+    console.log("Fetching toAmount quote for cross-chain transaction...");
+    const toAmountQuoteResponse = await getToAmountQuote(
+      toAmountQuoteParams,
+      LIFI_API_KEY
+    );
+    console.info(
+      ">> Initial Cross Chain Quote (toAmount)",
+      toAmountQuoteResponse
     );
 
-    console.info(">> Initial Cross Chain Quote", initialQuoteResponse);
-
-    // Extract the fromAmount from the initial quote
-    const requiredFromAmount = initialQuoteResponse.estimate.fromAmount;
+    // Extract the fromAmount from the response
+    const requiredFromAmount = toAmountQuoteResponse.estimate.fromAmount;
+    console.log("Required fromAmount:", requiredFromAmount);
 
     // Check if user has any balance on Gnosis for gas forwarding
     let fromAmountForGas: bigint = 0n;
