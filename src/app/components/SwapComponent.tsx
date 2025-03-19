@@ -126,12 +126,8 @@ const SwapComponent: React.FC = () => {
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-  const [estimatedBridgeTime, setEstimatedBridgeTime] = useState<number | null>(
-    null
-  );
-  const [remainingBridgeTime, setRemainingBridgeTime] = useState<number | null>(
-    null
-  );
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -613,7 +609,7 @@ const SwapComponent: React.FC = () => {
 
         if (status === "DONE") {
           // Reset timer when done
-          resetBridgeTimer();
+          resetTimer();
 
           const txHash = updatedRoute.steps[0]?.execution?.process[0]?.txHash;
           console.log("Created new Batch at trx", txHash);
@@ -654,7 +650,7 @@ const SwapComponent: React.FC = () => {
           setSwarmConfig(configToUse);
 
           // Reset timer if failed
-          resetBridgeTimer();
+          resetTimer();
         }
       },
     });
@@ -700,7 +696,7 @@ const SwapComponent: React.FC = () => {
           await handleChainSwitch(gnosisContractCallsRoute);
         } else if (step1Status === "FAILED") {
           // Add reset if the execution fails
-          resetBridgeTimer();
+          resetTimer();
         }
       },
     });
@@ -711,8 +707,8 @@ const SwapComponent: React.FC = () => {
   const handleChainSwitch = async (contractCallsRoute: any) => {
     console.log("First route completed, triggering chain switch to Gnosis...");
 
-    // Reset the timer when the bridge completes
-    resetBridgeTimer();
+    // Reset the timer when the action completes
+    resetTimer();
 
     setStatusMessage({
       step: "Switch",
@@ -842,7 +838,7 @@ const SwapComponent: React.FC = () => {
 
     // Extract the estimated execution duration
     if (gnosisContactCallsQuoteResponse.estimate?.executionDuration) {
-      setEstimatedBridgeTime(
+      setEstimatedTime(
         gnosisContactCallsQuoteResponse.estimate.executionDuration
       );
       console.log(
@@ -956,11 +952,11 @@ const SwapComponent: React.FC = () => {
 
     // Extract the estimated execution duration
     if (crossChainContractQuoteResponse.estimate?.executionDuration) {
-      setEstimatedBridgeTime(
+      setEstimatedTime(
         crossChainContractQuoteResponse.estimate.executionDuration
       );
     }
-    console.log("Estimated Bridge Time:", estimatedBridgeTime);
+    console.log("Estimated Bridge Time:", estimatedTime);
 
     return {
       crossChainContractQuoteResponse,
@@ -976,8 +972,8 @@ const SwapComponent: React.FC = () => {
       return;
     }
 
-    // Reset the bridge timer when starting a new transaction
-    resetBridgeTimer();
+    // Reset the timer when starting a new transaction
+    resetTimer();
 
     console.log("swarmBatchNoncePRev", swarmConfig.swarmBatchNonce);
 
@@ -1391,17 +1387,17 @@ const SwapComponent: React.FC = () => {
     }
 
     // Start a new timer if we have an estimated time and we're in the Route step
-    if (estimatedBridgeTime !== null && statusMessage.step === "Route") {
-      console.log("Starting timer with duration:", estimatedBridgeTime);
+    if (estimatedTime !== null && statusMessage.step === "Route") {
+      console.log("Starting timer with duration:", estimatedTime);
 
       // Initialize the remaining time if it's not set
-      if (remainingBridgeTime === null) {
-        setRemainingBridgeTime(estimatedBridgeTime);
+      if (remainingTime === null) {
+        setRemainingTime(estimatedTime);
       }
 
       // Create the interval
       timerIntervalRef.current = setInterval(() => {
-        setRemainingBridgeTime((prevTime) => {
+        setRemainingTime((prevTime) => {
           const newTime = prevTime !== null ? prevTime - 1 : 0;
           // Reduce log frequency to avoid console spam
           if (newTime % 5 === 0) {
@@ -1428,7 +1424,7 @@ const SwapComponent: React.FC = () => {
         timerIntervalRef.current = null;
       }
     };
-  }, [estimatedBridgeTime, statusMessage.step]);
+  }, [estimatedTime, statusMessage.step]);
 
   const formatTime = (seconds: number): string => {
     if (seconds <= 0) return "0:00";
@@ -1438,13 +1434,13 @@ const SwapComponent: React.FC = () => {
   };
 
   // 3. Update the reset function to also clear the interval
-  const resetBridgeTimer = () => {
+  const resetTimer = () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-    setEstimatedBridgeTime(null);
-    setRemainingBridgeTime(null);
+    setEstimatedTime(null);
+    setRemainingTime(null);
   };
 
   return (
@@ -1663,13 +1659,13 @@ const SwapComponent: React.FC = () => {
                         </div>
                       )}
 
-                      {remainingBridgeTime !== null &&
-                        estimatedBridgeTime !== null &&
+                      {remainingTime !== null &&
+                        estimatedTime !== null &&
                         statusMessage.step === "Route" && (
                           <div className={styles.bridgeTimer}>
                             <p>
                               Estimated time remaining:{" "}
-                              {formatTime(remainingBridgeTime)}
+                              {formatTime(remainingTime)}
                             </p>
                             <div className={styles.progressBarContainer}>
                               <div
@@ -1679,10 +1675,7 @@ const SwapComponent: React.FC = () => {
                                     0,
                                     Math.min(
                                       100,
-                                      (1 -
-                                        remainingBridgeTime /
-                                          estimatedBridgeTime) *
-                                        100
+                                      (1 - remainingTime / estimatedTime) * 100
                                     )
                                   )}%`,
                                 }}
