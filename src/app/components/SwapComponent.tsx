@@ -13,9 +13,6 @@ import { config } from "@/app/wagmi";
 import {
   createConfig,
   EVM,
-  getContractCallsQuote,
-  ContractCallsQuoteRequest,
-  convertQuoteToRoute,
   executeRoute,
   ChainId,
   ChainType,
@@ -24,7 +21,6 @@ import {
   TokensResponse,
   getTokenBalancesByChain,
   Chain,
-  getQuote,
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, formatUnits } from "viem";
