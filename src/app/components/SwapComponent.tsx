@@ -675,11 +675,6 @@ const SwapComponent: React.FC = () => {
         gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
       });
 
-    setStatusMessage({
-      step: "Route",
-      message: "Executing bridging transaction... This will take few minutes.",
-    });
-
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
       updateRouteHook: async (crossChainContractCallsRoute) => {
         console.log("Updated Route 1:", crossChainContractCallsRoute);
@@ -1392,7 +1387,8 @@ const SwapComponent: React.FC = () => {
 
       // Initialize the remaining time if it's not set
       if (remainingTime === null) {
-        setRemainingTime(estimatedTime);
+        const buffer: number = 10;
+        setRemainingTime(estimatedTime + buffer);
       }
 
       // Create the interval
