@@ -125,42 +125,52 @@ export const getToAmountQuote = async (
   params: ToAmountQuoteParams,
   apiKey?: string
 ): Promise<ToAmountQuoteResponse> => {
-  const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
-    params;
-  const toAddress = params.toAddress || fromAddress;
+  return performWithRetry(
+    async () => {
+      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
+        params;
+      const toAddress = params.toAddress || fromAddress;
 
-  const url = `https://li.quest/v1/quote/toAmount?fromChain=${fromChain}&toChain=${toChain}&fromToken=${fromToken}&toToken=${toToken}&fromAddress=${fromAddress}&toAddress=${toAddress}&toAmount=${toAmount}`;
+      const url = `https://li.quest/v1/quote/toAmount?fromChain=${fromChain}&toChain=${toChain}&fromToken=${fromToken}&toToken=${toToken}&fromAddress=${fromAddress}&toAddress=${toAddress}&toAmount=${toAmount}`;
 
-  const headers: HeadersInit = {
-    accept: "application/json",
-  };
+      const headers: HeadersInit = {
+        accept: "application/json",
+      };
 
-  if (apiKey) {
-    headers["x-lifi-api-key"] = apiKey;
-  }
+      if (apiKey) {
+        headers["x-lifi-api-key"] = apiKey;
+      }
 
-  const options = {
-    method: "GET",
-    headers,
-  };
+      const options = {
+        method: "GET",
+        headers,
+      };
 
-  try {
-    console.log(`Fetching toAmount quote from: ${url}`);
-    const response = await fetch(url, options);
+      console.log(`Fetching toAmount quote from: ${url}`);
+      const response = await fetch(url, options);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `HTTP error! Status: ${response.status}, Details: ${errorText}`
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `HTTP error! Status: ${response.status}, Details: ${errorText}`
+        );
+      }
+
+      const data = await response.json();
+      return data;
+    },
+    "getToAmountQuote",
+    (result) => {
+      // Validate that we have a proper response with the required fields
+      return (
+        result &&
+        result.estimate &&
+        typeof result.estimate.fromAmount === "string"
       );
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("Error fetching toAmount quote:", error);
-    throw error;
-  }
+    },
+    5, // 5 retries
+    500 // 500ms delay between retries
+  );
 };
 
 export const toChecksumAddress = (
