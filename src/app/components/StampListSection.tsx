@@ -88,16 +88,15 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             name: "BatchCreated",
             type: "event",
           },
+          args: {
+            payer: address as `0x${string}`,
+          },
           fromBlock: 25780238n,
           toBlock: "latest",
         });
 
-        const filteredLogs = logs.filter(
-          (log) => log.args.payer?.toLowerCase() === address.toLowerCase()
-        );
-
         const stampEvents = await Promise.all(
-          filteredLogs.map(async (log) => {
+          logs.map(async (log) => {
             const block = await gnosisClient.getBlock({
               blockNumber: log.blockNumber,
             });
