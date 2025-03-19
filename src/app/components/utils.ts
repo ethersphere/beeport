@@ -265,3 +265,32 @@ export const logTokenRoute = (steps: any[], type: string) => {
     );
   });
 };
+
+/**
+ * Generates a properly formatted 32-byte nonce with embedded timestamp for uniqueness
+ * @returns A hex string prefixed with 0x representing a 32-byte nonce
+ */
+export const generateProperNonce = (): `0x${string}` => {
+  // Create a new Uint8Array of 32 bytes
+  const randomBytes = new Uint8Array(32);
+
+  // Fill with random values
+  crypto.getRandomValues(randomBytes);
+
+  // To ensure uniqueness with timestamp, replace last 8 bytes with timestamp
+  // Current timestamp in milliseconds as 8 bytes (64 bits)
+  const timestamp = Date.now();
+  const timestampBuffer = new ArrayBuffer(8);
+  const timestampView = new DataView(timestampBuffer);
+  timestampView.setBigUint64(0, BigInt(timestamp), false); // false = big-endian
+
+  // Replace last 8 bytes of randomBytes with timestamp bytes
+  const timestampArray = new Uint8Array(timestampBuffer);
+  randomBytes.set(timestampArray, 24); // 24 = 32 - 8, to replace last 8 bytes
+
+  // Convert to hex string with 0x prefix
+  return ("0x" +
+    Array.from(randomBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")) as `0x${string}`;
+};
