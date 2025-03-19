@@ -5,6 +5,164 @@ import {
   parseAbiParameters,
 } from "viem";
 
+export interface ToAmountQuoteParams {
+  fromChain: string | number;
+  toChain: string | number;
+  fromToken: string;
+  toToken: string;
+  fromAddress: string;
+  toAddress?: string;
+  toAmount: string | number;
+}
+
+export interface TokenInfo {
+  address: string;
+  chainId: number;
+  symbol: string;
+  decimals: number;
+  name: string;
+  coinKey?: string;
+  logoURI?: string;
+  priceUSD?: string;
+}
+
+export interface ToolDetails {
+  key: string;
+  name: string;
+  logoURI: string;
+}
+
+export interface FeeCost {
+  name: string;
+  description: string;
+  token: TokenInfo;
+  amount: string;
+  amountUSD: string;
+  percentage?: string;
+  included?: boolean;
+}
+
+export interface GasCost {
+  type: string;
+  price: string;
+  estimate: string;
+  limit: string;
+  amount: string;
+  amountUSD: string;
+  token: TokenInfo;
+}
+
+export interface TransactionRequest {
+  value: string;
+  to: string;
+  data: string;
+  from: string;
+  chainId: number;
+  gasPrice: string;
+  gasLimit: string;
+}
+
+export interface IncludedStep {
+  id: string;
+  type: string;
+  action: {
+    fromChainId: number;
+    fromAmount: string;
+    fromToken: TokenInfo;
+    toChainId: number;
+    toToken: TokenInfo;
+    fromAddress: string;
+    toAddress: string;
+    destinationGasConsumption?: string;
+  };
+  estimate: {
+    tool: string;
+    fromAmount: string;
+    toAmount: string;
+    toAmountMin: string;
+    gasCosts: GasCost[];
+    executionDuration: number;
+    approvalAddress: string;
+    feeCosts: FeeCost[];
+  };
+  tool: string;
+  toolDetails: ToolDetails;
+}
+
+export interface ToAmountQuoteResponse {
+  type: string;
+  id: string;
+  tool: string;
+  toolDetails: ToolDetails;
+  action: {
+    fromToken: TokenInfo;
+    fromAmount: string;
+    toToken: TokenInfo;
+    fromChainId: number;
+    toChainId: number;
+    slippage: number;
+    fromAddress: string;
+    toAddress: string;
+  };
+  estimate: {
+    tool: string;
+    approvalAddress: string;
+    toAmountMin: string;
+    toAmount: string;
+    fromAmount: string;
+    feeCosts: FeeCost[];
+    gasCosts: GasCost[];
+    executionDuration: number;
+    fromAmountUSD?: string;
+    toAmountUSD?: string;
+  };
+  includedSteps: IncludedStep[];
+  integrator: string;
+  transactionRequest: TransactionRequest;
+}
+
+export const getToAmountQuote = async (
+  params: ToAmountQuoteParams,
+  apiKey?: string
+): Promise<ToAmountQuoteResponse> => {
+  const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
+    params;
+  const toAddress = params.toAddress || fromAddress;
+
+  const url = `https://li.quest/v1/quote/toAmount?fromChain=${fromChain}&toChain=${toChain}&fromToken=${fromToken}&toToken=${toToken}&fromAddress=${fromAddress}&toAddress=${toAddress}&toAmount=${toAmount}`;
+
+  const headers: HeadersInit = {
+    accept: "application/json",
+  };
+
+  if (apiKey) {
+    headers["x-lifi-api-key"] = apiKey;
+  }
+
+  const options = {
+    method: "GET",
+    headers,
+  };
+
+  try {
+    console.log(`Fetching toAmount quote from: ${url}`);
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `HTTP error! Status: ${response.status}, Details: ${errorText}`
+      );
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching toAmount quote:", error);
+    throw error;
+  }
+};
+
 export const toChecksumAddress = (
   address: string | undefined | null
 ): string | null => {
