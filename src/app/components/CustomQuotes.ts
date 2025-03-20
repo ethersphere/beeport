@@ -132,11 +132,6 @@ export interface ToAmountQuoteResponse {
   transactionRequest: TransactionRequest;
 }
 
-export interface ContractCallQuoteParams extends ToAmountQuoteParams {
-  nodeAddress: string;
-  swarmConfig: any;
-}
-
 /**
  * Gets a quote for Gnosis chain transaction
  */
@@ -234,10 +229,18 @@ export const getCrossChainQuote = async ({
   };
 
   console.log("Fetching toAmount quote for cross-chain transaction...");
-  const toAmountQuoteResponse = await getToAmountQuote(
-    toAmountQuoteParams,
-    LIFI_API_KEY
+
+  // We can use both getToAmountQuote and getToAmountContractQuote
+  // getToAmountContractQuote seems to be faster
+  const toAmountQuoteResponse = await getToAmountContractQuote(
+    toAmountQuoteParams
   );
+
+  // const toAmountQuoteResponse = await getToAmountQuote(
+  //   toAmountQuoteParams,
+  //   LIFI_API_KEY
+  // );
+
   console.info(
     ">> Initial Cross Chain Quote (toAmount)",
     toAmountQuoteResponse
@@ -389,36 +392,12 @@ export const getToAmountQuote = async (
  * Gets a quote for ToAmount with contract calls as a backup method
  */
 export const getToAmountContractQuote = async (
-  params: ContractCallQuoteParams,
-  apiKey?: string
+  params: ToAmountQuoteParams
 ): Promise<any> => {
   return performWithRetry(
     async () => {
-      const {
-        fromChain,
-        toChain,
-        fromToken,
-        toToken,
-        fromAddress,
-        toAmount,
-        nodeAddress,
-        swarmConfig,
-      } = params;
-
-      // Create postage stamp transaction data for simulation
-      const postagStampTxData = encodeFunctionData({
-        abi: parseAbi(swarmConfig.swarmContractAbi),
-        functionName: "createBatchRegistry",
-        args: [
-          fromAddress,
-          nodeAddress,
-          swarmConfig.swarmBatchInitialBalance,
-          swarmConfig.swarmBatchDepth,
-          swarmConfig.swarmBatchBucketDepth,
-          swarmConfig.swarmBatchNonce,
-          swarmConfig.swarmBatchImmutable,
-        ],
-      });
+      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
+        params;
 
       // Create quote request
       const contractCallsQuoteRequest: ContractCallsQuoteRequest = {
@@ -428,15 +407,7 @@ export const getToAmountContractQuote = async (
         toChain: toChain.toString(),
         toToken: toToken,
         toAmount: toAmount.toString(),
-        contractCalls: [
-          {
-            fromAmount: toAmount.toString(),
-            fromTokenAddress: toToken,
-            toContractAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-            toContractCallData: postagStampTxData,
-            toContractGasLimit: swarmConfig.swarmContractGasLimit,
-          },
-        ],
+        contractCalls: [],
         slippage: 0.5,
       };
 
