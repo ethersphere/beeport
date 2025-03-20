@@ -1051,6 +1051,7 @@ const SwapComponent: React.FC = () => {
         "Content-Type": isTarFile ? "application/x-tar" : selectedFile.type,
         "swarm-postage-batch-id": postageBatchId,
         "swarm-pin": "false",
+        "swarm-deferred-upload": " false",
         "registry-address": GNOSIS_CUSTOM_REGISTRY_ADDRESS,
       };
 
