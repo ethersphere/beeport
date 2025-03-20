@@ -300,6 +300,7 @@ export const getCrossChainQuote = async ({
     toToken: gnosisDestinationToken,
     fromAmountForGas: fromAmountForGas,
     slippage: 0.5,
+    order: "FASTEST",
   };
 
   // Can't comply because of https://github.com/lifinance/sdk/issues/239
