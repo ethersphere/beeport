@@ -276,7 +276,21 @@ const SwapComponent: React.FC = () => {
                 0
               )
             : 0;
-          totalAmount += bridgeFees;
+
+          console.log("Bridge fees:", bridgeFees);
+          console.log(
+            "Gas fees:",
+            crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD ||
+              "0"
+          );
+          console.log(
+            "Cross chain amount:",
+            crossChainContractQuoteResponse.estimate.fromAmountUSD
+          );
+
+          totalAmount = Number(
+            crossChainContractQuoteResponse.estimate.fromAmountUSD || 0
+          );
         }
 
         console.log("Total amount:", totalAmount);
