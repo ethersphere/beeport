@@ -322,15 +322,15 @@ const SwapComponent: React.FC = () => {
       providers: [
         EVM({
           getWalletClient: async () => {
-            const client = await walletClient;
+            const client = walletClient;
             if (!client) throw new Error("Wallet client not available");
             return client;
           },
           switchChain: async (chainId) => {
             if (switchChain) {
-              await switchChain({ chainId });
+              switchChain({ chainId });
             }
-            const client = await walletClient;
+            const client = walletClient;
             if (!client) throw new Error("Wallet client not available");
             return client;
           },
