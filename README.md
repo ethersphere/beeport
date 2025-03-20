@@ -93,3 +93,11 @@ dd if=/dev/urandom of=1GB.bin bs=64M count=16 iflag=fullblock
 ## Check LIFI API endpoints
 
 Go to https://apidocs.li.fi/reference
+
+## Design choices
+
+"By default your bee instance will handle uploads in a deferred manner, meaning that the data will be completely uploaded to your node locally before being then being uploaded to the Swarm network.
+
+In contrast, for a direct upload, the data will be completely uploaded to the Swarm network directly."
+
+We are using non deferred upload, because we want to be able to upload to the Swarm network directly.
