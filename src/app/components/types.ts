@@ -22,6 +22,7 @@ export type SwarmConfigType = {
   swarmBatchBucketDepth: string;
   swarmBatchImmutable: boolean;
   swarmBatchNonce: string;
+  swarmBatchTotal: string;
 };
 
 export type StorageOption = {

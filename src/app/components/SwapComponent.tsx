@@ -209,7 +209,7 @@ const SwapComponent: React.FC = () => {
 
   useEffect(() => {
     if (!isConnected || !address || !fromToken) return;
-    setTotalUsdAmount("0");
+    setTotalUsdAmount(null);
     setLiquidityError(false);
     setIsPriceEstimating(true);
 
@@ -303,7 +303,7 @@ const SwapComponent: React.FC = () => {
       // If no days selected, still reset the loading state
       setIsPriceEstimating(false);
     }
-  }, [swarmConfig.swarmBatchInitialBalance]);
+  }, [swarmConfig.swarmBatchTotal]);
 
   // Initialize LiFi function
   const initializeLiFi = () => {
@@ -448,9 +448,11 @@ const SwapComponent: React.FC = () => {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
+      const totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
       setSwarmConfig((prev) => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
+        swarmBatchTotal: totalAmount.toString(),
       }));
     }
   };

@@ -52,6 +52,7 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
     Array.from(crypto.getRandomValues(new Uint8Array(32)))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join(""),
+  swarmBatchTotal: "0",
 };
 
 export const GNOSIS_PRICE_ORACLE_ABI = [
