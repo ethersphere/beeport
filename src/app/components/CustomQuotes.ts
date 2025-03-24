@@ -390,7 +390,7 @@ export const getToAmountQuote = async (
 };
 
 /**
- * Gets a quote for ToAmount with contract calls as a backup method
+ * Gets a quote for toAmount with contract calls as a backup method
  */
 export const getToAmountContractQuote = async (
   params: ToAmountQuoteParams

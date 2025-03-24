@@ -200,28 +200,15 @@ const SwapComponent: React.FC = () => {
     if (!currentPrice) return;
 
     try {
-      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-      const totalPricePerDuration =
-        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays);
-      setSwarmConfig((prev) => ({
-        ...prev,
-        initialPaymentPerChunkPerDay,
-        totalPricePerDuration,
-      }));
+      // Just trigger the update without setting unused values
 
-      // Call updateSwarmBatchInitialBalance after setting config
       updateSwarmBatchInitialBalance();
     } catch (error) {
       console.error("Error calculating total cost:", error);
       setTotalUsdAmount(null);
       setSwarmConfig(DEFAULT_SWARM_CONFIG);
     }
-  }, [
-    currentPrice,
-    swarmConfig.swarmBatchInitialBalance,
-    selectedDays,
-    selectedDepth,
-  ]);
+  }, [currentPrice, selectedDays, selectedDepth]);
 
   // Get PRICE estimation for currently choosen options
   useEffect(() => {
@@ -239,10 +226,7 @@ const SwapComponent: React.FC = () => {
             : GNOSIS_DESTINATION_TOKEN;
 
         // Add detailed logging
-        console.log(
-          "Swarm BZZ amount wanted:",
-          formatUnits(BigInt(bzzAmount), 16)
-        );
+        console.log("BZZ amount needed:", formatUnits(BigInt(bzzAmount), 16));
         console.log("Selected days:", selectedDays);
         console.log(
           "Selected bucket size:",
@@ -476,9 +460,11 @@ const SwapComponent: React.FC = () => {
   };
 
   const calculateTotalAmount = () => {
-    return (
-      BigInt(swarmConfig.swarmBatchInitialBalance) * BigInt(2 ** selectedDepth)
-    );
+    const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
+    const initialPaymentPerChunkPerDay = price * 17280n;
+    const totalPricePerDuration =
+      initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
+    return totalPricePerDuration * BigInt(2 ** selectedDepth);
   };
 
   const handleDepthChange = (newDepth: number) => {
