@@ -189,7 +189,6 @@ const SwapComponent: React.FC = () => {
     fetchChains();
   }, []);
 
-  // Update required BZZ for currently selected option
   useEffect(() => {
     if (!selectedDays || selectedDays === 0) {
       setTotalUsdAmount(null);
@@ -200,8 +199,6 @@ const SwapComponent: React.FC = () => {
     if (!currentPrice) return;
 
     try {
-      // Just trigger the update without setting unused values
-
       updateSwarmBatchInitialBalance();
     } catch (error) {
       console.error("Error calculating total cost:", error);
@@ -210,12 +207,11 @@ const SwapComponent: React.FC = () => {
     }
   }, [currentPrice, selectedDays, selectedDepth]);
 
-  // Get PRICE estimation for currently choosen options
   useEffect(() => {
     if (!isConnected || !address || !fromToken) return;
     setTotalUsdAmount("0");
     setLiquidityError(false);
-    setIsPriceEstimating(true); // Set to true when starting
+    setIsPriceEstimating(true);
 
     const updatePriceEstimate = async () => {
       try {
@@ -307,7 +303,7 @@ const SwapComponent: React.FC = () => {
       // If no days selected, still reset the loading state
       setIsPriceEstimating(false);
     }
-  }, [selectedDepth, selectedDays]);
+  }, [swarmConfig.swarmBatchInitialBalance]);
 
   // Initialize LiFi function
   const initializeLiFi = () => {
