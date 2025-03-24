@@ -75,7 +75,7 @@ const SwapComponent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
   const [selectedDays, setSelectedDays] = useState<number | null>(null);
-  const [selectedDepth, setSelectedDepth] = useState(20);
+  const [selectedDepth, setSelectedDepth] = useState(22);
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
@@ -237,6 +237,18 @@ const SwapComponent: React.FC = () => {
           selectedChainId === ChainId.DAI
             ? fromToken
             : GNOSIS_DESTINATION_TOKEN;
+
+        // Add detailed logging
+        console.log(
+          "Swarm BZZ amount wanted:",
+          formatUnits(BigInt(bzzAmount), 16)
+        );
+        console.log("Selected days:", selectedDays);
+        console.log(
+          "Selected bucket size:",
+          STORAGE_OPTIONS.find((option) => option.depth === selectedDepth)
+            ?.size || "Unknown"
+        );
 
         const { gnosisContactCallsQuoteResponse } = await performWithRetry(
           () =>
