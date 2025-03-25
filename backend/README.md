@@ -7,6 +7,14 @@ npm install express http-proxy-middleware viem cors dotenv
 
 ```
 
+## Config
+
+```
+cp .env.example .env
+```
+
+and change values of variables in the .env file
+
 ## Nginx config example
 
 # Redirect HTTP to HTTPS
