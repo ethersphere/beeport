@@ -1431,9 +1431,9 @@ const SwapComponent: React.FC = () => {
 
           <button
             className={`${styles.button} ${
-              !selectedDays ? styles.buttonDisabled : ""
+              !selectedDays || liquidityError ? styles.buttonDisabled : ""
             } ${isPriceEstimating ? styles.calculatingButton : ""}`}
-            disabled={!selectedDays || isPriceEstimating}
+            disabled={!selectedDays || liquidityError || isPriceEstimating}
             onClick={handleSwap}
           >
             {isLoading ? (
