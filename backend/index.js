@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require("express");
 const { createProxyMiddleware } = require("http-proxy-middleware");
 const {
@@ -6,6 +8,9 @@ const {
 } = require("viem");
 const { gnosis } = require("viem/chains");
 const cors = require('cors');
+
+// Load CORS origin from environment variable with fallback
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://swarming.site';
 
 const BATCH_REGISTRY_ABI = [
     {
@@ -34,7 +39,7 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({
-    origin: ['https://swarming.site']
+    origin: CORS_ORIGIN
 }));
 
 const gnosisPublicClient = createPublicClient({
