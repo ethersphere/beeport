@@ -231,15 +231,15 @@ export const getCrossChainQuote = async ({
   console.log("Fetching toAmount quote for cross-chain transaction...");
 
   // We can use both getToAmountQuote and getToAmountContractQuote
-  // getToAmountContractQuote seems to be faster
-  const toAmountQuoteResponse = await getToAmountContractQuote(
-    toAmountQuoteParams
-  );
-
-  // const toAmountQuoteResponse = await getToAmountQuote(
-  //   toAmountQuoteParams,
-  //   LIFI_API_KEY
+  // getToAmountContractQuote seems to be faster but more unstable
+  // const toAmountQuoteResponse = await getToAmountContractQuote(
+  //   toAmountQuoteParams
   // );
+
+  const toAmountQuoteResponse = await getToAmountQuote(
+    toAmountQuoteParams,
+    LIFI_API_KEY
+  );
 
   console.info(
     ">> Initial Cross Chain Quote (toAmount)",
