@@ -82,6 +82,16 @@ tar -C out -cf swap_uploader.tar .
 
 so you get TAR archive of static files export and there is no subdirectory when its uploaded to Swarm
 
+The web2 way is to just git clone the repo and then run "build" command to get the static files in the out directory and then point the server to that directory.
+
+## Setting environment variables
+
+```
+cp .env.local.example .env.local
+```
+
+and set values for the variables in the .env.local file, those will be picked up automatically by the app
+
 ## Testing large file upload
 
 Use below to create 1GB bin file on linux, to make it 2GB put count to 32 etc
