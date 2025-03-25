@@ -14,6 +14,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://swarming.site';
 
 // Add this near the top with other environment variables
 const PORT = process.env.PORT || 3333;
+const PROXY_TARGET = process.env.PROXY_TARGET || 'http://localhost:1633';
 
 const BATCH_REGISTRY_ABI = [
     {
@@ -160,7 +161,7 @@ app.use((req, res, next) => {
 });
 
 const proxy = createProxyMiddleware({
-    target: "http://localhost:1633",
+    target: PROXY_TARGET,
     changeOrigin: true,
     pathRewrite: null,
     secure: false,
