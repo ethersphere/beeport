@@ -12,6 +12,9 @@ const cors = require('cors');
 // Load CORS origin from environment variable with fallback
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://swarming.site';
 
+// Add this near the top with other environment variables
+const PORT = process.env.PORT || 3333;
+
 const BATCH_REGISTRY_ABI = [
     {
         name: "getBatchPayer",
@@ -191,8 +194,8 @@ const proxy = createProxyMiddleware({
 
 app.use("/", verifySignature, proxy);
 
-const server = app.listen(3333, () => {
-    console.log("Proxy server running on port 3333");
+const server = app.listen(PORT, () => {
+    console.log(`Proxy server running on port ${PORT}`);
 });
 
 server.timeout = 3600000; // 1 hour
