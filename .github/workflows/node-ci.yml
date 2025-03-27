@@ -1,0 +1,51 @@
+name: Node.js CI/CD
+
+on:
+  push:
+    branches: [ main ]
+
+  pull_request:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: write
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Use the latest major version
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4 # Use the latest major version
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint code
+        run: npm run lint --if-present # --if-present prevents errors if the script doesn't exist
+
+      #- name: Run tests
+      #  run: npm test
+
+      - name: Build application
+        run: npm run build
+
+      # Step 7: (Optional) Upload build artifacts if needed for deployment or inspection
+      # - name: Upload build artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: build-output # Name of the artifact
+      #     path: ./build     # Path to the directory to upload (adjust as needed)
