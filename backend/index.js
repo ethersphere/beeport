@@ -7,10 +7,6 @@ const {
     http,
 } = require("viem");
 const { gnosis } = require("viem/chains");
-const cors = require('cors');
-
-// Load CORS origin from environment variable with fallback
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://swarming.site';
 
 // Add this near the top with other environment variables
 const PORT = process.env.PORT || 3333;
@@ -27,24 +23,6 @@ const BATCH_REGISTRY_ABI = [
 ];
 
 const app = express();
-
-app.options("*", (req, res) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "*");
-    res.sendStatus(200);
-});
-
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "*");
-    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    next();
-});
-
-app.use(cors({
-    origin: CORS_ORIGIN
-}));
 
 const gnosisPublicClient = createPublicClient({
     chain: gnosis,
