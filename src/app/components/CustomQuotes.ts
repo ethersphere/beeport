@@ -281,16 +281,28 @@ export const getCrossChainQuote = async ({
 
   console.log("Fetching toAmount quote for cross-chain transaction...");
 
-  // We can use both getToAmountQuote and getToAmountContractQuote
-  // getToAmountContractQuote seems to be faster but more unstable
-  // const toAmountQuoteResponse = await getToAmountContractQuote(
-  //   toAmountQuoteParams
-  // );
-
-  const toAmountQuoteResponse = await getToAmountQuote(
-    toAmountQuoteParams,
-    LIFI_API_KEY
-  );
+  // Try getToAmountContractQuote first, then fall back to getToAmountQuote if it fails
+  let toAmountQuoteResponse;
+  try {
+    console.log("Trying getToAmountContractQuote first...");
+    toAmountQuoteResponse = await getToAmountContractQuote(toAmountQuoteParams);
+    console.log("Successfully got quote from getToAmountContractQuote");
+  } catch (error) {
+    console.warn(
+      "getToAmountContractQuote failed, falling back to getToAmountQuote:",
+      error
+    );
+    try {
+      toAmountQuoteResponse = await getToAmountQuote(
+        toAmountQuoteParams,
+        LIFI_API_KEY
+      );
+      console.log("Successfully got quote from fallback getToAmountQuote");
+    } catch (fallbackError) {
+      console.error("Both quote methods failed:", fallbackError);
+      throw new Error("Failed to get quote using both methods");
+    }
+  }
 
   console.info(
     ">> Initial Cross Chain Quote (toAmount)",
