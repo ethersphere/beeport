@@ -133,6 +133,57 @@ export interface ToAmountQuoteResponse {
 }
 
 /**
+ * Checks if gas forwarding is needed and returns the amount to forward
+ */
+export const checkGasForwarding = async (
+  address: string,
+  selectedChainId: number | string,
+  fromToken: string
+): Promise<bigint> => {
+  let fromAmountForGas: bigint = 0n;
+
+  try {
+    const gnosisProvider = createPublicClient({
+      chain: gnosis,
+      transport: http(),
+    });
+
+    const balance = await gnosisProvider.getBalance({
+      address: address as `0x${string}`,
+    });
+
+    if (balance === 0n) {
+      console.log("No balance on Gnosis, adding gas forwarding");
+
+      const gasApiUrl = `https://li.quest/v1/gas/suggestion/100?fromChain=${selectedChainId}&fromToken=${fromToken}`;
+      const gasResponse = await fetch(gasApiUrl);
+      const gasData = await gasResponse.json();
+
+      if (gasData.available && gasData.recommended) {
+        // Double the recommended gas amount to ensure sufficient funds
+        fromAmountForGas = BigInt(gasData.fromAmount) * 2n;
+        console.log(
+          `Adding gas forwarding: ${fromAmountForGas} (~ $${
+            Number(gasData.recommended.amountUsd) * 2
+          })`
+        );
+      }
+    } else {
+      console.log(
+        "User already has balance on Gnosis, no gas forwarding needed"
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Error checking Gnosis balance or fetching gas suggestion:",
+      error
+    );
+  }
+
+  return fromAmountForGas;
+};
+
+/**
  * Gets a quote for Gnosis chain transaction
  */
 export const getGnosisQuote = async ({
@@ -251,44 +302,11 @@ export const getCrossChainQuote = async ({
   console.log("Required fromAmount:", requiredFromAmount);
 
   // Check if user has any balance on Gnosis for gas forwarding
-  let fromAmountForGas: bigint = 0n;
-  try {
-    const gnosisProvider = createPublicClient({
-      chain: gnosis,
-      transport: http(),
-    });
-
-    const balance = await gnosisProvider.getBalance({
-      address: address as `0x${string}`,
-    });
-
-    if (balance === 0n) {
-      console.log("No balance on Gnosis, adding gas forwarding");
-
-      const gasApiUrl = `https://li.quest/v1/gas/suggestion/100?fromChain=${selectedChainId}&fromToken=${fromToken}`;
-      const gasResponse = await fetch(gasApiUrl);
-      const gasData = await gasResponse.json();
-
-      if (gasData.available && gasData.recommended) {
-        // Double the recommended gas amount to ensure sufficient funds
-        fromAmountForGas = BigInt(gasData.fromAmount) * 2n;
-        console.log(
-          `Adding gas forwarding: ${fromAmountForGas} (~ $${
-            Number(gasData.recommended.amountUsd) * 2
-          })`
-        );
-      }
-    } else {
-      console.log(
-        "User already has balance on Gnosis, no gas forwarding needed"
-      );
-    }
-  } catch (error) {
-    console.error(
-      "Error checking Gnosis balance or fetching gas suggestion:",
-      error
-    );
-  }
+  const fromAmountForGas = await checkGasForwarding(
+    address as string,
+    selectedChainId,
+    fromToken
+  );
 
   // Create the actual quote request with gas forwarding
   const quoteRequest = {
