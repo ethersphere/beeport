@@ -45,12 +45,15 @@ export const MIN_TOKEN_BALANCE_USD = 0.5;
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
 
 export const STORAGE_OPTIONS: StorageOption[] = [
-  { depth: 22, size: "5GB" },
-  { depth: 23, size: "17GB" },
-  { depth: 24, size: "44GB" },
-  { depth: 25, size: "102GB" },
-  { depth: 26, size: "225GB" },
-  { depth: 27, size: "480GB" },
+  { depth: 19, size: "110MB" },
+  { depth: 20, size: "680MB" },
+  { depth: 21, size: "2.6GB" },
+  { depth: 22, size: "7.7GB" },
+  { depth: 23, size: "20GB" },
+  { depth: 24, size: "47GB" },
+  { depth: 25, size: "105GB" },
+  { depth: 26, size: "227GB" },
+  { depth: 27, size: "476GB" },
 ];
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {

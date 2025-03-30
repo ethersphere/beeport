@@ -495,12 +495,15 @@ const SwapComponent: React.FC = () => {
 
       // First transaction: Approve - directly write contract without simulation
       const approveTxHash = await walletClient.writeContract({
-        address: GNOSIS_BZZ_ADDRESS,
+        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
         abi: parseAbi([
           "function approve(address spender, uint256 amount) external returns (bool)",
         ]),
         functionName: "approve",
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, BigInt(bzzAmount)],
+        args: [
+          GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          BigInt(bzzAmount),
+        ],
         account: address,
       });
 
@@ -524,7 +527,7 @@ const SwapComponent: React.FC = () => {
 
         // Second transaction: Create Batch - directly write contract without simulation
         const createBatchTxHash = await walletClient.writeContract({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
           abi: parseAbi(swarmConfig.swarmContractAbi),
           functionName: "createBatchRegistry",
           args: [
@@ -674,15 +677,14 @@ const SwapComponent: React.FC = () => {
       message: "Getting quote...",
     });
 
-    const { crossChainContractQuoteResponse, crossChainContractCallsRoute } =
-      await getCrossChainQuote({
-        selectedChainId,
-        fromToken,
-        address: address as string,
-        toAmount,
-        gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-        setEstimatedTime,
-      });
+    const { crossChainContractCallsRoute } = await getCrossChainQuote({
+      selectedChainId,
+      fromToken,
+      address: address as string,
+      toAmount,
+      gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+      setEstimatedTime,
+    });
 
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
       updateRouteHook: async (crossChainContractCallsRoute) => {
