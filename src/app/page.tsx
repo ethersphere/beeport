@@ -11,7 +11,12 @@ export default function SwapPage() {
 
       <div className={styles.contentWrapper}>
         <div
-          style={{ display: "flex", justifyContent: "flex-end", padding: 12 }}
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            padding: 12,
+            height: 40,
+          }}
         >
           <ConnectButton />
         </div>
