@@ -772,3 +772,238 @@
     left: 10%;
   }
 }
+
+/* Distribution animation container - make it slightly taller */
+.distributionContainer {
+  position: relative;
+  height: 90px; /* Increased from 80px to 90px */
+  width: 100%;
+  margin: 10px 0;
+  background-color: rgba(20, 23, 28, 0.5);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #30363d;
+}
+
+/* Center node (origin) */
+.centerNode {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  background-color: #ff7a00;
+  border-radius: 2px;
+  z-index: 3;
+  box-shadow: 0 0 8px rgba(255, 122, 0, 0.5);
+}
+
+/* Destination nodes */
+.node {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background-color: #30363d;
+  border-radius: 2px;
+  z-index: 2;
+}
+
+.node1 {
+  top: 25%;
+  left: 15%;
+}
+.node2 {
+  top: 15%;
+  left: 50%;
+}
+.node3 {
+  top: 25%;
+  left: 85%;
+}
+.node4 {
+  top: 50%;
+  left: 90%;
+}
+.node5 {
+  top: 72%; /* Changed from 75% */
+  left: 85%;
+}
+.node6 {
+  top: 82%; /* Changed from 85% */
+  left: 50%;
+}
+.node7 {
+  top: 72%; /* Changed from 75% */
+  left: 15%;
+}
+.node8 {
+  top: 50%;
+  left: 10%;
+}
+
+/* Data chunks being distributed */
+.chunk {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background-color: #ff7a00;
+  border-radius: 1px;
+  opacity: 0;
+  z-index: 1;
+}
+
+/* Animation for each chunk */
+.chunk1 {
+  animation: moveToNode1 2s infinite;
+}
+.chunk2 {
+  animation: moveToNode2 2s infinite 0.25s;
+}
+.chunk3 {
+  animation: moveToNode3 2s infinite 0.5s;
+}
+.chunk4 {
+  animation: moveToNode4 2s infinite 0.75s;
+}
+.chunk5 {
+  animation: moveToNode5 2s infinite 1s;
+}
+.chunk6 {
+  animation: moveToNode6 2s infinite 1.25s;
+}
+.chunk7 {
+  animation: moveToNode7 2s infinite 1.5s;
+}
+.chunk8 {
+  animation: moveToNode8 2s infinite 1.75s;
+}
+
+/* Keyframes for chunk animations */
+@keyframes moveToNode1 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 25%;
+    left: 15%;
+  }
+}
+
+@keyframes moveToNode2 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 15%;
+    left: 50%;
+  }
+}
+
+@keyframes moveToNode3 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 25%;
+    left: 85%;
+  }
+}
+
+@keyframes moveToNode4 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 50%;
+    left: 90%;
+  }
+}
+
+@keyframes moveToNode5 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 75%;
+    left: 85%;
+  }
+}
+
+@keyframes moveToNode6 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 85%;
+    left: 50%;
+  }
+}
+
+@keyframes moveToNode7 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 75%;
+    left: 15%;
+  }
+}
+
+@keyframes moveToNode8 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    top: 50%;
+    left: 10%;
+  }
+}
