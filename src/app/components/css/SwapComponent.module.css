@@ -668,3 +668,214 @@
 .bridgeTimer .progressBar {
   background-color: #3fb950; /* Green color for the bridge timer */
 }
+
+/* Add this to your CSS file */
+.distributionContainer {
+  position: relative;
+  height: 80px;
+  width: 100%;
+  margin: 15px 0;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.swarmNode {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 15px;
+  height: 15px;
+  background-color: #ff7a00;
+  border-radius: 50%;
+  z-index: 2;
+}
+
+.dataChunk {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background-color: #ff7a00;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.chunk1 {
+  animation: moveChunk1 2s infinite;
+}
+.chunk2 {
+  animation: moveChunk2 2s infinite 0.3s;
+}
+.chunk3 {
+  animation: moveChunk3 2s infinite 0.6s;
+}
+.chunk4 {
+  animation: moveChunk4 2s infinite 0.9s;
+}
+.chunk5 {
+  animation: moveChunk5 2s infinite 1.2s;
+}
+.chunk6 {
+  animation: moveChunk6 2s infinite 1.5s;
+}
+.chunk7 {
+  animation: moveChunk7 2s infinite 1.8s;
+}
+.chunk8 {
+  animation: moveChunk8 2s infinite 2.1s;
+}
+
+.nodePoint {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background-color: #30363d;
+  border-radius: 50%;
+}
+
+.node1 {
+  top: 20%;
+  left: 15%;
+}
+.node2 {
+  top: 10%;
+  left: 50%;
+}
+.node3 {
+  top: 20%;
+  left: 85%;
+}
+.node4 {
+  top: 50%;
+  left: 90%;
+}
+.node5 {
+  top: 80%;
+  left: 85%;
+}
+.node6 {
+  top: 90%;
+  left: 50%;
+}
+.node7 {
+  top: 80%;
+  left: 15%;
+}
+.node8 {
+  top: 50%;
+  left: 10%;
+}
+
+.distributionLabel {
+  position: absolute;
+  bottom: 5px;
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+@keyframes moveChunk1 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 20%;
+    left: 15%;
+  }
+}
+
+@keyframes moveChunk2 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 10%;
+    left: 50%;
+  }
+}
+
+@keyframes moveChunk3 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 20%;
+    left: 85%;
+  }
+}
+
+@keyframes moveChunk4 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 50%;
+    left: 90%;
+  }
+}
+
+@keyframes moveChunk5 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 80%;
+    left: 85%;
+  }
+}
+
+@keyframes moveChunk6 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 90%;
+    left: 50%;
+  }
+}
+
+@keyframes moveChunk7 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 80%;
+    left: 15%;
+  }
+}
+
+@keyframes moveChunk8 {
+  0% {
+    opacity: 1;
+    top: 50%;
+    left: 50%;
+  }
+  100% {
+    opacity: 0;
+    top: 50%;
+    left: 10%;
+  }
+}

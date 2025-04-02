@@ -86,7 +86,7 @@ const SwapComponent: React.FC = () => {
   const [isChainsLoading, setIsChainsLoading] = useState(true);
   const [liquidityError, setLiquidityError] = useState<boolean>(false);
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
-
+  const [isDistributing, setIsDistributing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
     step: "",
     message: "",
@@ -1009,7 +1009,12 @@ const SwapComponent: React.FC = () => {
           if (event.lengthComputable) {
             const percent = (event.loaded / event.total) * 100;
             setUploadProgress(Math.min(99, percent));
+            console.log("Upload progress:", percent);
             console.log(`Upload progress: ${percent.toFixed(1)}%`);
+
+            if (percent === 100) {
+              setIsDistributing(true);
+            }
           }
         };
 
@@ -1202,6 +1207,7 @@ const SwapComponent: React.FC = () => {
         setShowOverlay(false);
         setIsLoading(false);
         setUploadProgress(0);
+        setIsDistributing(false);
       }, 900000);
 
       if (parsedReference.reference) {
@@ -1223,6 +1229,7 @@ const SwapComponent: React.FC = () => {
       });
       setUploadStep("idle");
       setUploadProgress(0);
+      setIsDistributing(false);
     }
   };
 
@@ -1496,6 +1503,7 @@ const SwapComponent: React.FC = () => {
                       setSelectedFile(null);
                       setIsWebpageUpload(false);
                       setIsTarFile(false);
+                      setIsDistributing(false);
                     }}
                   >
                     ×
@@ -1641,21 +1649,15 @@ const SwapComponent: React.FC = () => {
                                 : statusMessage.step === "422"
                                 ? "Waiting for batch to be usable..."
                                 : statusMessage.step === "Uploading"
-                                ? `Uploading... ${uploadProgress.toFixed(1)}%`
+                                ? isDistributing
+                                  ? "Distributing to Swarm..."
+                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
                                 : "Processing..."}
                             </>
                           ) : (
                             "Upload"
                           )}
                         </button>
-                        {uploadStep === "uploading" && (
-                          <div className={styles.progressBarContainer}>
-                            <div
-                              className={styles.progressBar}
-                              style={{ width: `${uploadProgress}%` }}
-                            />
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1693,6 +1695,7 @@ const SwapComponent: React.FC = () => {
                         setSelectedFile(null);
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
+                        setIsDistributing(false);
                       }}
                     >
                       Close
