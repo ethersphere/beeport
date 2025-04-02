@@ -1658,6 +1658,14 @@ const SwapComponent: React.FC = () => {
                             "Upload"
                           )}
                         </button>
+                        {uploadStep === "uploading" && (
+                          <div className={styles.progressBarContainer}>
+                            <div
+                              className={styles.progressBar}
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
