@@ -120,6 +120,8 @@ const SwapComponent: React.FC = () => {
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   const [remainingTime, setRemainingTime] = useState<number | null>(null);
 
+  const [serveUncompressed, setServeUncompressed] = useState(true);
+
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const gnosisPublicClient = createPublicClient({
@@ -1041,12 +1043,14 @@ const SwapComponent: React.FC = () => {
     try {
       // Check if it's an archive file that needs processing
       let processedFile = selectedFile;
-      if (
+      const isArchive =
         selectedFile.type === "application/zip" ||
         selectedFile.name.toLowerCase().endsWith(".zip") ||
         selectedFile.type === "application/gzip" ||
-        selectedFile.name.toLowerCase().endsWith(".gz")
-      ) {
+        selectedFile.name.toLowerCase().endsWith(".gz");
+
+      // Only process if it's an archive AND serveUncompressed is checked
+      if (isArchive && serveUncompressed) {
         setUploadProgress(0);
         console.log("Processing archive file before upload");
         processedFile = await processArchiveFile(selectedFile);
@@ -1061,16 +1065,21 @@ const SwapComponent: React.FC = () => {
       });
 
       const baseHeaders: Record<string, string> = {
-        "Content-Type": isTarFile ? "application/x-tar" : processedFile.type,
+        "Content-Type":
+          serveUncompressed && (isTarFile || isArchive)
+            ? "application/x-tar"
+            : processedFile.type,
         "swarm-postage-batch-id": postageBatchId,
         "swarm-pin": "false",
-        "swarm-deferred-upload": " false",
+        "swarm-deferred-upload": "false",
         "registry-address": GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+        "swarm-collection":
+          serveUncompressed && (isTarFile || isArchive) ? "true" : "false",
       };
-
-      if (isTarFile) {
-        baseHeaders["swarm-collection"] = "true";
-      }
+      console.log("baseHeaders", baseHeaders);
+      console.log("isTarFile", isTarFile);
+      console.log("isArchive", isArchive);
+      console.log("serveUncompressed", serveUncompressed);
 
       if (!isLocalhost) {
         baseHeaders["x-upload-signed-message"] = signedMessage;
@@ -1577,6 +1586,28 @@ const SwapComponent: React.FC = () => {
                             {selectedFile ? selectedFile.name : "Choose file"}
                           </label>
                         </div>
+
+                        {(selectedFile?.name.toLowerCase().endsWith(".zip") ||
+                          selectedFile?.name.toLowerCase().endsWith(".gz")) && (
+                          <div className={styles.checkboxWrapper}>
+                            <input
+                              type="checkbox"
+                              id="serve-uncompressed"
+                              checked={serveUncompressed}
+                              onChange={(e) =>
+                                setServeUncompressed(e.target.checked)
+                              }
+                              className={styles.checkbox}
+                              disabled={uploadStep === "uploading"}
+                            />
+                            <label
+                              htmlFor="serve-uncompressed"
+                              className={styles.checkboxLabel}
+                            >
+                              Serve uncompressed
+                            </label>
+                          </div>
+                        )}
 
                         {isTarFile && (
                           <div className={styles.checkboxWrapper}>
