@@ -1,5 +1,3 @@
-// Save as /var/www/multichain/ci/webhook.js
-
 const http = require('http');
 const crypto = require('crypto');
 const { exec } = require('child_process');
@@ -8,7 +6,7 @@ const path = require('path');
 require('dotenv').config();
 
 // Configuration
-const SECRET = process.env.WEBHOOK_SECRET; // Change this to a secure random string
+const SECRET = process.env.WEBHOOK_SECRET;
 const PORT = 9001;
 const APP_PATH = '/var/www/multichain';
 const LOG_PATH = path.join(APP_PATH, '/ci/webhook-logs.txt');
