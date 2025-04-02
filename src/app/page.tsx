@@ -15,7 +15,6 @@ export default function SwapPage() {
             display: "flex",
             justifyContent: "flex-end",
             padding: 12,
-            height: 40,
           }}
         >
           <ConnectButton />
