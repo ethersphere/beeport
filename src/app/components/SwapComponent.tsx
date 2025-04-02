@@ -1045,13 +1045,12 @@ const SwapComponent: React.FC = () => {
         selectedFile.type === "application/zip" ||
         selectedFile.name.toLowerCase().endsWith(".zip") ||
         selectedFile.type === "application/gzip" ||
-        selectedFile.name.toLowerCase().endsWith(".gz") ||
-        selectedFile.type === "application/x-xz" ||
-        selectedFile.name.toLowerCase().endsWith(".xz")
+        selectedFile.name.toLowerCase().endsWith(".gz")
       ) {
         setUploadProgress(0);
         console.log("Processing archive file before upload");
         processedFile = await processArchiveFile(selectedFile);
+        setIsTarFile(true);
         console.log("Archive processed, starting upload...");
       }
 
