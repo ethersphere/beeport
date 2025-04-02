@@ -1050,7 +1050,6 @@ const SwapComponent: React.FC = () => {
         setUploadProgress(0);
         console.log("Processing archive file before upload");
         processedFile = await processArchiveFile(selectedFile);
-        setIsTarFile(true);
         console.log("Archive processed, starting upload...");
       }
 
@@ -1561,7 +1560,9 @@ const SwapComponent: React.FC = () => {
                               const file = e.target.files?.[0] || null;
                               setSelectedFile(file);
                               setIsTarFile(
-                                file?.name.toLowerCase().endsWith(".tar") ??
+                                file?.name.toLowerCase().endsWith(".tar") ||
+                                  file?.name.toLowerCase().endsWith(".zip") ||
+                                  file?.name.toLowerCase().endsWith(".gz") ||
                                   false
                               );
                             }}
