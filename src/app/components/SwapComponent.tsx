@@ -59,6 +59,7 @@ import {
 } from "./utils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
+import { processArchiveFile } from "./ArchiveProcessor";
 
 const SwapComponent: React.FC = () => {
   const { address, isConnected } = useAccount();
@@ -1038,7 +1039,23 @@ const SwapComponent: React.FC = () => {
     };
 
     try {
-      const messageToSign = `${selectedFile.name}:${postageBatchId}`;
+      // Check if it's an archive file that needs processing
+      let processedFile = selectedFile;
+      if (
+        selectedFile.type === "application/zip" ||
+        selectedFile.name.toLowerCase().endsWith(".zip") ||
+        selectedFile.type === "application/gzip" ||
+        selectedFile.name.toLowerCase().endsWith(".gz") ||
+        selectedFile.type === "application/x-xz" ||
+        selectedFile.name.toLowerCase().endsWith(".xz")
+      ) {
+        setUploadProgress(0);
+        console.log("Processing archive file before upload");
+        processedFile = await processArchiveFile(selectedFile);
+        console.log("Archive processed, starting upload...");
+      }
+
+      const messageToSign = `${processedFile.name}:${postageBatchId}`;
       console.log("Message to sign:", messageToSign);
 
       const signedMessage = await walletClient.signMessage({
@@ -1046,7 +1063,7 @@ const SwapComponent: React.FC = () => {
       });
 
       const baseHeaders: Record<string, string> = {
-        "Content-Type": isTarFile ? "application/x-tar" : selectedFile.type,
+        "Content-Type": isTarFile ? "application/x-tar" : processedFile.type,
         "swarm-postage-batch-id": postageBatchId,
         "swarm-pin": "false",
         "swarm-deferred-upload": " false",
@@ -1060,7 +1077,7 @@ const SwapComponent: React.FC = () => {
       if (!isLocalhost) {
         baseHeaders["x-upload-signed-message"] = signedMessage;
         baseHeaders["x-uploader-address"] = address as string;
-        baseHeaders["x-file-name"] = selectedFile.name;
+        baseHeaders["x-file-name"] = processedFile.name;
         baseHeaders["x-message-content"] = messageToSign; // Send the original message for verification
       }
 
@@ -1150,7 +1167,7 @@ const SwapComponent: React.FC = () => {
       });
 
       const uploadResponse = await uploadLargeFile(
-        selectedFile,
+        processedFile,
         baseHeaders,
         `${beeApiUrl}/bzz`
       );
@@ -1172,7 +1189,7 @@ const SwapComponent: React.FC = () => {
         )}...${parsedReference.reference.slice(-4)}`,
         isSuccess: true,
         reference: parsedReference.reference,
-        filename: selectedFile?.name,
+        filename: processedFile?.name,
       });
 
       setUploadStep("complete");
@@ -1190,7 +1207,7 @@ const SwapComponent: React.FC = () => {
           parsedReference.reference,
           postageBatchId,
           stamp.batchTTL,
-          selectedFile?.name
+          processedFile?.name
         );
       }
     } catch (error) {
