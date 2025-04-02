@@ -1076,10 +1076,6 @@ const SwapComponent: React.FC = () => {
         "swarm-collection":
           serveUncompressed && (isTarFile || isArchive) ? "true" : "false",
       };
-      console.log("baseHeaders", baseHeaders);
-      console.log("isTarFile", isTarFile);
-      console.log("isArchive", isArchive);
-      console.log("serveUncompressed", serveUncompressed);
 
       if (!isLocalhost) {
         baseHeaders["x-upload-signed-message"] = signedMessage;
@@ -1498,6 +1494,8 @@ const SwapComponent: React.FC = () => {
                       setIsLoading(false);
                       setExecutionResult(null);
                       setSelectedFile(null);
+                      setIsWebpageUpload(false);
+                      setIsTarFile(false);
                     }}
                   >
                     ×
@@ -1693,6 +1691,8 @@ const SwapComponent: React.FC = () => {
                         setIsLoading(false);
                         setExecutionResult(null);
                         setSelectedFile(null);
+                        setIsWebpageUpload(false);
+                        setIsTarFile(false);
                       }}
                     >
                       Close
