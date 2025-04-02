@@ -18,19 +18,23 @@
     "encoding": "^0.1.13",
     "express": "^4.21.2",
     "http-proxy-middleware": "^3.0.3",
+    "jszip": "^3.10.1",
     "next": "14.2.15",
     "pako": "^2.1.0",
     "pino-pretty": "^13.0.0",
     "react": "^18",
     "react-dom": "^18",
     "serve": "^14.2.4",
+    "tar-js": "^0.3.0",
     "viem": "^2.23.15",
     "wagmi": "^2.12.17"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pako": "^2.0.3",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/tar-js": "^0.3.5",
     "eslint": "^8",
     "eslint-config-next": "14.2.15",
     "typescript": "^5"

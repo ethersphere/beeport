@@ -1,12 +1,55 @@
 import pako from "pako";
+import JSZip from "jszip";
+import Tar from "tar-js";
 
-// Function to process ZIP files (assuming this exists elsewhere in your code)
 const processZipFile = async (zipFile: File): Promise<File> => {
-  // Your existing ZIP processing logic
-  // This is a placeholder - you'll need to replace with your actual implementation
   console.log("Processing ZIP file:", zipFile.name);
-  // Process ZIP file...
-  return zipFile;
+
+  try {
+    // Read and extract the ZIP file
+    const jszip = new JSZip();
+    const zipContents = await jszip.loadAsync(zipFile);
+
+    // Create a TAR archive
+    const tarball = new Tar();
+
+    // Process each file in the ZIP
+    const filePromises = Object.keys(zipContents.files).map(
+      async (filename) => {
+        const zipEntry = zipContents.files[filename];
+
+        // Skip directories
+        if (zipEntry.dir) return;
+
+        // Get file content as ArrayBuffer
+        const content = await zipEntry.async("arraybuffer");
+
+        // Add to TAR
+        tarball.append(filename, new Uint8Array(content));
+        console.log(`Added to TAR: ${filename} (${content.byteLength} bytes)`);
+      }
+    );
+
+    // Wait for all files to be processed
+    await Promise.all(filePromises);
+
+    // Generate the TAR file
+    const tarBuffer = tarball.out;
+    const baseName = zipFile.name.replace(/\.zip$/i, "");
+    const tarFile = new File([tarBuffer], `${baseName}.tar`, {
+      type: "application/x-tar",
+      lastModified: new Date().getTime(),
+    });
+
+    console.log(`Created TAR file: ${tarFile.name} (${tarFile.size} bytes)`);
+    return tarFile;
+  } catch (error: unknown) {
+    console.error("Error processing ZIP file:", error);
+    // Handle unknown error type safely
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    throw new Error(`Failed to process ZIP file: ${errorMessage}`);
+  }
 };
 
 /**
