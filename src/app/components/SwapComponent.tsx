@@ -1559,7 +1559,7 @@ const SwapComponent: React.FC = () => {
 
                 {["ready", "uploading"].includes(uploadStep) && (
                   <div className={styles.uploadBox}>
-                    <h3 className={styles.uploadTitle}>Upload File or TAR</h3>
+                    <h3 className={styles.uploadTitle}>Upload File</h3>
                     {statusMessage.step === "waiting_creation" ||
                     statusMessage.step === "waiting_usable" ? (
                       <div className={styles.waitingMessage}>
