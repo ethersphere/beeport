@@ -29,7 +29,7 @@ export const GNOSIS_STAMP_ADDRESS =
 export const DEFAULT_BEE_API_URL =
   process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || "https://swarming.site";
 
-export const BEE_GATEWAY_URL = `${DEFAULT_BEE_API_URL}/bzz/`;
+export const BEE_GATEWAY_URL = `https://bzz.link/bzz/`;
 
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_PRICE_ORACLE_ADDRESS ||
