@@ -24,9 +24,8 @@ import {
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, formatUnits } from "viem";
-import { getAddress, createPublicClient, http } from "viem";
+import { getAddress } from "viem";
 
-import { gnosis } from "viem/chains";
 import { ExecutionStatus, UploadStep } from "./types";
 import {
   GNOSIS_PRICE_ORACLE_ADDRESS,
