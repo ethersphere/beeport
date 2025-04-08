@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "./css/StampListSection.module.css";
 import { formatUnits } from "viem";
 import { UploadStep } from "./types";

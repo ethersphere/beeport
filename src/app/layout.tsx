@@ -1,4 +1,3 @@
-import "../styles/global.css";
 import "@rainbow-me/rainbowkit/styles.css";
 import { Providers } from "./providers";
 import "./globals.css";

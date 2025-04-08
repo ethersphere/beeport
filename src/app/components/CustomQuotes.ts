@@ -6,8 +6,6 @@ import {
   getQuote,
 } from "@lifi/sdk";
 import { parseAbi, encodeFunctionData } from "viem";
-import { createPublicClient, http } from "viem";
-import { gnosis } from "viem/chains";
 
 import { GetGnosisQuoteParams, GetCrossChainQuoteParams } from "./types";
 import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, LIFI_API_KEY } from "./constants";
