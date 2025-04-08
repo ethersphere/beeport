@@ -1,6 +1,6 @@
 import React from "react";
 import styles from "./css/UploadHistorySection.module.css";
-import { DEFAULT_BEE_API_URL } from "./constants";
+import { BEE_GATEWAY_URL } from "./constants";
 
 interface UploadHistoryProps {
   address: string | undefined;
@@ -67,17 +67,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
   };
 
   const getReferenceUrl = (record: UploadRecord) => {
-    // Check if DEFAULT_BEE_API_URL already contains /bzz/
-    const baseUrl = DEFAULT_BEE_API_URL.endsWith("/bzz/")
-      ? DEFAULT_BEE_API_URL.slice(0, -5)
-      : DEFAULT_BEE_API_URL;
-
     // For non-archive files with a filename, include the filename in the URL
     if (record.filename && !isArchiveFile(record.filename)) {
-      return `${baseUrl}/bzz/${record.reference}/${record.filename}`;
+      return `${BEE_GATEWAY_URL}${record.reference}/${record.filename}`;
     }
     // Otherwise use the default URL for the reference
-    return `${baseUrl}/bzz/${record.reference}/`;
+    return `${BEE_GATEWAY_URL}${record.reference}/`;
   };
 
   return (
