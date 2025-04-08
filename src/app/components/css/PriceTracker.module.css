@@ -1,0 +1,123 @@
+.priceTrackerContainer {
+  position: fixed;
+  bottom: 15px;
+  left: 15px;
+  z-index: 1000;
+  background-color: rgba(30, 30, 30, 0.75);
+  backdrop-filter: blur(4px);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  transition: opacity 0.3s ease, transform 0.3s ease, background-color 0.3s ease;
+  user-select: none;
+  cursor: default;
+  opacity: 0.85;
+  transform: translateY(0);
+}
+
+.priceTrackerContainer:hover {
+  opacity: 1;
+  background-color: rgba(40, 40, 40, 0.9);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.updated {
+  animation: flash 2s ease;
+}
+
+@keyframes flash {
+  0% {
+    background-color: rgba(30, 30, 30, 0.75);
+  }
+  15% {
+    background-color: rgba(60, 60, 60, 0.9);
+  }
+  100% {
+    background-color: rgba(30, 30, 30, 0.75);
+  }
+}
+
+.loading {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.priceData {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.priceItem {
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.5s ease;
+}
+
+/* BZZ token color */
+.priceItem:first-child {
+  color: #fbba00; /* Swarm/BZZ yellow color */
+  font-weight: 500;
+}
+
+.priceItem:last-child {
+  color: #f7931a; /* Bitcoin color */
+}
+
+.priceUp {
+  animation: pulseUp 2s ease-out;
+}
+
+.priceDown {
+  animation: pulseDown 2s ease-out;
+}
+
+.arrow {
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 0.7rem;
+}
+
+@keyframes pulseUp {
+  0% {
+    color: inherit;
+  }
+  30% {
+    color: #4caf50;
+  }
+  100% {
+    color: inherit;
+  }
+}
+
+@keyframes pulseDown {
+  0% {
+    color: inherit;
+  }
+  30% {
+    color: #f44336;
+  }
+  100% {
+    color: inherit;
+  }
+}
+
+/* Animation for loading state */
+@keyframes pulse {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+
+.loading {
+  animation: pulse 1.5s infinite ease-in-out;
+}

@@ -1,5 +1,6 @@
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import SwapComponent from "./components/SwapComponent";
+import PriceTracker from "@/app/components/PriceTracker";
 import styles from "./page.module.css";
 
 export default function SwapPage() {
@@ -20,6 +21,7 @@ export default function SwapPage() {
           <ConnectButton />
         </div>
         <SwapComponent />
+        <PriceTracker />
       </div>
     </div>
   );
