@@ -63,12 +63,13 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                   onChange={handleBeeApiUrlChange}
                   placeholder="Enter Bee API URL"
                 />
-                <div className={styles.nodeAddress}>
-                  Node Address: <span>{nodeAddress}</span>
-                </div>
+
                 <div className={styles.hint}>
-                  Change it to custom value if you have NGROK running or remote
-                  node
+                  Change API URL to custom value if you have remote node or
+                  local node running
+                </div>
+                <div className={styles.nodeAddress}>
+                  API Node Address {nodeAddress}
                 </div>
               </div>
             </div>
@@ -141,11 +142,11 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3>How to prepare TAR archive? </h3>
+            <h3>How to prepare archives? </h3>
             <p>
               Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to
-              make your folder ready for upload as TAR file. Swarm doesnt suppor
-              gzip so dont include -z flag
+              make your folder ready for upload as TAR file. You can also upload
+              ZIP files and GZIP files.
             </p>
           </div>
         </div>
