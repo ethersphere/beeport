@@ -13,7 +13,11 @@ import {
   ToAmountQuoteParams,
   ToAmountQuoteResponse,
 } from "./types";
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, LIFI_API_KEY } from "./constants";
+import {
+  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+  LIFI_API_KEY,
+  DEFAULT_SLIPPAGE,
+} from "./constants";
 
 import {
   logTokenRoute,
@@ -102,6 +106,7 @@ export const getGnosisQuote = async ({
     toChain: ChainId.DAI,
     toToken: swarmConfig.swarmToken,
     toAmount: bzzAmount,
+    slippage: DEFAULT_SLIPPAGE,
     contractCalls: [
       {
         fromAmount: bzzAmount,
@@ -199,7 +204,7 @@ export const getCrossChainQuote = async ({
   console.log("Required fromAmount:", requiredFromAmount);
 
   // Check if user has any balance on Gnosis for gas forwarding
-  const fromAmountForGas = await checkGasForwarding(
+  const gasForwarding = await checkGasForwarding(
     address as string,
     selectedChainId,
     fromToken
@@ -210,11 +215,11 @@ export const getCrossChainQuote = async ({
     fromChain: selectedChainId.toString(),
     fromToken: fromToken,
     fromAddress: address.toString(),
-    fromAmount: (BigInt(requiredFromAmount) + fromAmountForGas).toString(),
+    fromAmount: (BigInt(requiredFromAmount) + gasForwarding).toString(),
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
-    fromAmountForGas: fromAmountForGas,
-    slippage: 0.5,
+    fromAmountForGas: gasForwarding,
+    slippage: DEFAULT_SLIPPAGE,
     order: "FASTEST" as const,
   };
 
@@ -324,7 +329,7 @@ export const getToAmountContractQuote = async (
         toToken: toToken,
         toAmount: toAmount.toString(),
         contractCalls: [],
-        slippage: 0.5,
+        slippage: DEFAULT_SLIPPAGE,
       };
 
       console.log(`Getting contract calls quote for toAmount`);

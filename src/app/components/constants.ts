@@ -42,6 +42,8 @@ export const GNOSIS_DESTINATION_TOKEN =
 // Static configuration
 export const MIN_TOKEN_BALANCE_USD = 0.5;
 
+export const DEFAULT_SLIPPAGE = 0.5; // This is 50% slippage?
+
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
 
 export const STORAGE_OPTIONS: StorageOption[] = [
