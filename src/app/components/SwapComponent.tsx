@@ -56,6 +56,7 @@ import {
   performWithRetry,
   toChecksumAddress,
   generateProperNonce,
+  getGnosisPublicClient,
 } from "./utils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
@@ -123,11 +124,6 @@ const SwapComponent: React.FC = () => {
   const [serveUncompressed, setServeUncompressed] = useState(true);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const gnosisPublicClient = createPublicClient({
-    chain: gnosis,
-    transport: http(),
-  });
 
   useEffect(() => {
     const init = async () => {
@@ -430,7 +426,7 @@ const SwapComponent: React.FC = () => {
   const fetchCurrentPrice = async () => {
     if (publicClient) {
       try {
-        const price = await gnosisPublicClient.readContract({
+        const price = await getGnosisPublicClient().readContract({
           address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
           abi: GNOSIS_PRICE_ORACLE_ABI,
           functionName: "currentPrice",

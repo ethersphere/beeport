@@ -3,7 +3,10 @@ import {
   keccak256,
   encodeAbiParameters,
   parseAbiParameters,
+  createPublicClient,
+  http,
 } from "viem";
+import { gnosis } from "viem/chains";
 
 export const toChecksumAddress = (
   address: string | undefined | null
@@ -135,4 +138,15 @@ export const generateProperNonce = (): `0x${string}` => {
     Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("")) as `0x${string}`;
+};
+
+/**
+ * Creates and returns a public client for the Gnosis chain
+ * @returns A public client configured for the Gnosis chain
+ */
+export const getGnosisPublicClient = () => {
+  return createPublicClient({
+    chain: gnosis,
+    transport: http(),
+  });
 };

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import styles from "./css/StampListSection.module.css";
-import { createPublicClient, http, formatUnits } from "viem";
-import { gnosis } from "viem/chains";
-
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS } from "./constants";
+import { formatUnits } from "viem";
 import { UploadStep } from "./types";
+import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS } from "./constants";
+import { getGnosisPublicClient } from "./utils";
 
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
@@ -19,6 +18,7 @@ interface BatchEvent {
   batchId: string;
   totalAmount: string;
   depth: number;
+  size: string;
   timestamp?: number;
   utilization?: number;
   batchTTL?: number;
@@ -49,11 +49,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const gnosisClient = createPublicClient({
-    chain: gnosis,
-    transport: http(),
-  });
-
   const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
     try {
       const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`);
@@ -66,13 +61,20 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     }
   };
 
+  // Helper function to get the size string for a depth value
+  const getSizeForDepth = (depth: number): string => {
+    const option = STORAGE_OPTIONS.find((option) => option.depth === depth);
+    return option ? option.size : `${depth} (unknown size)`;
+  };
+
   useEffect(() => {
     const fetchStamps = async () => {
       if (!address) return;
 
       try {
+        const gnosisClient = getGnosisPublicClient();
         const logs = await gnosisClient.getLogs({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
           event: {
             anonymous: false,
             inputs: [
@@ -103,11 +105,13 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
             const batchId = log.args.batchId?.toString() || "";
             const stampInfo = await fetchStampInfo(batchId);
+            const depth = Number(log.args.depth || 0);
 
             return {
               batchId,
               totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
-              depth: Number(log.args.depth || 0),
+              depth,
+              size: getSizeForDepth(depth),
               timestamp: Number(block.timestamp),
               utilization: stampInfo?.utilization,
               batchTTL: stampInfo?.batchTTL,
@@ -155,7 +159,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   <span>
                     Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ
                   </span>
-                  <span>Depth: {stamp.depth}</span>
+                  <span>Size: {stamp.size}</span>
                   {stamp.utilization !== undefined && (
                     <span>Utilization: {stamp.utilization}%</span>
                   )}

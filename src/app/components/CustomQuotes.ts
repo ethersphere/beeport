@@ -12,7 +12,11 @@ import { gnosis } from "viem/chains";
 import { GetGnosisQuoteParams, GetCrossChainQuoteParams } from "./types";
 import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, LIFI_API_KEY } from "./constants";
 
-import { logTokenRoute, performWithRetry } from "./utils";
+import {
+  logTokenRoute,
+  performWithRetry,
+  getGnosisPublicClient,
+} from "./utils";
 
 // --- Moved Types from utils.ts ---
 
@@ -143,11 +147,7 @@ export const checkGasForwarding = async (
   let fromAmountForGas: bigint = 0n;
 
   try {
-    const gnosisProvider = createPublicClient({
-      chain: gnosis,
-      transport: http(),
-    });
-
+    const gnosisProvider = getGnosisPublicClient();
     const balance = await gnosisProvider.getBalance({
       address: address as `0x${string}`,
     });
@@ -330,7 +330,7 @@ export const getCrossChainQuote = async ({
     toToken: gnosisDestinationToken,
     fromAmountForGas: fromAmountForGas,
     slippage: 0.5,
-    order: "FASTEST",
+    order: "FASTEST" as const,
   };
 
   // Can't comply because of https://github.com/lifinance/sdk/issues/239
