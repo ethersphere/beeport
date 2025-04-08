@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import styles from "./css/StampListSection.module.css";
 import { formatUnits } from "viem";
 import { UploadStep } from "./types";
@@ -49,18 +49,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
-    try {
-      const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`);
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error(`Error fetching stamp info for ${batchId}:`, error);
-      return null;
-    }
-  };
-
   // Helper function to get the size string for a depth value
   const getSizeForDepth = (depth: number): string => {
     const option = STORAGE_OPTIONS.find((option) => option.depth === depth);
@@ -68,6 +56,21 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   };
 
   useEffect(() => {
+    // Move fetchStampInfo inside useEffect since it's only used here
+    const fetchStampInfo = async (
+      batchId: string
+    ): Promise<StampInfo | null> => {
+      try {
+        const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error(`Error fetching stamp info for ${batchId}:`, error);
+        return null;
+      }
+    };
+
     const fetchStamps = async () => {
       if (!address) return;
 
@@ -140,7 +143,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     fetchStamps();
-  }, [address, beeApiUrl]);
+  }, [address, beeApiUrl]); // Only dependencies that actually need to trigger re-fetching
 
   const handleStampSelect = (stamp: any) => {
     setPostageBatchId(stamp.batchId.slice(2));
