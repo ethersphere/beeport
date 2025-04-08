@@ -93,30 +93,40 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           args: {
             payer: address as `0x${string}`,
           },
-          fromBlock: 25780238n,
+          fromBlock: 25780238n, // Contract creation block
           toBlock: "latest",
         });
 
-        const stampEvents = await Promise.all(
-          logs.map(async (log) => {
-            const block = await gnosisClient.getBlock({
-              blockNumber: log.blockNumber,
-            });
+        const stampPromises = logs.map(async (log) => {
+          const batchId = log.args.batchId?.toString() || "";
+          const stampInfo = await fetchStampInfo(batchId);
 
-            const batchId = log.args.batchId?.toString() || "";
-            const stampInfo = await fetchStampInfo(batchId);
-            const depth = Number(log.args.depth || 0);
+          // Skip this stamp if stampInfo is null (expired or non-existent)
+          if (!stampInfo) {
+            return null;
+          }
 
-            return {
-              batchId,
-              totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
-              depth,
-              size: getSizeForDepth(depth),
-              timestamp: Number(block.timestamp),
-              utilization: stampInfo?.utilization,
-              batchTTL: stampInfo?.batchTTL,
-            };
-          })
+          const block = await gnosisClient.getBlock({
+            blockNumber: log.blockNumber,
+          });
+
+          const depth = Number(log.args.depth || 0);
+
+          return {
+            batchId,
+            totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
+            depth,
+            size: getSizeForDepth(depth),
+            timestamp: Number(block.timestamp),
+            utilization: stampInfo.utilization,
+            batchTTL: stampInfo.batchTTL,
+          };
+        });
+
+        // Resolve all promises and filter out null values (expired stamps)
+        const stampEventsWithNull = await Promise.all(stampPromises);
+        const stampEvents = stampEventsWithNull.filter(
+          (stamp): stamp is NonNullable<typeof stamp> => stamp !== null
         );
 
         setStamps(
