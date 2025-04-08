@@ -325,7 +325,7 @@ export const getCrossChainQuote = async ({
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
     fromAmountForGas: fromAmountForGas,
-    slippage: 0.5,
+    slippage: 2.5,
     order: "FASTEST" as const,
   };
 
@@ -435,7 +435,7 @@ export const getToAmountContractQuote = async (
         toToken: toToken,
         toAmount: toAmount.toString(),
         contractCalls: [],
-        slippage: 0.5,
+        slippage: 2.5,
       };
 
       console.log(`Getting contract calls quote for toAmount`);
