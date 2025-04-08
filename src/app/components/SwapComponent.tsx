@@ -1486,24 +1486,23 @@ const SwapComponent: React.FC = () => {
                   statusMessage.isSuccess ? styles.success : ""
                 }`}
               >
-                {!["uploading", "ready"].includes(uploadStep) && (
-                  <button
-                    className={styles.closeButton}
-                    onClick={() => {
-                      setShowOverlay(false);
-                      setStatusMessage({ step: "", message: "" });
-                      setUploadStep("idle");
-                      setIsLoading(false);
-                      setExecutionResult(null);
-                      setSelectedFile(null);
-                      setIsWebpageUpload(false);
-                      setIsTarFile(false);
-                      setIsDistributing(false);
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
+                {/* Always show close button */}
+                <button
+                  className={styles.closeButton}
+                  onClick={() => {
+                    setShowOverlay(false);
+                    setStatusMessage({ step: "", message: "" });
+                    setUploadStep("idle");
+                    setIsLoading(false);
+                    setExecutionResult(null);
+                    setSelectedFile(null);
+                    setIsWebpageUpload(false);
+                    setIsTarFile(false);
+                    setIsDistributing(false);
+                  }}
+                >
+                  ×
+                </button>
 
                 {!["ready", "uploading"].includes(uploadStep) && (
                   <>
