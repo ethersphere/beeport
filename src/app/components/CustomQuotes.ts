@@ -16,8 +16,6 @@ import {
   getGnosisPublicClient,
 } from "./utils";
 
-// --- Moved Types from utils.ts ---
-
 export interface ToAmountQuoteParams {
   fromChain: string | number;
   toChain: string | number;

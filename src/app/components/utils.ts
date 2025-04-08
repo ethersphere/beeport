@@ -145,8 +145,10 @@ export const generateProperNonce = (): `0x${string}` => {
  * @returns A public client configured for the Gnosis chain
  */
 export const getGnosisPublicClient = () => {
+  const rpcUrl = process.env.NEXT_PUBLIC_GNOSIS_RPC;
+
   return createPublicClient({
     chain: gnosis,
-    transport: http(),
+    transport: rpcUrl ? http(rpcUrl) : http(),
   });
 };
