@@ -3,61 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import styles from "./css/PriceTracker.module.css";
 import { getGnosisPublicClient } from "./utils";
-
-// Uniswap/Sushiswap V3 Pool ABI (only what we need for price)
-const V3_POOL_ABI = [
-  {
-    inputs: [],
-    name: "slot0",
-    outputs: [
-      { internalType: "uint160", name: "sqrtPriceX96", type: "uint160" },
-      { internalType: "int24", name: "tick", type: "int24" },
-      { internalType: "uint16", name: "observationIndex", type: "uint16" },
-      {
-        internalType: "uint16",
-        name: "observationCardinality",
-        type: "uint16",
-      },
-      {
-        internalType: "uint16",
-        name: "observationCardinalityNext",
-        type: "uint16",
-      },
-      { internalType: "uint8", name: "feeProtocol", type: "uint8" },
-      { internalType: "bool", name: "unlocked", type: "bool" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "token0",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "token1",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "fee",
-    outputs: [{ internalType: "uint24", name: "", type: "uint24" }],
-    stateMutability: "view",
-    type: "function",
-  },
-];
-
-// Gnosis token addresses
-const BZZ_ADDRESS = "0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da";
-//const WXDAI_ADDRESS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
-
-// Sushiswap V3 Pool address for BZZ/WXDAI on Gnosis
-const BZZ_WXDAI_POOL_ADDRESS = "0x7583b9c573fa4fb5ea21c83454939c4cf6aacbc3";
+import {
+  V3_POOL_ABI,
+  GNOSIS_BZZ_ADDRESS as BZZ_ADDRESS,
+  GNOSIS_WXDAI_ADDRESS as WXDAI_ADDRESS,
+  BZZ_WXDAI_POOL_ADDRESS,
+} from "./constants";
 
 interface PriceInfo {
   token: string;
@@ -96,11 +47,7 @@ const PriceTracker = () => {
           functionName: "token1",
         })) as `0x${string}`;
 
-        console.log("token1", token1);
-
         const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
-
-        console.log("isBzzToken0", isBzzToken0);
 
         // Get the current price from slot0
         const slot0Data = (await publicClient.readContract({
@@ -108,8 +55,6 @@ const PriceTracker = () => {
           abi: V3_POOL_ABI,
           functionName: "slot0",
         })) as [bigint, number, number, number, number, number, boolean];
-
-        console.log("slot0Data", slot0Data);
 
         const sqrtPriceX96 = slot0Data[0];
 

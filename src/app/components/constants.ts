@@ -39,6 +39,10 @@ export const GNOSIS_DESTINATION_TOKEN =
   process.env.NEXT_PUBLIC_GNOSIS_DESTINATION_TOKEN ||
   "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83";
 
+export const GNOSIS_WXDAI_ADDRESS =
+  process.env.NEXT_PUBLIC_GNOSIS_WXDAI_ADDRESS ||
+  "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
+
 // Static configuration
 export const MIN_TOKEN_BALANCE_USD = 0.5;
 
@@ -88,3 +92,56 @@ export const GNOSIS_PRICE_ORACLE_ABI = [
     outputs: [{ type: "uint32" }],
   },
 ] as const;
+
+// Sushiswap V3 Pool ABI (minimal for price)
+export const V3_POOL_ABI = [
+  {
+    inputs: [],
+    name: "slot0",
+    outputs: [
+      { internalType: "uint160", name: "sqrtPriceX96", type: "uint160" },
+      { internalType: "int24", name: "tick", type: "int24" },
+      { internalType: "uint16", name: "observationIndex", type: "uint16" },
+      {
+        internalType: "uint16",
+        name: "observationCardinality",
+        type: "uint16",
+      },
+      {
+        internalType: "uint16",
+        name: "observationCardinalityNext",
+        type: "uint16",
+      },
+      { internalType: "uint8", name: "feeProtocol", type: "uint8" },
+      { internalType: "bool", name: "unlocked", type: "bool" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "token0",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "token1",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "fee",
+    outputs: [{ internalType: "uint24", name: "", type: "uint24" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+// Sushiswap V3 Pool address for BZZ/WXDAI on Gnosis
+export const BZZ_WXDAI_POOL_ADDRESS =
+  process.env.NEXT_PUBLIC_BZZ_WXDAI_POOL_ADDRESS ||
+  "0x7583b9c573fa4fb5ea21c83454939c4cf6aacbc3";
