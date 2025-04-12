@@ -132,6 +132,9 @@ const SwapComponent: React.FC = () => {
     currentWalletClientRef.current = walletClient;
   }, [walletClient]);
 
+  // Add a ref for the abort controller
+  const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     const init = async () => {
       setIsWalletLoading(true);
@@ -218,6 +221,16 @@ const SwapComponent: React.FC = () => {
     setTotalUsdAmount(null);
     setLiquidityError(false);
     setIsPriceEstimating(true);
+    
+    // Cancel any previous price estimate operations
+    if (priceEstimateAbortControllerRef.current) {
+      console.log("Cancelling previous price estimate");
+      priceEstimateAbortControllerRef.current.abort();
+    }
+    
+    // Create a new abort controller for this run
+    priceEstimateAbortControllerRef.current = new AbortController();
+    const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
       try {
@@ -246,8 +259,18 @@ const SwapComponent: React.FC = () => {
               swarmConfig,
               setEstimatedTime,
             }),
-          "getGnosisQuote"
+          "getGnosisQuote",
+          undefined,
+          5,
+          300,
+          abortSignal
         );
+
+        // If operation was aborted, don't continue
+        if (abortSignal.aborted) {
+          console.log("Price estimate aborted after Gnosis quote");
+          return;
+        }
 
         let totalAmount = Number(
           gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0
@@ -264,8 +287,18 @@ const SwapComponent: React.FC = () => {
                 gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
                 setEstimatedTime,
               }),
-            "getCrossChainQuote"
+            "getCrossChainQuote",
+            undefined,
+            5,
+            300,
+            abortSignal
           );
+
+          // If operation was aborted, don't continue
+          if (abortSignal.aborted) {
+            console.log("Price estimate aborted after cross-chain quote");
+            return;
+          }
 
           // Add to total amount bridge fees
           const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
@@ -291,15 +324,23 @@ const SwapComponent: React.FC = () => {
           );
         }
 
-        console.log("Total amount:", totalAmount);
-        setTotalUsdAmount(totalAmount.toString());
+        // One final check if aborted before updating state
+        if (!abortSignal.aborted) {
+          console.log("Total amount:", totalAmount);
+          setTotalUsdAmount(totalAmount.toString());
+        }
       } catch (error) {
-        console.error("Error estimating price:", error);
-        setTotalUsdAmount(null);
-        setLiquidityError(true);
+        // Only update error state if not aborted
+        if (!abortSignal.aborted) {
+          console.error("Error estimating price:", error);
+          setTotalUsdAmount(null);
+          setLiquidityError(true);
+        }
       } finally {
-        // Make sure we set isPriceEstimating to false when the function completes
-        setIsPriceEstimating(false);
+        // Only update loading state if not aborted
+        if (!abortSignal.aborted) {
+          setIsPriceEstimating(false);
+        }
       }
     };
 
@@ -309,6 +350,14 @@ const SwapComponent: React.FC = () => {
       // If no days selected, still reset the loading state
       setIsPriceEstimating(false);
     }
+    
+    // Cleanup: abort any pending operations when the effect is cleaned up
+    return () => {
+      if (priceEstimateAbortControllerRef.current) {
+        priceEstimateAbortControllerRef.current.abort();
+        priceEstimateAbortControllerRef.current = null;
+      }
+    };
   }, [swarmConfig.swarmBatchTotal]);
 
   // Initialize LiFi function

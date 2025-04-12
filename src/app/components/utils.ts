@@ -53,10 +53,17 @@ export const performWithRetry = async <T>(
   name: string,
   validateResult?: (result: T) => boolean,
   maxRetries = 5,
-  delayMs = 300
+  delayMs = 300,
+  abortSignal?: AbortSignal
 ): Promise<T> => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // Check if the operation was aborted before starting
+      if (abortSignal?.aborted) {
+        console.log(`${name} aborted before attempt ${attempt}`);
+        throw new Error(`Operation ${name} was aborted`);
+      }
+      
       const result = await operation();
 
       if (validateResult && !validateResult(result)) {
@@ -65,13 +72,37 @@ export const performWithRetry = async <T>(
 
       return result;
     } catch (error) {
+      // Check if operation was aborted during execution
+      if (abortSignal?.aborted) {
+        console.log(`${name} aborted during attempt ${attempt}`);
+        throw new Error(`Operation ${name} was aborted`);
+      }
+      
       console.log(`${name} attempt ${attempt}/${maxRetries} failed:`, error);
 
       if (attempt === maxRetries) {
         throw error;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      // Create a promise that resolves after delay or rejects if aborted
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, delayMs);
+        
+        // If we have an abort signal, listen for abort events
+        if (abortSignal) {
+          const abortHandler = () => {
+            clearTimeout(timeout);
+            reject(new Error(`Operation ${name} was aborted during delay`));
+          };
+          
+          abortSignal.addEventListener('abort', abortHandler, { once: true });
+          
+          // Clean up event listener after timeout completes
+          setTimeout(() => {
+            abortSignal.removeEventListener('abort', abortHandler);
+          }, delayMs + 10);
+        }
+      });
     }
   }
   throw new Error(`${name} failed after ${maxRetries} attempts`);
