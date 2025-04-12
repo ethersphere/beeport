@@ -6,7 +6,6 @@ import { getGnosisPublicClient } from "./utils";
 import {
   V3_POOL_ABI,
   GNOSIS_BZZ_ADDRESS as BZZ_ADDRESS,
-  GNOSIS_WXDAI_ADDRESS as WXDAI_ADDRESS,
   BZZ_WXDAI_POOL_ADDRESS,
 } from "./constants";
 
@@ -41,11 +40,6 @@ const PriceTracker = () => {
 
         console.log("token0", token0);
 
-        const token1 = (await publicClient.readContract({
-          address: BZZ_WXDAI_POOL_ADDRESS as `0x${string}`,
-          abi: V3_POOL_ABI,
-          functionName: "token1",
-        })) as `0x${string}`;
 
         const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
 
