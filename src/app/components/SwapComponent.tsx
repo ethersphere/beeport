@@ -8,7 +8,7 @@ import {
   useWalletClient,
   useSwitchChain,
 } from "wagmi";
-import { watchChainId } from "@wagmi/core";
+import { watchChainId, getWalletClient } from "@wagmi/core";
 import { config } from "@/app/wagmi";
 import {
   createConfig,
@@ -123,6 +123,14 @@ const SwapComponent: React.FC = () => {
   const [serveUncompressed, setServeUncompressed] = useState(true);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Add a ref to track the current wallet client
+  const currentWalletClientRef = useRef(walletClient);
+  
+  // Update the ref whenever walletClient changes
+  useEffect(() => {
+    currentWalletClientRef.current = walletClient;
+  }, [walletClient]);
 
   useEffect(() => {
     const init = async () => {
@@ -312,7 +320,8 @@ const SwapComponent: React.FC = () => {
       providers: [
         EVM({
           getWalletClient: async () => {
-            const client = walletClient;
+            // Use the ref instead of the direct walletClient
+            const client = currentWalletClientRef.current;
             if (!client) throw new Error("Wallet client not available");
             return client;
           },
@@ -320,9 +329,20 @@ const SwapComponent: React.FC = () => {
             if (switchChain) {
               switchChain({ chainId });
             }
-            const client = walletClient;
-            if (!client) throw new Error("Wallet client not available");
-            return client;
+            // Get a fresh wallet client for the new chain
+            try {
+              // Wait briefly for the chain to switch
+              await new Promise(resolve => setTimeout(resolve, 500));
+              // Create a new wallet client with the specified chainId
+              const client = await getWalletClient(config, { chainId });
+              // Update our ref
+              currentWalletClientRef.current = client;
+              return client;
+            } catch (error) {
+              console.error("Error getting wallet client:", error);
+              if (currentWalletClientRef.current) return currentWalletClientRef.current;
+              throw new Error("Failed to get wallet client for the new chain");
+            }
           },
         }),
       ],
@@ -697,6 +717,7 @@ const SwapComponent: React.FC = () => {
         });
 
         if (step1Status === "DONE") {
+          console.log("Route 1 wallet client:", walletClient);
           await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
         } else if (step1Status === "FAILED") {
           // Add reset if the execution fails
@@ -727,12 +748,27 @@ const SwapComponent: React.FC = () => {
         if (chainId === ChainId.DAI) {
           console.log("Detected switch to Gnosis, executing second route...");
           unwatch();
-          await handleGnosisRoute(contractCallsRoute, updatedConfig);
+          
+          // Get a fresh wallet client for the new chain
+          try {
+            const newClient = await getWalletClient(config, { chainId });
+            console.log("Route 2 wallet client:", newClient);
+            
+            // Update our ref
+            currentWalletClientRef.current = newClient;
+            
+            await handleGnosisRoute(contractCallsRoute, updatedConfig);
+          } catch (error) {
+            console.error("Error getting new wallet client:", error);
+            // Fall back to using the current wallet client
+            await handleGnosisRoute(contractCallsRoute, updatedConfig);
+          }
         }
       },
     });
 
     switchChain({ chainId: ChainId.DAI });
+    
   };
 
   const handleGnosisRoute = async (
