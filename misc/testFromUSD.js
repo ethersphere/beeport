@@ -7,8 +7,9 @@ const url = 'https://li.quest/v1/quote?' + new URLSearchParams({
     toToken: '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da',
     fromAddress: '0xB1620c0547744DeDD30F40a863c09D1964532F8C',
     toAddress: '0xB1620c0547744DeDD30F40a863c09D1964532F8C',
-    fromAmount: '10000000',
+    fromAmount: '200000000',
     slippage: '0.05',
+    allowExchanges: 'sushiswap',
     integrator: 'Swarm'
 });
 

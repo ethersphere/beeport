@@ -33,7 +33,7 @@ export const checkGasForwarding = async (
   address: string,
   selectedChainId: number | string,
   fromToken: string
-): Promise<string> => {
+): Promise<bigint> => {
   let fromAmountForGas: bigint = 0n;
 
   try {
@@ -70,7 +70,7 @@ export const checkGasForwarding = async (
     );
   }
 
-  return fromAmountForGas.toString(); // Return as string
+  return fromAmountForGas;
 };
 
 /**
@@ -212,12 +212,12 @@ export const getCrossChainQuote = async ({
   );
 
   // Calculate minimum bridge amount in the token's value
-  const minBridgeAmount = calculateMinBridgeAmount(toAmountQuoteResponse);
-  console.log(`Minimum bridge amount: ${minBridgeAmount} (~ $${MIN_BRIDGE_USD_VALUE})`);
+  const minCrossChainFromAmount = calculateMinCrossChainFromAmount(toAmountQuoteResponse);
+  console.log(`Minimum bridge amount: ${minCrossChainFromAmount} (~ $${MIN_BRIDGE_USD_VALUE})`);
 
   // Ensure we're bridging at least the minimum value
-  const requiredAmountBigInt = BigInt(requiredFromAmount) + BigInt(gasForwarding);
-  const minBridgeAmountBigInt = BigInt(minBridgeAmount);
+  const requiredAmountBigInt = BigInt(requiredFromAmount) + BigInt(gasForwarding.toString());
+  const minBridgeAmountBigInt = BigInt(minCrossChainFromAmount);
   
   // Use the larger of required amount or minimum bridge amount
   const finalAmount = requiredAmountBigInt > minBridgeAmountBigInt 
@@ -237,7 +237,7 @@ export const getCrossChainQuote = async ({
     fromAmount: fromAmountToUse,
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
-    fromAmountForGas: gasForwarding,
+    fromAmountForGas: gasForwarding, // Cant change to to string because of https://github.com/lifinance/sdk/issues/239
     slippage: DEFAULT_SLIPPAGE,
     order: "FASTEST" as const,
   };
@@ -276,30 +276,42 @@ export const getCrossChainQuote = async ({
 /**
  * Calculates the minimum bridge amount based on MIN_BRIDGE_USD_VALUE
  */
-const calculateMinBridgeAmount = (quoteResponse: any): string => {
+const calculateMinCrossChainFromAmount = (quoteResponse: any): string => {
   // If the response doesn't have USD value info, return a small default amount
   if (!quoteResponse.estimate?.fromAmountUSD || !quoteResponse.estimate?.fromAmount) {
     return "1000000"; // Small default value
   }
 
   try {
-    // Calculate the token amount that corresponds to MIN_BRIDGE_USD_VALUE
+    // Get the USD value and token amount from the quote
     const fromAmountUsd = parseFloat(quoteResponse.estimate.fromAmountUSD);
-    const fromAmount = BigInt(quoteResponse.estimate.fromAmount);
+    const fromAmount = quoteResponse.estimate.fromAmount;
     
-    if (fromAmountUsd <= 0) return fromAmount.toString();
+    console.log(`Current bridge value: $${fromAmountUsd}, token amount: ${fromAmount}`);
     
-    // Calculate tokens per USD with high precision
-    // (fromAmount / fromAmountUsd) * MIN_BRIDGE_USD_VALUE
-    const minBridgeAmount = (fromAmount * BigInt(Math.floor(MIN_BRIDGE_USD_VALUE * 1000000))) / 
-                           BigInt(Math.floor(fromAmountUsd * 1000000));
+    if (fromAmountUsd <= 0) return fromAmount;
     
-    console.log(`Token rate: 1 USD = ${fromAmount / BigInt(Math.floor(fromAmountUsd))} tokens`);
+    // If the current USD value is already >= the minimum, return the original amount
+    if (fromAmountUsd >= MIN_BRIDGE_USD_VALUE) {
+      console.log(`Current value $${fromAmountUsd} already meets minimum $${MIN_BRIDGE_USD_VALUE}`);
+      return fromAmount;
+    }
     
-    return minBridgeAmount.toString();
+    // Calculate how many tokens would equal MIN_BRIDGE_USD_VALUE using BigInt for precision
+    // We'll use a scaled ratio approach to maintain precision with BigInt
+    const PRECISION = 1000000; // 6 decimal places of precision
+    const scaledRatio = Math.ceil((MIN_BRIDGE_USD_VALUE / fromAmountUsd) * PRECISION);
+    const fromAmountBigInt = BigInt(fromAmount);
+    const minTokenAmount = (fromAmountBigInt * BigInt(scaledRatio)) / BigInt(PRECISION);
+    
+    console.log(`Current USD value: $${fromAmountUsd}, Target USD value: $${MIN_BRIDGE_USD_VALUE}`);
+    console.log(`Ratio: ${scaledRatio / PRECISION}, Original amount: ${fromAmount}`);
+    console.log(`Calculated min token amount: ${minTokenAmount}`);
+    
+    return minTokenAmount.toString();
   } catch (error) {
-    console.error("Error calculating min bridge amount:", error);
-    return "1000000"; // Fallback value
+    console.error("Error calculating min cross chain amount:", error);
+    return "1000000"; // Fallback value if calculation fails
   }
 };
 
