@@ -53,10 +53,10 @@ export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
 // Define time options with appropriate display labels
 export const TIME_OPTIONS = [
-  { days: 1, display: "1 day" },
-  { days: 2, display: "2 days" },
-  { days: 7, display: "7 days" },
-  { days: 15, display: "15 days" },
+  // { days: 1, display: "1 day" },
+  // { days: 2, display: "2 days" },
+  // { days: 7, display: "7 days" },
+  // { days: 15, display: "15 days" },
   { days: 30, display: "30 days" },
   { days: 90, display: "90 days" },
   { days: 180, display: "180 days" },
@@ -70,7 +70,7 @@ export const TIME_OPTIONS = [
 export const DAY_OPTIONS = TIME_OPTIONS.map(option => option.days);
 
 export const STORAGE_OPTIONS: StorageOption[] = [
-  { depth: 19, size: "110MB" },
+ // { depth: 19, size: "110MB" },
   { depth: 20, size: "680MB" },
   { depth: 21, size: "2.6GB" },
   { depth: 22, size: "7.7GB" },
