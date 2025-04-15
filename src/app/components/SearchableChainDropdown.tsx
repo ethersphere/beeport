@@ -2,6 +2,18 @@ import React, { useState, useEffect, useRef } from "react";
 import styles from "./css/SearchableChainDropdown.module.css";
 import { Chain } from "@lifi/sdk";
 
+// Define priority chains that will appear at the top of the list
+const PRIORITY_CHAINS = [
+  100,   // Gnosis (DAI) - First priority as it's the destination chain
+  1,     // Ethereum Mainnet
+  8453,  // Base
+  42161, // Arbitrum
+  10,    // Optimism
+  43114, // Avalanche
+  56,    // Binance Smart Chain
+  137,   // Polygon
+]; // Prioritize Gnosis and other major chains
+
 export interface ChainDropdownProps {
   selectedChainId: number;
   isLoading: boolean;
@@ -10,6 +22,7 @@ export interface ChainDropdownProps {
   isChainsLoading: boolean;
   activeDropdown: string | null;
   onOpenDropdown: (name: string) => void;
+  sortMethod?: 'priority' | 'alphabetical' | 'id'; // Optional sort method
 }
 
 const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
@@ -19,6 +32,7 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
   onChainSelect,
   activeDropdown,
   onOpenDropdown,
+  sortMethod = 'priority', // Default to priority sorting
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -32,6 +46,39 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
   const filteredChains = availableChains.filter((chain) =>
     chain.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  
+  // Sort the filtered chains based on the specified method
+  const sortedChains = [...filteredChains].sort((a, b) => {
+    // First handle priority sorting
+    if (sortMethod === 'priority') {
+      const aIndex = PRIORITY_CHAINS.indexOf(a.id);
+      const bIndex = PRIORITY_CHAINS.indexOf(b.id);
+      
+      // If both chains are in priority list, sort by their position in the list
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+      
+      // If only one chain is in priority list, it should come first
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      
+      // If neither chain is in priority list, fall back to alphabetical sorting
+      return a.name.localeCompare(b.name);
+    }
+    
+    // Alphabetical sorting
+    if (sortMethod === 'alphabetical') {
+      return a.name.localeCompare(b.name);
+    }
+    
+    // Chain ID sorting
+    if (sortMethod === 'id') {
+      return a.id - b.id;
+    }
+    
+    return 0;
+  });
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -120,8 +167,8 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
           />
           {isLoading ? (
             <div className={styles.loadingIndicator}>Loading chains...</div>
-          ) : filteredChains.length > 0 ? (
-            filteredChains.map((chain) => (
+          ) : sortedChains.length > 0 ? (
+            sortedChains.map((chain) => (
               <div
                 key={chain.id}
                 className={`${styles.option} ${

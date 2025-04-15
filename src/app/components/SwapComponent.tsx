@@ -1484,6 +1484,7 @@ const SwapComponent: React.FC = () => {
               isLoading={isChainsLoading}
               activeDropdown={activeDropdown}
               onOpenDropdown={handleOpenDropdown}
+              sortMethod="priority"
             />
           </div>
 
