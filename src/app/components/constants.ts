@@ -66,8 +66,6 @@ export const TIME_OPTIONS = [
   { days: 365 * 10, display: "10 years" },
 ];
 
-// Keep DAY_OPTIONS for backward compatibility
-export const DAY_OPTIONS = TIME_OPTIONS.map(option => option.days);
 
 export const STORAGE_OPTIONS: StorageOption[] = [
  // { depth: 19, size: "110MB" },
