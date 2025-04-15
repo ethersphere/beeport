@@ -37,6 +37,7 @@ import {
   BEE_GATEWAY_URL,
   GNOSIS_DESTINATION_TOKEN,
   DAY_OPTIONS,
+  TIME_OPTIONS,
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
@@ -1522,7 +1523,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Number of Days:</label>
+            <label className={styles.label}>Storage Duration:</label>
             <select
               className={styles.select}
               value={selectedDays || ""}
@@ -1531,10 +1532,10 @@ const SwapComponent: React.FC = () => {
                 setSelectedDays(value === "" ? null : Number(value));
               }}
             >
-              <option value="">Please select days</option>
-              {DAY_OPTIONS.map((days) => (
-                <option key={days} value={days}>
-                  {days} {days === 1 ? "day" : "days"}
+              <option value="">Please select duration</option>
+              {TIME_OPTIONS.map((option) => (
+                <option key={option.days} value={option.days}>
+                  {option.display}
                 </option>
               ))}
             </select>

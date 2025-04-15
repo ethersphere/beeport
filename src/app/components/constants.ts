@@ -51,7 +51,23 @@ export const MIN_BRIDGE_USD_VALUE = 0.10;
 
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
-export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
+// Define time options with appropriate display labels
+export const TIME_OPTIONS = [
+  { days: 1, display: "1 day" },
+  { days: 2, display: "2 days" },
+  { days: 7, display: "7 days" },
+  { days: 15, display: "15 days" },
+  { days: 30, display: "30 days" },
+  { days: 90, display: "90 days" },
+  { days: 180, display: "180 days" },
+  { days: 365, display: "1 year" },
+  { days: 365 * 2, display: "2 years" },
+  { days: 365 * 5, display: "5 years" },
+  { days: 365 * 10, display: "10 years" },
+];
+
+// Keep DAY_OPTIONS for backward compatibility
+export const DAY_OPTIONS = TIME_OPTIONS.map(option => option.days);
 
 export const STORAGE_OPTIONS: StorageOption[] = [
   { depth: 19, size: "110MB" },
