@@ -8,6 +8,10 @@ interface HelpSectionProps {
   setBeeApiUrl: (value: string) => void;
   isCustomNode: boolean;
   setIsCustomNode: (value: boolean) => void;
+  isCustomRpc: boolean;
+  setIsCustomRpc: (value: boolean) => void;
+  customRpcUrl: string;
+  setCustomRpcUrl: (value: string) => void;
 }
 
 const HelpSection: React.FC<HelpSectionProps> = ({
@@ -16,6 +20,10 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setBeeApiUrl,
   isCustomNode,
   setIsCustomNode,
+  isCustomRpc,
+  setIsCustomRpc,
+  customRpcUrl,
+  setCustomRpcUrl,
 }) => {
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
@@ -29,6 +37,21 @@ const HelpSection: React.FC<HelpSectionProps> = ({
     if (!checked) {
       // Reset to default URL when turning off custom node
       setBeeApiUrl(DEFAULT_BEE_API_URL);
+    }
+  };
+
+  const handleCustomRpcUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value;
+    // Remove trailing slashes
+    value = value.replace(/\/+$/, "");
+    setCustomRpcUrl(value);
+  };
+
+  const handleCustomRpcToggle = (checked: boolean) => {
+    setIsCustomRpc(checked);
+    if (!checked) {
+      // Reset to default when turning off custom RPC
+      setCustomRpcUrl("");
     }
   };
 
@@ -70,6 +93,37 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                 </div>
                 <div className={styles.nodeAddress}>
                   API Node Address {nodeAddress}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className={styles.switchContainer} style={{ marginTop: '20px' }}>
+            <span className={styles.switchLabel}>Custom RPC</span>
+            <label className={styles.switch}>
+              <input
+                type="checkbox"
+                checked={isCustomRpc}
+                onChange={(e) => handleCustomRpcToggle(e.target.checked)}
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+
+          {isCustomRpc && (
+            <div className={styles.customNodeConfig}>
+              <div className={styles.formSection}>
+                <label className={styles.label}>Gnosis RPC URL:</label>
+                <input
+                  className={styles.input}
+                  type="text"
+                  value={customRpcUrl}
+                  onChange={handleCustomRpcUrlChange}
+                  placeholder="Enter Gnosis RPC URL"
+                />
+
+                <div className={styles.hint}>
+                  Set custom RPC URL for the Gnosis chain. This will be used for all Gnosis chain operations.
                 </div>
               </div>
             </div>

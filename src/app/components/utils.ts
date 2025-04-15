@@ -8,6 +8,18 @@ import {
 } from "viem";
 import { gnosis } from "viem/chains";
 
+// Global state for custom RPC URL
+let globalCustomRpcUrl: string | undefined = undefined;
+
+/**
+ * Sets the global custom RPC URL
+ * @param url The custom RPC URL to set, or undefined to use default
+ */
+export const setGnosisRpcUrl = (url: string | undefined) => {
+  globalCustomRpcUrl = url;
+  console.log("Set global RPC URL:", url || "default");
+};
+
 export const toChecksumAddress = (
   address: string | undefined | null
 ): string | null => {
@@ -176,7 +188,9 @@ export const generateProperNonce = (): `0x${string}` => {
  * @returns A public client configured for the Gnosis chain
  */
 export const getGnosisPublicClient = () => {
-  const rpcUrl = process.env.NEXT_PUBLIC_GNOSIS_RPC;
+  // Use global custom RPC URL if set, otherwise fall back to env variable
+  //const rpcUrl = globalCustomRpcUrl || process.env.NEXT_PUBLIC_GNOSIS_RPC;
+  const rpcUrl = globalCustomRpcUrl;
 
   return createPublicClient({
     chain: gnosis,

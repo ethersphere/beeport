@@ -130,7 +130,7 @@ export const getGnosisQuote = async ({
   );
 
   // Extract the estimated execution duration
-  if (gnosisContactCallsQuoteResponse.estimate?.executionDuration) {
+  if (setEstimatedTime && gnosisContactCallsQuoteResponse.estimate?.executionDuration) {
     setEstimatedTime(
       gnosisContactCallsQuoteResponse.estimate.executionDuration
     );
@@ -158,7 +158,7 @@ export const getCrossChainQuote = async ({
   toAmount,
   gnosisDestinationToken,
   setEstimatedTime,
-}: GetCrossChainQuoteParams & { setEstimatedTime: (time: number) => void }) => {
+}: GetCrossChainQuoteParams & { setEstimatedTime?: (time: number) => void }) => {
   // Use getToAmountQuote to get required fromAmount
   const toAmountQuoteParams: ToAmountQuoteParams = {
     fromChain: selectedChainId.toString(),
@@ -236,7 +236,7 @@ export const getCrossChainQuote = async ({
   );
 
   // Extract the estimated execution duration
-  if (crossChainContractQuoteResponse.estimate?.executionDuration) {
+  if (setEstimatedTime && crossChainContractQuoteResponse.estimate?.executionDuration) {
     setEstimatedTime(
       crossChainContractQuoteResponse.estimate.executionDuration
     );

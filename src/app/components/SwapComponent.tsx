@@ -56,6 +56,7 @@ import {
   toChecksumAddress,
   generateProperNonce,
   getGnosisPublicClient,
+  setGnosisRpcUrl,
 } from "./utils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
@@ -134,6 +135,16 @@ const SwapComponent: React.FC = () => {
 
   // Add a ref for the abort controller
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Add state for custom RPC
+  const [isCustomRpc, setIsCustomRpc] = useState(false);
+  const [customRpcUrl, setCustomRpcUrl] = useState<string>("");
+
+  // Watch for changes to custom RPC URL settings and update global setting
+  useEffect(() => {
+    // Update the global RPC URL when custom RPC settings change
+    setGnosisRpcUrl(isCustomRpc ? customRpcUrl : undefined);
+  }, [isCustomRpc, customRpcUrl]);
 
   useEffect(() => {
     const init = async () => {
@@ -494,6 +505,7 @@ const SwapComponent: React.FC = () => {
   const fetchCurrentPrice = async () => {
     if (publicClient) {
       try {
+        // Just use getGnosisPublicClient directly, it will use the global RPC URL
         const price = await getGnosisPublicClient().readContract({
           address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
           abi: GNOSIS_PRICE_ORACLE_ABI,
@@ -1863,6 +1875,10 @@ const SwapComponent: React.FC = () => {
           setBeeApiUrl={setBeeApiUrl}
           isCustomNode={isCustomNode}
           setIsCustomNode={setIsCustomNode}
+          isCustomRpc={isCustomRpc}
+          setIsCustomRpc={setIsCustomRpc}
+          customRpcUrl={customRpcUrl}
+          setCustomRpcUrl={setCustomRpcUrl}
         />
       ) : showStampList ? (
         <StampListSection
