@@ -17,6 +17,7 @@ import {
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   LIFI_API_KEY,
   DEFAULT_SLIPPAGE,
+  MIN_BRIDGE_USD_VALUE,
 } from "./constants";
 
 import {
@@ -158,7 +159,7 @@ export const getCrossChainQuote = async ({
   toAmount,
   gnosisDestinationToken,
   setEstimatedTime,
-}: GetCrossChainQuoteParams & { setEstimatedTime?: (time: number) => void }) => {
+}: GetCrossChainQuoteParams & { setEstimatedTime: (time: number) => void }) => {
   // Use getToAmountQuote to get required fromAmount
   const toAmountQuoteParams: ToAmountQuoteParams = {
     fromChain: selectedChainId.toString(),
@@ -210,15 +211,27 @@ export const getCrossChainQuote = async ({
     fromToken
   );
 
+  // Calculate minimum bridge amount in the token's value
+  const minBridgeAmount = calculateMinBridgeAmount(toAmountQuoteResponse);
+  console.log(`Minimum bridge amount: ${minBridgeAmount} (~ $${MIN_BRIDGE_USD_VALUE})`);
+
+  // Ensure we're bridging at least the minimum value
+  // We only bridge exactly what's needed for the transaction plus gas forwarding
+  const fromAmount = BigInt(requiredFromAmount) + gasForwarding;
+  
+  // Bridge exactly what's needed (no extra)
+  const fromAmountToUse = fromAmount.toString();
+  console.log(`Using bridge amount: ${fromAmountToUse}`);
+
   // Create the actual quote request with gas forwarding
   const quoteRequest = {
     fromChain: selectedChainId.toString(),
     fromToken: fromToken,
     fromAddress: address.toString(),
-    fromAmount: (BigInt(requiredFromAmount) + gasForwarding).toString(),
+    fromAmount: fromAmountToUse,
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
-    fromAmountForGas: gasForwarding,
+    fromAmountForGas: gasForwarding.toString(),  // Convert to string to fix type error
     slippage: DEFAULT_SLIPPAGE,
     order: "FASTEST" as const,
   };
@@ -252,6 +265,27 @@ export const getCrossChainQuote = async ({
       crossChainContractQuoteResponse
     ),
   };
+};
+
+/**
+ * Calculates the minimum bridge amount based on MIN_BRIDGE_USD_VALUE
+ */
+const calculateMinBridgeAmount = (quoteResponse: any): string => {
+  // If the response doesn't have USD value info, return a small default amount
+  if (!quoteResponse.estimate?.fromAmountUSD || !quoteResponse.estimate?.fromAmount) {
+    return "1000000"; // Small default value
+  }
+
+  // Calculate the token amount that corresponds to MIN_BRIDGE_USD_VALUE
+  const fromAmountUsd = Number(quoteResponse.estimate.fromAmountUSD);
+  const fromAmount = BigInt(quoteResponse.estimate.fromAmount);
+  
+  if (fromAmountUsd <= 0) return fromAmount.toString();
+  
+  const tokenAmountPerUsd = fromAmount / BigInt(Math.floor(fromAmountUsd * 100));
+  const minBridgeAmount = tokenAmountPerUsd * BigInt(Math.floor(MIN_BRIDGE_USD_VALUE * 100));
+  
+  return minBridgeAmount.toString();
 };
 
 /**

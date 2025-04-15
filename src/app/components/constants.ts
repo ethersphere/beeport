@@ -46,6 +46,9 @@ export const GNOSIS_WXDAI_ADDRESS =
 // Static configuration
 export const MIN_TOKEN_BALANCE_USD = 0.5;
 
+// Minimum USD value for bridging to avoid dust amounts
+export const MIN_BRIDGE_USD_VALUE = 0.10;
+
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
 export const DAY_OPTIONS = [1, 2, 7, 15, 30, 45, 90, 180, 365];
