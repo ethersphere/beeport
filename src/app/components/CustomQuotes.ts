@@ -108,6 +108,7 @@ export const getGnosisQuote = async ({
     toToken: swarmConfig.swarmToken,
     toAmount: bzzAmount,
     slippage: DEFAULT_SLIPPAGE,
+    allowExchanges: ['sushiswap'],
     contractCalls: [
       {
         fromAmount: bzzAmount,
