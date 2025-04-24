@@ -1508,7 +1508,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Storage Bucket:</label>
+            <label className={styles.label}>Storage Stamps:</label>
             <select
               className={styles.select}
               value={selectedDepth}
