@@ -255,7 +255,7 @@ const SwapComponent: React.FC = () => {
         console.log("BZZ amount needed:", formatUnits(BigInt(bzzAmount), 16));
         console.log("Selected days:", selectedDays);
         console.log(
-          "Selected bucket size:",
+          "Selected stamps size:",
           STORAGE_OPTIONS.find((option) => option.depth === selectedDepth)
             ?.size || "Unknown"
         );
@@ -1429,7 +1429,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(false);
           }}
         >
-          Buckets
+          Stamps
         </button>
         <button
           className={`${styles.tabButton} ${

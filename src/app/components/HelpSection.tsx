@@ -182,7 +182,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <h3>How long does it take for my storage to become available?</h3>
             <p>
               After purchasing storage, it typically takes 2-5 minutes for your
-              storage bucket to become usable. The app will automatically notify
+              storage stamps to become usable. The app will automatically notify
               you once your storage is ready for use.
             </p>
           </div>

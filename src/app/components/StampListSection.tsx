@@ -156,13 +156,13 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
         <div className={styles.stampListHeader}>
-          <h2>Your Buckets</h2>
+          <h2>Your Stamps</h2>
         </div>
 
         {isLoading ? (
-          <div className={styles.stampListLoading}>Loading buckets...</div>
+          <div className={styles.stampListLoading}>Loading stamps...</div>
         ) : stamps.length === 0 ? (
-          <div className={styles.stampListEmpty}>No buckets found</div>
+          <div className={styles.stampListEmpty}>No stamps found</div>
         ) : (
           <>
             {stamps.map((stamp, index) => (
@@ -194,7 +194,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     handleStampSelect(stamp);
                   }}
                 >
-                  Upload to this bucket
+                  Upload to these stamps
                 </button>
               </div>
             ))}
