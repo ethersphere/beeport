@@ -956,7 +956,7 @@ const SwapComponent: React.FC = () => {
       const bzzAmount = calculateTotalAmount().toString();
       console.log("bzzAmount", bzzAmount);
 
-      // Deciding if we are buying stamp directly or swaping/bridging
+      // Deciding if we are buying stamps directly or swaping/bridging
       if (
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
@@ -1069,7 +1069,7 @@ const SwapComponent: React.FC = () => {
     const checkStampStatus = async (
       batchId: string
     ): Promise<StampResponse> => {
-      console.log(`Checking stamp status for batch ${batchId}`);
+      console.log(`Checking s status for batch ${batchId}`);
       const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
       const data = await response.json();
       console.log("Stamp status response:", data);
@@ -1246,7 +1246,7 @@ const SwapComponent: React.FC = () => {
             );
             await new Promise((resolve) => setTimeout(resolve, retryDelay404));
           } catch (error) {
-            console.error(`Error checking stamp status:`, error);
+            console.error(`Error checking stamps status:`, error);
             if (attempt404 === maxRetries404) {
               throw new Error("Batch never found after maximum retries");
             }

@@ -35,7 +35,7 @@ npx serve out
 
 4. Check spending cap on BZZ, if its above, dont ask for approval
 
-5. Check do we really need a signing if we just enforce domain from where uploads can come from, maybe we just check signing but no need to check it through stamp ownership
+5. Check do we really need a signing if we just enforce domain from where uploads can come from, maybe we just check signing but no need to check it through stamps ownership
 
 6. Enforce on server checking of origin of domain, where the upload came from
 

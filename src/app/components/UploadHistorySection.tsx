@@ -112,7 +112,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                   </a>
                 </div>
                 <div className={styles.stampRow}>
-                  <span className={styles.label}>Stamp ID:</span>
+                  <span className={styles.label}>Stamps ID:</span>
                   <span className={styles.stampId} title={record.stampId}>
                     {formatStampId(record.stampId)}
                   </span>

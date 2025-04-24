@@ -1,6 +1,6 @@
 ## Backend proxy server
 
-This folder contains proxy script to be put on server with BEE Node, serving content and proxying stamp purchases for users.
+This folder contains proxy script to be put on server with BEE Node, serving content and proxying stamps purchases for users.
 
 ```
 npm install express http-proxy-middleware viem cors dotenv
