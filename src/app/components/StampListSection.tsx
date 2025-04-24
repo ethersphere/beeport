@@ -66,7 +66,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         const data = await response.json();
         return data;
       } catch (error) {
-        console.error(`Error fetching stamp info for ${batchId}:`, error);
+        console.error(`Error fetching stamps info for ${batchId}:`, error);
         return null;
       }
     };
@@ -104,7 +104,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           const batchId = log.args.batchId?.toString() || "";
           const stampInfo = await fetchStampInfo(batchId);
 
-          // Skip this stamp if stampInfo is null (expired or non-existent)
+          // Skip this stamps if stampInfo is null (expired or non-existent)
           if (!stampInfo) {
             return null;
           }

@@ -1069,7 +1069,7 @@ const SwapComponent: React.FC = () => {
     const checkStampStatus = async (
       batchId: string
     ): Promise<StampResponse> => {
-      console.log(`Checking s status for batch ${batchId}`);
+      console.log(`Checking stamps status for batch ${batchId}`);
       const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
       const data = await response.json();
       console.log("Stamp status response:", data);
