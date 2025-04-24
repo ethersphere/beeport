@@ -1404,6 +1404,7 @@ const SwapComponent: React.FC = () => {
 
   return (
     <div className={styles.container}>
+      <div className={styles.betaBadge}>BETA</div>
       <div className={styles.tabContainer}>
         <button
           className={`${styles.tabButton} ${
