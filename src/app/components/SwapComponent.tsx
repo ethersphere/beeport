@@ -1471,7 +1471,12 @@ const SwapComponent: React.FC = () => {
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>From Chain:</label>
+            <label 
+              className={styles.label}
+              data-tooltip="Select chain with funds"
+            >
+              From chain
+            </label>
             <SearchableChainDropdown
               selectedChainId={selectedChainId}
               availableChains={availableChains}
@@ -1488,7 +1493,12 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>From Token:</label>
+            <label 
+              className={styles.label}
+              data-tooltip="Select token you want to spend"
+            >
+              From token
+            </label>
             <SearchableTokenDropdown
               fromToken={fromToken}
               selectedChainId={selectedChainId}
@@ -1508,7 +1518,12 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Storage Stamps:</label>
+            <label 
+              className={styles.label}
+              data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
+            >
+              Storage stamps
+            </label>
             <select
               className={styles.select}
               value={selectedDepth}
@@ -1523,7 +1538,12 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Storage Duration:</label>
+            <label 
+              className={styles.label}
+              data-tooltip="Duration of storage stamps for which you are paying for"
+            >
+              Storage duration
+            </label>
             <select
               className={styles.select}
               value={selectedDays || ""}
