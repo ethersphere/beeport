@@ -87,6 +87,7 @@ const SwapComponent: React.FC = () => {
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
   const [isChainsLoading, setIsChainsLoading] = useState(true);
   const [liquidityError, setLiquidityError] = useState<boolean>(false);
+  const [insufficientFunds, setInsufficientFunds] = useState<boolean>(false);
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
@@ -267,6 +268,9 @@ const SwapComponent: React.FC = () => {
     const updatePriceEstimate = async () => {
       if (!selectedChainId) return;
       
+      // Reset insufficient funds state at the beginning of new price estimation
+      setInsufficientFunds(false);
+      
       try {
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
@@ -362,6 +366,19 @@ const SwapComponent: React.FC = () => {
         if (!abortSignal.aborted) {
           console.log("Total amount:", totalAmount);
           setTotalUsdAmount(totalAmount.toString());
+          
+          // Check if user has enough funds
+          if (selectedTokenInfo) {
+            const tokenBalanceInUsd = Number(
+              formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)
+            ) * Number(selectedTokenInfo.priceUSD);
+            
+            console.log("User token balance in USD:", tokenBalanceInUsd);
+            console.log("Required amount in USD:", totalAmount);
+            
+            // Set insufficient funds flag if cost exceeds available balance
+            setInsufficientFunds(totalAmount > tokenBalanceInUsd);
+          }
         }
       } catch (error) {
         // Only update error state if not aborted
@@ -1431,6 +1448,19 @@ const SwapComponent: React.FC = () => {
     setRemainingTime(null);
   };
 
+  // Reset insufficientFunds whenever the selected token changes
+  useEffect(() => {
+    // When token info changes, reset insufficient funds flag
+    if (selectedTokenInfo) {
+      setInsufficientFunds(false);
+    }
+  }, [selectedTokenInfo]);
+
+  // Also reset insufficientFunds when the selectedChainId or selectedDays changes
+  useEffect(() => {
+    setInsufficientFunds(false);
+  }, [selectedChainId, selectedDays]);
+
   return (
     <div className={styles.container}>
       <div className={styles.betaBadge}>BETA</div>
@@ -1597,15 +1627,17 @@ const SwapComponent: React.FC = () => {
               <p className={styles.priceInfo}>
                 {liquidityError
                   ? "Not enough liquidity for this swap"
+                  : insufficientFunds
+                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
                   : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
               </p>
             )}
 
           <button
             className={`${styles.button} ${
-              !selectedDays || liquidityError ? styles.buttonDisabled : ""
+              !selectedDays || liquidityError || insufficientFunds ? styles.buttonDisabled : ""
             } ${isPriceEstimating ? styles.calculatingButton : ""}`}
-            disabled={!selectedDays || liquidityError || isPriceEstimating}
+            disabled={!selectedDays || liquidityError || insufficientFunds || isPriceEstimating}
             onClick={handleSwap}
           >
             {isLoading ? (
@@ -1616,6 +1648,8 @@ const SwapComponent: React.FC = () => {
               "Calculating Cost..."
             ) : liquidityError ? (
               "Cannot Swap - Can't Find Route"
+            ) : insufficientFunds ? (
+              "Insufficient Balance"
             ) : (
               "Execute Swap"
             )}
