@@ -1568,6 +1568,18 @@ const SwapComponent: React.FC = () => {
               tokenBalances={tokenBalances}
               selectedTokenInfo={selectedTokenInfo}
               onTokenSelect={(address, token) => {
+                console.log("Token manually selected:", address, token?.symbol);
+                
+                // Only reset duration if this is a user-initiated token change (not during initial loading)
+                if (fromToken && address !== fromToken) {
+                  console.log("Resetting duration due to token change");
+                  setSelectedDays(null);
+                  setTotalUsdAmount(null);
+                  setInsufficientFunds(false);
+                  setLiquidityError(false);
+                  setIsPriceEstimating(false);
+                }
+                
                 setFromToken(address);
                 setSelectedTokenInfo(token);
               }}
