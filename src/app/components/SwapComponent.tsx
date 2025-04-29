@@ -69,7 +69,8 @@ const SwapComponent: React.FC = () => {
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
 
-  const [selectedChainId, setSelectedChainId] = useState(ChainId.DAI);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [fromToken, setFromToken] = useState(
     "0x0000000000000000000000000000000000000000"
   );
@@ -146,31 +147,51 @@ const SwapComponent: React.FC = () => {
     setGnosisRpcUrl(isCustomRpc ? customRpcUrl : undefined);
   }, [isCustomRpc, customRpcUrl]);
 
+  // Initial setup that runs only once to set the chain ID from wallet
+  useEffect(() => {
+    if (chainId && !isInitialized) {
+      console.log("Initial chain setup with ID:", chainId);
+      setSelectedChainId(chainId);
+      setIsInitialized(true);
+    }
+  }, [chainId, isInitialized]);
+
   useEffect(() => {
     const init = async () => {
       setIsWalletLoading(true);
-      if (isConnected && address) {
+      if (isConnected && address && isInitialized) {
         setSelectedDays(null);
         setFromToken("");
         setSelectedTokenInfo(null);
-        fetchTokensAndBalances();
       }
       setIsWalletLoading(false);
     };
 
     init();
-  }, [isConnected, address, selectedChainId]);
+  }, [isConnected, address, isInitialized]);
+
+  // Separate useEffect to fetch tokens after selectedChainId is updated
+  useEffect(() => {
+    if (isConnected && address && selectedChainId && isInitialized) {
+      console.log("Fetching tokens with chain ID:", selectedChainId);
+      fetchTokensAndBalances(selectedChainId);
+    }
+  }, [isConnected, address, selectedChainId, isInitialized]);
 
   useEffect(() => {
-    if (chainId) {
-      setSelectedChainId(chainId);
-      setSelectedDays(null);
-      setFromToken("");
-      setSelectedTokenInfo(null);
-      setTokenBalances(null);
-      fetchTokensAndBalances();
+    if (chainId && isInitialized) {
+      // Only update selectedChainId if we've already initialized
+      // This handles chain switching after initial load
+      if (chainId !== selectedChainId) {
+        console.log("Chain changed from", selectedChainId, "to", chainId);
+        setSelectedChainId(chainId);
+        setSelectedDays(null);
+        setFromToken("");
+        setSelectedTokenInfo(null);
+        setTokenBalances(null);
+      }
     }
-  }, [chainId]);
+  }, [chainId, isInitialized]);
 
   useEffect(() => {
     const fetchAndSetNode = async () => {
@@ -244,6 +265,8 @@ const SwapComponent: React.FC = () => {
     const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
+      if (!selectedChainId) return;
+      
       try {
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
@@ -427,8 +450,8 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const fetchTokensAndBalances = async () => {
-    if (!address || !isConnected) {
+  const fetchTokensAndBalances = async (currentChainId?: number) => {
+    if (!address || !isConnected || !currentChainId) {
       setTokenBalances(null);
       setAvailableTokens(null);
       setFromToken("");
@@ -436,24 +459,25 @@ const SwapComponent: React.FC = () => {
       return;
     }
 
+    console.log("Using chain ID for token fetch:", currentChainId);
     setIsTokensLoading(true);
     try {
       // First fetch all available tokens with retry
       const tokens = await performWithRetry(
         () =>
           getTokens({
-            chains: [selectedChainId],
+            chains: [currentChainId],
             chainTypes: [ChainType.EVM],
           }),
         "getTokens",
-        (result) => Boolean(result?.tokens?.[selectedChainId]?.length)
+        (result) => Boolean(result?.tokens?.[currentChainId]?.length)
       );
       console.log("Available tokens:", tokens);
       setAvailableTokens(tokens);
 
       // Then get balances for these tokens with retry
       const tokensByChain = {
-        [selectedChainId]: tokens.tokens[selectedChainId],
+        [currentChainId]: tokens.tokens[currentChainId],
       };
 
       const balances = await performWithRetry(
@@ -461,7 +485,7 @@ const SwapComponent: React.FC = () => {
         "getTokenBalances",
         (result) => {
           // Validate that we have a non-empty balance result for the selected chain
-          const chainBalances = result?.[selectedChainId];
+          const chainBalances = result?.[currentChainId];
           return Boolean(chainBalances && chainBalances.length > 0);
         }
       );
@@ -469,8 +493,8 @@ const SwapComponent: React.FC = () => {
       setTokenBalances(balances);
 
       // Find tokens with balance
-      if (balances?.[selectedChainId]) {
-        const tokensWithBalance = balances[selectedChainId]
+      if (balances?.[currentChainId]) {
+        const tokensWithBalance = balances[currentChainId]
           .filter((t) => (t?.amount ?? 0n) > 0n)
           .sort((a, b) => {
             const aUsdValue =
@@ -676,6 +700,8 @@ const SwapComponent: React.FC = () => {
     contractCallsRoute: any,
     currentConfig: any
   ) => {
+    if (!selectedChainId) return;
+    
     setStatusMessage({
       step: "Route",
       message: "Executing contract calls...",
@@ -751,6 +777,8 @@ const SwapComponent: React.FC = () => {
     toAmount: any,
     updatedConfig: any
   ) => {
+    if (!selectedChainId) return;
+    
     setStatusMessage({
       step: "Quote",
       message: "Getting quote...",
@@ -896,8 +924,8 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleSwap = async () => {
-    if (!isConnected || !address || !publicClient || !walletClient) {
-      console.error("Wallet not connected or clients not available");
+    if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
+      console.error("Wallet not connected, clients not available, or chain not selected");
       return;
     }
 
@@ -958,6 +986,7 @@ const SwapComponent: React.FC = () => {
 
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
+        selectedChainId !== null && 
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
@@ -1479,7 +1508,7 @@ const SwapComponent: React.FC = () => {
               From chain
             </label>
             <SearchableChainDropdown
-              selectedChainId={selectedChainId}
+              selectedChainId={selectedChainId || ChainId.DAI}
               availableChains={availableChains}
               onChainSelect={(chainId) => {
                 setSelectedChainId(chainId);
@@ -1502,7 +1531,7 @@ const SwapComponent: React.FC = () => {
             </label>
             <SearchableTokenDropdown
               fromToken={fromToken}
-              selectedChainId={selectedChainId}
+              selectedChainId={selectedChainId || ChainId.DAI}
               isWalletLoading={isWalletLoading}
               isTokensLoading={isTokensLoading}
               isConnected={isConnected}

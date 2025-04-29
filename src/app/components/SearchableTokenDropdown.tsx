@@ -144,12 +144,6 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
               )
             ) * Number(selectedTokenInfo.priceUSD)
           )
-        ) : availableTokensList && availableTokensList.length > 0 ? (
-          renderTokenContent(
-            availableTokensList[0].token,
-            availableTokensList[0].balance,
-            availableTokensList[0].usdValue
-          )
         ) : (
           <div className={styles.placeholder}>{getLoadingText()}</div>
         )}
@@ -157,7 +151,12 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
       {isOpen && availableTokensList && availableTokensList.length > 1 && (
         <div className={styles.dropdown}>
-          {availableTokensList?.map(({ token, balance, usdValue, address }) => (
+          {availableTokensList?.map(({ token, balance, usdValue, address }: {
+            token: any;
+            balance: number;
+            usdValue: number;
+            address: string;
+          }) => (
             <div
               key={address}
               className={`${styles.option} ${
