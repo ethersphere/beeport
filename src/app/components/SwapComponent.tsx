@@ -1748,6 +1748,9 @@ const SwapComponent: React.FC = () => {
                 {["ready", "uploading"].includes(uploadStep) && (
                   <div className={styles.uploadBox}>
                     <h3 className={styles.uploadTitle}>Upload File</h3>
+                    <div className={styles.uploadWarning}>
+                      Warning! Upload data is public and can not be removed from the Swarm network
+                    </div>
                     {statusMessage.step === "waiting_creation" ||
                     statusMessage.step === "waiting_usable" ? (
                       <div className={styles.waitingMessage}>
