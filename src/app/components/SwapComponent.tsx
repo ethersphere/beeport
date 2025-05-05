@@ -2002,7 +2002,7 @@ const SwapComponent: React.FC = () => {
                     
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
-                        <h4>Storage Stamp Details</h4>
+                        <h4>Storage Stamps Details</h4>
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>
