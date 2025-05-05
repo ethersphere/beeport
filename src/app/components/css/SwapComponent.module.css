@@ -1051,3 +1051,55 @@
     left: 10%;
   }
 }
+
+.stampInfoBox {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #161b22;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  text-align: left;
+}
+
+.stampInfoBox h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 16px;
+  color: #ffffff;
+}
+
+.stampDetails {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.stampDetail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.stampDetail span:first-child {
+  color: #8b949e;
+}
+
+.stampDetail span:last-child {
+  font-weight: 500;
+}
+
+.utilizationBarContainer {
+  height: 6px;
+  width: 100%;
+  background-color: #1e2328;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 15px;
+}
+
+.utilizationBar {
+  height: 100%;
+  background-color: #ff7a00;
+  transition: width 0.3s ease;
+}

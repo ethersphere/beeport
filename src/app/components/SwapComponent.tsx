@@ -62,6 +62,23 @@ import {
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
 import { processArchiveFile } from "./ArchiveProcessor";
 
+// Update the StampInfo interface to include the additional properties
+interface StampInfo {
+  batchID: string;
+  utilization: number;
+  usable: boolean;
+  depth: number;
+  amount: string;
+  bucketDepth: number;
+  exists: boolean;
+  batchTTL: number;
+  // Add the additional properties we're using
+  totalSize?: string;
+  usedSize?: string;
+  remainingSize?: string;
+  utilizationPercent?: number;
+}
+
 const SwapComponent: React.FC = () => {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -1349,13 +1366,46 @@ const SwapComponent: React.FC = () => {
       }, 900000);
 
       if (parsedReference.reference) {
-        const stamp = await checkStampStatus(postageBatchId);
-        saveUploadReference(
-          parsedReference.reference,
-          postageBatchId,
-          stamp.batchTTL,
-          processedFile?.name
-        );
+        try {
+          const stamp = await checkStampStatus(postageBatchId);
+          
+          // Calculate stamp details
+          const totalSize = Math.pow(2, stamp.depth);
+          const usedSize = Math.round(totalSize * (stamp.utilization / 100));
+          const remainingSize = totalSize - usedSize;
+          
+          // Format sizes to human readable format
+          const formatSize = (bytes: number): string => {
+            const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+            let size = bytes;
+            let unitIndex = 0;
+            
+            while (size >= 1024 && unitIndex < units.length - 1) {
+              size /= 1024;
+              unitIndex++;
+            }
+            
+            return `${size.toFixed(1)} ${units[unitIndex]}`;
+          };
+          
+          // Update state with stamp info
+          setUploadStampInfo({
+            ...stamp,
+            totalSize: formatSize(totalSize),
+            usedSize: formatSize(usedSize),
+            remainingSize: formatSize(remainingSize),
+            utilizationPercent: stamp.utilization,
+          });
+          
+          saveUploadReference(
+            parsedReference.reference,
+            postageBatchId,
+            stamp.batchTTL,
+            processedFile?.name
+          );
+        } catch (error) {
+          console.error("Failed to get stamp details:", error);
+        }
       }
     } catch (error) {
       console.error("Upload error:", error);
@@ -1460,6 +1510,9 @@ const SwapComponent: React.FC = () => {
   useEffect(() => {
     setInsufficientFunds(false);
   }, [selectedChainId, selectedDays]);
+
+  // Add a new state variable to the component
+  const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
 
   return (
     <div className={styles.container}>
@@ -1946,6 +1999,37 @@ const SwapComponent: React.FC = () => {
                         Open in Gateway
                       </a>
                     </div>
+                    
+                    {uploadStampInfo && (
+                      <div className={styles.stampInfoBox}>
+                        <h4>Storage Stamp Details</h4>
+                        <div className={styles.stampDetails}>
+                          <div className={styles.stampDetail}>
+                            <span>Utilization:</span>
+                            <span>{uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%</span>
+                          </div>
+                          <div className={styles.stampDetail}>
+                            <span>Total Size:</span>
+                            <span>{uploadStampInfo.totalSize}</span>
+                          </div>
+                          <div className={styles.stampDetail}>
+                            <span>Remaining:</span>
+                            <span>{uploadStampInfo.remainingSize}</span>
+                          </div>
+                          <div className={styles.stampDetail}>
+                            <span>Expires in:</span>
+                            <span>{Math.floor(uploadStampInfo.batchTTL / 86400)} days</span>
+                          </div>
+                        </div>
+                        <div className={styles.utilizationBarContainer}>
+                          <div 
+                            className={styles.utilizationBar} 
+                            style={{ width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <button
                       className={styles.closeSuccessButton}
                       onClick={() => {
@@ -1958,6 +2042,7 @@ const SwapComponent: React.FC = () => {
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
                         setIsDistributing(false);
+                        setUploadStampInfo(null);
                       }}
                     >
                       Close
