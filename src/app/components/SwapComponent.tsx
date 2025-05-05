@@ -1369,32 +1369,25 @@ const SwapComponent: React.FC = () => {
         try {
           const stamp = await checkStampStatus(postageBatchId);
           
-          // Calculate stamp details
-          const totalSize = Math.pow(2, stamp.depth);
-          const usedSize = Math.round(totalSize * (stamp.utilization / 100));
-          const remainingSize = totalSize - usedSize;
-          
-          // Format sizes to human readable format
-          const formatSize = (bytes: number): string => {
-            const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
-            let size = bytes;
-            let unitIndex = 0;
-            
-            while (size >= 1024 && unitIndex < units.length - 1) {
-              size /= 1024;
-              unitIndex++;
-            }
-            
-            return `${size.toFixed(1)} ${units[unitIndex]}`;
+          // Get the size string directly from STORAGE_OPTIONS mapping
+          const getSizeForDepth = (depth: number): string => {
+            const option = STORAGE_OPTIONS.find((option) => option.depth === depth);
+            return option ? option.size : `${depth} (unknown size)`;
           };
+          
+          // Get the human-readable total size from the options
+          const totalSizeString = getSizeForDepth(stamp.depth);
+          
+          // Calculate the used and remaining sizes as percentages for display
+          const utilizationPercent = stamp.utilization;
           
           // Update state with stamp info
           setUploadStampInfo({
             ...stamp,
-            totalSize: formatSize(totalSize),
-            usedSize: formatSize(usedSize),
-            remainingSize: formatSize(remainingSize),
-            utilizationPercent: stamp.utilization,
+            totalSize: totalSizeString,
+            usedSize: `${utilizationPercent.toFixed(1)}%`,
+            remainingSize: `${(100 - utilizationPercent).toFixed(1)}%`,
+            utilizationPercent: utilizationPercent,
           });
           
           saveUploadReference(
