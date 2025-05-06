@@ -1996,19 +1996,43 @@ const SwapComponent: React.FC = () => {
                           {statusMessage.reference}
                         </code>
                       </div>
-                      <a
-                        href={
-                          statusMessage.filename &&
-                          !isArchiveFile(statusMessage.filename)
-                            ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                            : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.referenceLink}
-                      >
-                        Open in Gateway
-                      </a>
+                      <div className={styles.linkButtonsContainer}>
+                        <button
+                          className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                          onClick={() => {
+                            const url = statusMessage.filename &&
+                              !isArchiveFile(statusMessage.filename)
+                              ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                              : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
+                            navigator.clipboard.writeText(url);
+                            
+                            // Show a temporary message using a more specific selector
+                            const button = document.querySelector(`.${styles.copyLinkButton}`);
+                            if (button) {
+                              const originalText = button.textContent;
+                              button.textContent = "Link copied!";
+                              setTimeout(() => {
+                                button.textContent = originalText;
+                              }, 2000);
+                            }
+                          }}
+                        >
+                          Copy link
+                        </button>
+                        <a
+                          href={
+                            statusMessage.filename &&
+                            !isArchiveFile(statusMessage.filename)
+                              ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                              : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.referenceLink}
+                        >
+                          Open link
+                        </a>
+                      </div>
                     </div>
                     
                     {uploadStampInfo && (

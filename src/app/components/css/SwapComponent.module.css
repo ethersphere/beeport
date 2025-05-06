@@ -1155,3 +1155,24 @@
   background-color: #ff7a00;
   transition: width 0.3s ease;
 }
+
+.linkButtonsContainer {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.linkButtonsContainer .referenceLink {
+  flex: 1;
+  text-align: center;
+  margin-top: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 120px;
+  box-sizing: border-box;
+  width: 50%;
+  border-radius: 13px;
+  font-size: 14px;
+}
+
