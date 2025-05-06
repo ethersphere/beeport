@@ -31,6 +31,17 @@ function RootLayout({ children }: { children: React.ReactNode }) {
             })();
           `}
         </Script>
+        
+        {/* TrackJS Error Tracking */}
+        <Script id="trackjs" src="https://cdn.trackjs.com/agent/v3/latest/t.js" strategy="afterInteractive" />
+        <Script id="trackjs-config" strategy="afterInteractive">
+          {`
+            window.TrackJS && TrackJS.install({ 
+              token: "2718ca1ab72d4ff38899696b48210d39"
+              // for more configuration options, see https://docs.trackjs.com
+            });
+          `}
+        </Script>
       </head>
       <body className="swarm-theme">
         <div className="main-container">
