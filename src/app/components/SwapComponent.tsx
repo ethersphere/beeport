@@ -1977,7 +1977,25 @@ const SwapComponent: React.FC = () => {
                     <h3>Upload Successful!</h3>
                     <div className={styles.referenceBox}>
                       <p>Reference:</p>
-                      <code>{statusMessage.reference}</code>
+                      <div className={styles.referenceCopyWrapper}>
+                        <code 
+                          className={styles.referenceCode} 
+                          onClick={() => {
+                            navigator.clipboard.writeText(statusMessage.reference || "");
+                            // Show a temporary "Copied!" message by using a data attribute
+                            const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                            if (codeEl) {
+                              codeEl.setAttribute('data-copied', 'true');
+                              setTimeout(() => {
+                                codeEl.setAttribute('data-copied', 'false');
+                              }, 2000);
+                            }
+                          }}
+                          data-copied="false"
+                        >
+                          {statusMessage.reference}
+                        </code>
+                      </div>
                       <a
                         href={
                           statusMessage.filename &&

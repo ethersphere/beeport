@@ -408,6 +408,58 @@
   font-size: 14px;
 }
 
+.referenceCopyWrapper {
+  position: relative;
+}
+
+.referenceCode {
+  display: block;
+  padding: 8px;
+  margin: 8px 0;
+  background-color: #0d1117;
+  border-radius: 4px;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.referenceCode:hover {
+  background-color: #1f2937;
+}
+
+.referenceCode:hover::after {
+  content: "Click to copy";
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #2d3748;
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.referenceCode[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #3fb950;
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+}
+
 .referenceLink {
   display: inline-block;
   margin-top: 10px;
