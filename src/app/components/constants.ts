@@ -2,6 +2,10 @@ import { ChainId } from "@lifi/sdk";
 import { StorageOption, SwarmConfigType } from "./types";
 
 // Environment variable configuration
+export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
+  process.env.NEXT_PUBLIC_GNOSIS_CUSTOM_REGISTRY_ADDRESS ||
+  "0xec4021d693e176db4322f6ce3089d76ae370d453";
+
 export const LIFI_API_KEY =
   process.env.NEXT_PUBLIC_LIFI_API_KEY ||
   "83f85c7b-97d2-4130-95b0-f72af1f0261e.b11f7330-ebb1-4684-af33-f28759ec6853";
@@ -9,10 +13,6 @@ export const LIFI_API_KEY =
 export const DEFAULT_NODE_ADDRESS =
   process.env.NEXT_PUBLIC_DEFAULT_NODE_ADDRESS ||
   "0xb81784e65c84ca25b595ff4f0badb502673e343b";
-
-export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
-  process.env.NEXT_PUBLIC_GNOSIS_CUSTOM_REGISTRY_ADDRESS ||
-  "0x1a3dc4cef861a7d3dcdc0d7c5adebf76c2197f20";
 
 export const LIFI_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_LIFI_CONTRACT_ADDRESS ||
@@ -162,3 +162,37 @@ export const V3_POOL_ABI = [
 export const BZZ_WXDAI_POOL_ADDRESS =
   process.env.NEXT_PUBLIC_BZZ_WXDAI_POOL_ADDRESS ||
   "0x7583b9c573fa4fb5ea21c83454939c4cf6aacbc3";
+
+/**
+ * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.
+ * "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the
+ * Swarm protocol. "Stamps" is a more user-friendly term used to describe the same concept.
+ * For example: "BatchCreated" event, but "StampsRegistry" contract.
+ */
+// Registry ABI for the functions we need to retrieve batch data
+export const REGISTRY_ABI = [
+  {
+    inputs: [{ internalType: "address", name: "_owner", type: "address" }],
+    name: "getOwnerBatches",
+    outputs: [
+      {
+        components: [
+          { internalType: "bytes32", name: "batchId", type: "bytes32" },
+          { internalType: "uint256", name: "totalAmount", type: "uint256" },
+          { internalType: "uint256", name: "normalisedBalance", type: "uint256" },
+          { internalType: "address", name: "nodeAddress", type: "address" },
+          { internalType: "address", name: "payer", type: "address" },
+          { internalType: "uint8", name: "depth", type: "uint8" },
+          { internalType: "uint8", name: "bucketDepth", type: "uint8" },
+          { internalType: "bool", name: "immutable_", type: "bool" },
+          { internalType: "uint256", name: "timestamp", type: "uint256" }
+        ],
+        internalType: "struct StampsRegistry.BatchInfo[]",
+        name: "",
+        type: "tuple[]"
+      }
+    ],
+    stateMutability: "view",
+    type: "function"
+  }
+] as const;

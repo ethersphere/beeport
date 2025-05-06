@@ -2,12 +2,12 @@
 pragma solidity ^0.8.23;
 
 /*
-    ██████╗  █████╗ ████████╗ ██████╗██╗  ██╗
-    ██╔══██╗██╔══██╗╚══██╔══╝██╔════╝██║  ██║
-    ██████╔╝███████║   ██║   ██║     ███████║
-    ██╔══██╗██╔══██║   ██║   ██║     ██╔══██║
-    ██████╔╝██║  ██║   ██║   ╚██████╗██║  ██║
-    ╚═════╝ ╚═╝  ╚═╝   ╚═╝    ╚═════╝╚═╝  ╚═╝
+    ███████╗████████╗ █████╗ ███╗   ███╗██████╗ ███████╗
+    ██╔════╝╚══██╔══╝██╔══██╗████╗ ████║██╔══██╗██╔════╝
+    ███████╗   ██║   ███████║██╔████╔██║██████╔╝███████╗
+    ╚════██║   ██║   ██╔══██║██║╚██╔╝██║██╔═══╝ ╚════██║
+    ███████║   ██║   ██║  ██║██║ ╚═╝ ██║██║     ███████║
+    ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚══════╝
                                               
     ██████╗ ███████╗ ██████╗ ██╗███████╗████████╗██████╗ ██╗   ██╗
     ██╔══██╗██╔════╝██╔════╝ ██║██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝
@@ -16,6 +16,15 @@ pragma solidity ^0.8.23;
     ██║  ██║███████╗╚██████╔╝██║███████║   ██║   ██║  ██║   ██║   
     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   
 */
+
+/**
+ * @title StampsRegistry
+ * @notice A registry for Swarm Postage Stamps
+ * @dev Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.
+ *      "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the
+ *      Swarm protocol. "Stamps" is a more user-friendly term used to describe the same concept.
+ *      For example: "BatchCreated" event, but "StampsRegistry" contract.
+ */
 
 interface ISwarmContract {
     function createBatch(
@@ -40,14 +49,30 @@ interface IERC20 {
     function approve(address spender, uint256 amount) external returns (bool);
 }
 
-contract StampRegistry {
+contract StampsRegistry {
     // State variables
     ISwarmContract public swarmStampContract;
     IERC20 public constant BZZ_TOKEN =
         IERC20(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da);
     mapping(bytes32 => address) public batchPayers;
     address public admin;
-
+    
+    // New data structure to store batch information by owner
+    struct BatchInfo {
+        bytes32 batchId;
+        uint256 totalAmount;
+        uint256 normalisedBalance;
+        address nodeAddress;
+        address payer;
+        uint8 depth;
+        uint8 bucketDepth;
+        bool immutable_;
+        uint256 timestamp;
+    }
+    
+    // Mapping from owner address to array of BatchInfo
+    mapping(address => BatchInfo[]) public ownerBatches;
+    
     // Events
     event BatchCreated(
         bytes32 indexed batchId,
@@ -139,6 +164,19 @@ contract StampRegistry {
         // Get normalized balance
         uint256 normalisedBalance = swarmStampContract
             .currentTotalOutPayment() + _initialBalancePerChunk;
+            
+        // Store batch information in the owner's batches array
+        ownerBatches[_owner].push(BatchInfo({
+            batchId: batchId,
+            totalAmount: totalAmount,
+            normalisedBalance: normalisedBalance,
+            nodeAddress: _nodeAddress,
+            payer: _owner,
+            depth: _depth,
+            bucketDepth: _bucketDepth,
+            immutable_: _immutable,
+            timestamp: block.timestamp
+        }));
 
         // Emit the batch creation event
         emit BatchCreated(
@@ -160,5 +198,23 @@ contract StampRegistry {
      */
     function getBatchPayer(bytes32 _batchId) external view returns (address) {
         return batchPayers[_batchId];
+    }
+    
+    /**
+     * @notice Get all batches for a specific owner
+     * @param _owner The address of the owner
+     * @return Array of BatchInfo for the owner
+     */
+    function getOwnerBatches(address _owner) external view returns (BatchInfo[] memory) {
+        return ownerBatches[_owner];
+    }
+    
+    /**
+     * @notice Get the number of batches for a specific owner
+     * @param _owner The address of the owner
+     * @return The number of batches
+     */
+    function getOwnerBatchCount(address _owner) external view returns (uint256) {
+        return ownerBatches[_owner].length;
     }
 }
