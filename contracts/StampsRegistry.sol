@@ -102,6 +102,10 @@ contract StampsRegistry {
         admin = msg.sender;
     }
 
+    ////////////////////////////////////////
+    //              SETTERS               //
+    ////////////////////////////////////////
+
     /**
      * @notice Transfer admin rights to a new address
      * @param _newAdmin The address of the new admin
@@ -202,6 +206,10 @@ contract StampsRegistry {
             _immutable
         );
     }
+
+    ////////////////////////////////////////
+    //              GETTERS               //
+    ////////////////////////////////////////
 
     /**
      * @notice Get the payer address for a specific batch ID
