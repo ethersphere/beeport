@@ -2,6 +2,7 @@ import "@rainbow-me/rainbowkit/styles.css";
 import { Providers } from "./providers";
 import "./globals.css";
 import Script from "next/script";
+import { TrackJSAgent } from "trackjs-nextjs";
 
 export const metadata = {
   title: "Swarm Storage",
@@ -16,17 +17,11 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        {/* TrackJS Error Tracking */}
-        <Script id="trackjs" src="https://cdn.trackjs.com/agent/v3/latest/t.js" strategy="afterInteractive" crossOrigin="anonymous"/>
-        <Script id="trackjs-config" strategy="afterInteractive">
-          {`
-            window.TrackJS && TrackJS.install({ 
-              token: "2718ca1ab72d4ff38899696b48210d39"
-              // for more configuration options, see https://docs.trackjs.com
-            });
-          `}
-        </Script>
-
+        <TrackJSAgent
+          config={{
+            token: "2718ca1ab72d4ff38899696b48210d39",
+          }}
+        />
         <Script id="matomo-analytics" strategy="afterInteractive">
           {`
             var _paq = window._paq = window._paq || [];
