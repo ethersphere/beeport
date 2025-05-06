@@ -85,6 +85,7 @@ contract StampsRegistry {
         bool immutable_
     );
     event SwarmContractUpdated(address oldAddress, address newAddress);
+    event AdminTransferred(address oldAdmin, address newAdmin);
 
     // Custom errors
     error TransferFailed();
@@ -99,6 +100,17 @@ contract StampsRegistry {
     constructor(address _swarmContractAddress) {
         swarmStampContract = ISwarmContract(_swarmContractAddress);
         admin = msg.sender;
+    }
+
+    /**
+     * @notice Transfer admin rights to a new address
+     * @param _newAdmin The address of the new admin
+     */
+    function transferAdmin(address _newAdmin) external onlyAdmin {
+        require(_newAdmin != address(0), "New admin cannot be the zero address");
+        address oldAdmin = admin;
+        admin = _newAdmin;
+        emit AdminTransferred(oldAdmin, _newAdmin);
     }
 
     /**
