@@ -4,7 +4,7 @@ import { StorageOption, SwarmConfigType } from "./types";
 // Environment variable configuration
 export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_CUSTOM_REGISTRY_ADDRESS ||
-  "0xec4021d693e176db4322f6ce3089d76ae370d453";
+  "0xabDE77b68695CD2E71A8F329f08a32baeAFa40Ef";
 
 export const LIFI_API_KEY =
   process.env.NEXT_PUBLIC_LIFI_API_KEY ||

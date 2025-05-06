@@ -5,7 +5,7 @@ import "hardhat-deploy";
 
 // Load environment variables
 import * as dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+dotenv.config({ path: ".env" });
 
 // Get environment variables or use defaults
 const PRIVATE_KEY = process.env.WALLET_SECRET || "0x0000000000000000000000000000000000000000000000000000000000000000";
