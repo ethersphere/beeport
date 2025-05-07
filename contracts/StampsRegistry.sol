@@ -84,6 +84,17 @@ contract StampsRegistry {
         uint8 bucketDepth,
         bool immutable_
     );
+
+    event BatchMigrated(
+        bytes32 indexed batchId,
+        uint256 totalAmount,
+        uint256 normalisedBalance,
+        address indexed owner,
+        address indexed payer,
+        uint8 depth,
+        uint8 bucketDepth,
+        bool immutable_
+    );
     event SwarmContractUpdated(address oldAddress, address newAddress);
     event AdminTransferred(address oldAdmin, address newAdmin);
 
@@ -127,6 +138,58 @@ contract StampsRegistry {
         address oldAddress = address(swarmStampContract);
         swarmStampContract = ISwarmContract(_newSwarmContractAddress);
         emit SwarmContractUpdated(oldAddress, _newSwarmContractAddress);
+    }
+
+    /**
+     * @notice Migrate batch data from old contract without performing token transfers
+     * @param _owner Address that owns the batch
+     * @param _batchId Batch ID from the old contract
+     * @param _totalAmount Total amount from the old batch
+     * @param _normalisedBalance Normalised balance from the old batch
+     * @param _nodeAddress Node address from the old batch
+     * @param _depth Depth from the old batch
+     * @param _bucketDepth Bucket depth from the old batch
+     * @param _immutable Immutable flag from the old batch
+     * @param _timestamp Original timestamp from the old batch
+     */
+    function migrateBatchRegistry(
+        address _owner,
+        bytes32 _batchId,
+        uint256 _totalAmount,
+        uint256 _normalisedBalance,
+        address _nodeAddress,
+        uint8 _depth,
+        uint8 _bucketDepth,
+        bool _immutable,
+        uint256 _timestamp
+    ) external onlyAdmin {
+        // Store the payer information
+        batchPayers[_batchId] = _owner;
+            
+        // Store batch information in the owner's batches array
+        ownerBatches[_owner].push(BatchInfo({
+            batchId: _batchId,
+            totalAmount: _totalAmount,
+            normalisedBalance: _normalisedBalance,
+            nodeAddress: _nodeAddress,
+            payer: _owner,
+            depth: _depth,
+            bucketDepth: _bucketDepth,
+            immutable_: _immutable,
+            timestamp: _timestamp
+        }));
+
+        // Emit the batch migration event
+        emit BatchMigrated(
+            _batchId,
+            _totalAmount,
+            _normalisedBalance,
+            _nodeAddress,
+            _owner,
+            _depth,
+            _bucketDepth,
+            _immutable
+        );
     }
 
     /**
