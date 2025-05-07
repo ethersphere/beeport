@@ -63,16 +63,15 @@ export const useTimer = (statusMessage: StatusMessage) => {
       }
     };
   }, [estimatedTime, statusMessage.step, remainingTime]);
-  
-  // Format time in MM:SS format
+
   const formatTime = (seconds: number): string => {
     if (seconds <= 0) return "0:00";
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
-  
-  // Reset the timer
+
+  // Update the reset function to also clear the interval
   const resetTimer = () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);

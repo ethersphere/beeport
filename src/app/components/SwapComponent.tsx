@@ -1073,7 +1073,6 @@ const SwapComponent: React.FC = () => {
     setActiveDropdown(dropdownName);
   };
 
-
   // Reset insufficientFunds whenever the selected token changes
   useEffect(() => {
     // When token info changes, reset insufficient funds flag
