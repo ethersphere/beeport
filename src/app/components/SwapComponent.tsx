@@ -1135,9 +1135,10 @@ const SwapComponent: React.FC = () => {
         error: error instanceof Error ? error.message : "Unknown error",
         isError: true,
       });
-    } finally {
-      setIsLoading(false);
-      setShowOverlay(false);
+      setUploadStep("idle");
+      setUploadProgress(0);
+      setIsDistributing(false);
+
     }
   };
 
