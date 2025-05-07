@@ -17,10 +17,8 @@ import {
   ChainId,
   ChainType,
   getTokens,
-  getChains,
   TokensResponse,
   getTokenBalancesByChain,
-  Chain,
 } from "@lifi/sdk";
 import styles from "./css/SwapComponent.module.css";
 import { parseAbi, formatUnits } from "viem";
@@ -59,6 +57,7 @@ import {
   setGnosisRpcUrl,
 } from "./utils";
 import { useTimer } from "./TimerUtils";
+import { useChainSelection } from "./ChainUtils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
 import { 
@@ -75,7 +74,12 @@ const SwapComponent: React.FC = () => {
   const { data: walletClient } = useWalletClient();
 
   const [isInitialized, setIsInitialized] = useState(false);
-  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
+  const {
+    availableChains,
+    isChainsLoading,
+    selectedChainId,
+    setSelectedChainId,
+  } = useChainSelection(isConnected);
   const [fromToken, setFromToken] = useState(
     "0x0000000000000000000000000000000000000000"
   );
@@ -89,8 +93,6 @@ const SwapComponent: React.FC = () => {
   const [isTarFile, setIsTarFile] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
-  const [availableChains, setAvailableChains] = useState<Chain[]>([]);
-  const [isChainsLoading, setIsChainsLoading] = useState(true);
   const [liquidityError, setLiquidityError] = useState<boolean>(false);
   const [insufficientFunds, setInsufficientFunds] = useState<boolean>(false);
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
@@ -217,21 +219,7 @@ const SwapComponent: React.FC = () => {
     fetchNodeWalletAddress();
   }, [isConnected, address]);
 
-  useEffect(() => {
-    const fetchChains = async () => {
-      try {
-        setIsChainsLoading(true);
-        const chains = await getChains({ chainTypes: [ChainType.EVM] });
-        setAvailableChains(chains);
-      } catch (error) {
-        console.error("Error fetching chains:", error);
-      } finally {
-        setIsChainsLoading(false);
-      }
-    };
-
-    fetchChains();
-  }, []);
+  // useEffect for fetchChains, it's provided by the useChainSelection hook
 
   useEffect(() => {
     if (!selectedDays || selectedDays === 0) {
@@ -1177,7 +1165,7 @@ const SwapComponent: React.FC = () => {
             </label>
             <SearchableChainDropdown
               selectedChainId={selectedChainId || ChainId.DAI}
-              availableChains={availableChains}
+              availableChains={availableChains || []}
               onChainSelect={(chainId) => {
                 setSelectedChainId(chainId);
                 switchChain?.({ chainId });
