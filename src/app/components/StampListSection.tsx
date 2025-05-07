@@ -2,8 +2,9 @@ import React, { useState, useEffect } from "react";
 import styles from "./css/StampListSection.module.css";
 import { formatUnits } from "viem";
 import { UploadStep } from "./types";
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS } from "./constants";
-import { getGnosisPublicClient } from "./utils";
+import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS, REGISTRY_ABI } from "./constants";
+import { createPublicClient, http } from "viem";
+import { gnosis } from "viem/chains";
 
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
@@ -75,33 +76,23 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       if (!address) return;
 
       try {
-        const gnosisClient = getGnosisPublicClient();
-        const logs = await gnosisClient.getLogs({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          event: {
-            anonymous: false,
-            inputs: [
-              { indexed: true, name: "batchId", type: "bytes32" },
-              { indexed: false, name: "totalAmount", type: "uint256" },
-              { indexed: false, name: "normalisedBalance", type: "uint256" },
-              { indexed: true, name: "owner", type: "address" },
-              { indexed: true, name: "payer", type: "address" },
-              { indexed: false, name: "depth", type: "uint8" },
-              { indexed: false, name: "bucketDepth", type: "uint8" },
-              { indexed: false, name: "immutable", type: "bool" },
-            ],
-            name: "BatchCreated",
-            type: "event",
-          },
-          args: {
-            payer: address as `0x${string}`,
-          },
-          fromBlock: 25780238n, // Contract creation block
-          toBlock: "latest",
+        // Create a client with the registry ABI
+        const client = createPublicClient({
+          chain: gnosis,
+          transport: http()
         });
-
-        const stampPromises = logs.map(async (log) => {
-          const batchId = log.args.batchId?.toString() || "";
+        
+        // Call the getOwnerBatches function from the registry
+        const batchesData = await client.readContract({
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          abi: REGISTRY_ABI,
+          functionName: 'getOwnerBatches',
+          args: [address as `0x${string}`]
+        });
+        
+        // Process the batches data
+        const stampPromises = (batchesData as any[]).map(async (batch) => {
+          const batchId = batch.batchId.toString();
           const stampInfo = await fetchStampInfo(batchId);
 
           // Skip this stamps if stampInfo is null (expired or non-existent)
@@ -109,18 +100,14 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             return null;
           }
 
-          const block = await gnosisClient.getBlock({
-            blockNumber: log.blockNumber,
-          });
-
-          const depth = Number(log.args.depth || 0);
+          const depth = Number(batch.depth);
 
           return {
             batchId,
-            totalAmount: formatUnits(log.args.totalAmount || 0n, 16),
+            totalAmount: formatUnits(batch.totalAmount, 16),
             depth,
             size: getSizeForDepth(depth),
-            timestamp: Number(block.timestamp),
+            timestamp: Number(batch.timestamp),
             utilization: stampInfo.utilization,
             batchTTL: stampInfo.batchTTL,
           };

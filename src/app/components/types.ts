@@ -106,6 +106,22 @@ export interface TransactionRequest {
   gasLimit: string;
 }
 
+export interface StampInfo {
+  batchID: string;
+  utilization: number;
+  usable: boolean;
+  depth: number;
+  amount: string;
+  bucketDepth: number;
+  exists: boolean;
+  batchTTL: number;
+  // Additional properties for UI display
+  totalSize?: string;
+  usedSize?: string;
+  remainingSize?: string;
+  utilizationPercent?: number;
+}
+
 export interface IncludedStep {
   id: string;
   type: string;

@@ -40,3 +40,8 @@ next-env.d.ts
 # cursor
 .cursorignore
 .cursor/
+
+# @nomiclabs/hardhat
+cache/
+artifacts/
+dist/
