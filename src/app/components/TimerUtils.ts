@@ -62,7 +62,7 @@ export const useTimer = (statusMessage: StatusMessage) => {
         timerIntervalRef.current = null;
       }
     };
-  }, [estimatedTime, statusMessage.step, remainingTime]);
+  }, [estimatedTime, statusMessage.step]);
 
   const formatTime = (seconds: number): string => {
     if (seconds <= 0) return "0:00";
