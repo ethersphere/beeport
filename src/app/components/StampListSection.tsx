@@ -3,8 +3,7 @@ import styles from "./css/StampListSection.module.css";
 import { formatUnits } from "viem";
 import { UploadStep } from "./types";
 import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS, REGISTRY_ABI } from "./constants";
-import { getGnosisPublicClient } from "./utils";
-import { createPublicClient, http, parseAbiItem } from "viem";
+import { createPublicClient, http } from "viem";
 import { gnosis } from "viem/chains";
 
 interface StampListSectionProps {
@@ -77,8 +76,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       if (!address) return;
 
       try {
-        const gnosisClient = getGnosisPublicClient();
-        
         // Create a client with the registry ABI
         const client = createPublicClient({
           chain: gnosis,
