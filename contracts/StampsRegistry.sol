@@ -37,8 +37,24 @@ interface ISwarmContract {
     ) external;
 
     function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;
+    
+    function increaseDepth(bytes32 _batchId, uint8 _newDepth) external;
 
     function currentTotalOutPayment() external view returns (uint256);
+    
+    function remainingBalance(bytes32 _batchId) external view returns (uint256);
+    
+    function batchOwner(bytes32 _batchId) external view returns (address);
+    
+    function batchDepth(bytes32 _batchId) external view returns (uint8);
+    
+    function batchBucketDepth(bytes32 _batchId) external view returns (uint8);
+    
+    function batchImmutableFlag(bytes32 _batchId) external view returns (bool);
+    
+    function batchNormalisedBalance(bytes32 _batchId) external view returns (uint256);
+    
+    function batchLastUpdatedBlockNumber(bytes32 _batchId) external view returns (uint256);
 }
 
 interface IERC20 {
@@ -91,6 +107,13 @@ contract StampsRegistry {
         bytes32 indexed batchId,
         uint256 totalAmount,
         uint256 topupAmountPerChunk,
+        address indexed owner
+    );
+
+    event BatchDepthIncrease(
+        bytes32 indexed batchId,
+        uint8 newDepth,
+        uint256 newNormalisedBalance,
         address indexed owner
     );
 
@@ -332,6 +355,56 @@ contract StampsRegistry {
             _batchId,
             totalAmount,
             _topupAmountPerChunk,
+            owner
+        );
+    }
+
+    /**
+     * @notice Increase the depth of an existing batch
+     * @param _batchId The id of the batch to increase depth
+     * @param _newDepth The new depth for the batch (must be greater than current depth)
+     */
+    function increaseDepthRegistry(bytes32 _batchId, uint8 _newDepth) external {
+        // Find the batch info in owner's batches
+        address owner = batchPayers[_batchId];
+        require(owner != address(0), "Batch does not exist in registry");
+        
+        // Verify that msg.sender is the owner of the batch in the registry
+        require(owner == msg.sender, "Only the batch owner can increase depth");
+        
+        // Find the batch to get its current depth and index
+        uint8 currentDepth;
+        uint256 batchIndex;
+        bool foundBatch = false;
+        
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                currentDepth = ownerBatches[owner][i].depth;
+                batchIndex = i;
+                foundBatch = true;
+                break;
+            }
+        }
+        
+        require(foundBatch, "Batch not found in owner's batches");
+        require(_newDepth > currentDepth, "New depth must be greater than current depth");
+        
+        // Call increaseDepth on the swarm contract
+        swarmStampContract.increaseDepth(_batchId, _newDepth);
+        
+        // Get the updated values directly from the swarm contract
+        uint8 updatedDepth = swarmStampContract.batchDepth(_batchId);
+        uint256 newNormalisedBalance = swarmStampContract.batchNormalisedBalance(_batchId);
+        
+        // Update the batch in registry with values from the swarm contract
+        ownerBatches[owner][batchIndex].depth = updatedDepth;
+        ownerBatches[owner][batchIndex].normalisedBalance = newNormalisedBalance;
+        
+        // Emit batch depth increase event
+        emit BatchDepthIncrease(
+            _batchId,
+            updatedDepth,
+            newNormalisedBalance,
             owner
         );
     }
