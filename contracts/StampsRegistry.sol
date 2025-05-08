@@ -36,7 +36,25 @@ interface ISwarmContract {
         bool _immutable
     ) external;
 
+    function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;
+    
+    function increaseDepth(bytes32 _batchId, uint8 _newDepth) external;
+
     function currentTotalOutPayment() external view returns (uint256);
+    
+    function remainingBalance(bytes32 _batchId) external view returns (uint256);
+    
+    function batchOwner(bytes32 _batchId) external view returns (address);
+    
+    function batchDepth(bytes32 _batchId) external view returns (uint8);
+    
+    function batchBucketDepth(bytes32 _batchId) external view returns (uint8);
+    
+    function batchImmutableFlag(bytes32 _batchId) external view returns (bool);
+    
+    function batchNormalisedBalance(bytes32 _batchId) external view returns (uint256);
+    
+    function batchLastUpdatedBlockNumber(bytes32 _batchId) external view returns (uint256);
 }
 
 interface IERC20 {
@@ -83,6 +101,20 @@ contract StampsRegistry {
         uint8 depth,
         uint8 bucketDepth,
         bool immutable_
+    );
+
+    event BatchTopUp(
+        bytes32 indexed batchId,
+        uint256 totalAmount,
+        uint256 topupAmountPerChunk,
+        address indexed owner
+    );
+
+    event BatchDepthIncrease(
+        bytes32 indexed batchId,
+        uint8 newDepth,
+        uint256 newNormalisedBalance,
+        address indexed owner
     );
 
     event BatchMigrated(
@@ -267,6 +299,113 @@ contract StampsRegistry {
             _depth,
             _bucketDepth,
             _immutable
+        );
+    }
+
+    /**
+     * @notice Top up an existing batch
+     * @param _batchId The id of the batch to top up
+     * @param _topupAmountPerChunk The amount of additional tokens to add per chunk
+     */
+    function topUpBatch(
+        bytes32 _batchId,
+        uint256 _topupAmountPerChunk
+    ) external {
+        // Find the batch info in owner's batches
+        address owner = batchPayers[_batchId];
+        require(owner != address(0), "Batch does not exist in registry");
+        
+        // Find the batch to get its depth for total amount calculation
+        uint8 depth;
+        uint256 currentNormalisedBalance;
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                depth = ownerBatches[owner][i].depth;
+                currentNormalisedBalance = ownerBatches[owner][i].normalisedBalance;
+                break;
+            }
+        }
+        
+        // Calculate total amount to be topped up
+        uint256 totalAmount = _topupAmountPerChunk * (1 << depth);
+        
+        // Transfer BZZ tokens from sender to this contract
+        if (!BZZ_TOKEN.transferFrom(msg.sender, address(this), totalAmount)) {
+            revert TransferFailed();
+        }
+        
+        // Approve swarmStampContract to spend the BZZ tokens
+        if (!BZZ_TOKEN.approve(address(swarmStampContract), totalAmount)) {
+            revert ApprovalFailed();
+        }
+        
+        // Call the topUp function on the swarm contract
+        swarmStampContract.topUp(_batchId, _topupAmountPerChunk);
+        
+        // Update the batch info in the registry
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                ownerBatches[owner][i].normalisedBalance = currentNormalisedBalance + _topupAmountPerChunk;
+                break;
+            }
+        }
+        
+        // Emit the batch top up event
+        emit BatchTopUp(
+            _batchId,
+            totalAmount,
+            _topupAmountPerChunk,
+            owner
+        );
+    }
+
+    /**
+     * @notice Increase the depth of an existing batch
+     * @param _batchId The id of the batch to increase depth
+     * @param _newDepth The new depth for the batch (must be greater than current depth)
+     */
+    function increaseBatchDepth(bytes32 _batchId, uint8 _newDepth) external {
+        // Find the batch info in owner's batches
+        address owner = batchPayers[_batchId];
+        require(owner != address(0), "Batch does not exist in registry");
+        
+        // Verify that msg.sender is the owner of the batch in the registry
+        require(owner == msg.sender, "Only the batch owner can increase depth");
+        
+        // Find the batch to get its current depth and index
+        uint8 currentDepth;
+        uint256 batchIndex;
+        bool foundBatch = false;
+        
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                currentDepth = ownerBatches[owner][i].depth;
+                batchIndex = i;
+                foundBatch = true;
+                break;
+            }
+        }
+        
+        require(foundBatch, "Batch not found in owner's batches");
+        require(_newDepth > currentDepth, "New depth must be greater than current depth");
+        
+        // Call increaseDepth on the swarm contract
+        swarmStampContract.increaseDepth(_batchId, _newDepth);
+        
+        // Get the updated values directly from the swarm contract
+        uint8 updatedDepth = swarmStampContract.batchDepth(_batchId);
+        uint256 newNormalisedBalance = swarmStampContract.batchNormalisedBalance(_batchId);
+        
+        // Update the batch in registry with values from the swarm contract
+        ownerBatches[owner][batchIndex].depth = updatedDepth;
+        ownerBatches[owner][batchIndex].normalisedBalance = newNormalisedBalance;
+        
+        // Emit batch depth increase event
+        emit BatchDepthIncrease(
+            _batchId,
+            updatedDepth,
+            newNormalisedBalance,
+            owner
         );
     }
 
