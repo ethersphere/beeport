@@ -1,15 +1,15 @@
-import "@rainbow-me/rainbowkit/styles.css";
-import { Providers } from "./providers";
-import "./globals.css";
-import Script from "next/script";
-import { TrackJSAgent } from "trackjs-nextjs";
+import '@rainbow-me/rainbowkit/styles.css';
+import { Providers } from './providers';
+import './globals.css';
+import Script from 'next/script';
+import { TrackJSAgent } from 'trackjs-nextjs';
 
 export const metadata = {
-  title: "Swarm Storage",
-  description: "Swarm storage uploader with multichain support",
+  title: 'Swarm Storage',
+  description: 'Swarm storage uploader with multichain support',
   icons: {
-    icon: "./favicon.png", // Standard favicon
-    shortcut: "./favicon.png", // Shortcut icon for iOS
+    icon: './favicon.png', // Standard favicon
+    shortcut: './favicon.png', // Shortcut icon for iOS
   },
 };
 
@@ -19,7 +19,7 @@ function RootLayout({ children }: { children: React.ReactNode }) {
       <head>
         <TrackJSAgent
           config={{
-            token: "2718ca1ab72d4ff38899696b48210d39",
+            token: '2718ca1ab72d4ff38899696b48210d39',
           }}
         />
         <Script id="matomo-analytics" strategy="afterInteractive">

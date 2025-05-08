@@ -1,17 +1,17 @@
-import React, { useState, useEffect, useRef } from "react";
-import styles from "./css/SearchableChainDropdown.module.css";
-import { Chain } from "@lifi/sdk";
+import React, { useState, useEffect, useRef } from 'react';
+import styles from './css/SearchableChainDropdown.module.css';
+import { Chain } from '@lifi/sdk';
 
 // Define priority chains that will appear at the top of the list
 const PRIORITY_CHAINS = [
-  100,   // Gnosis (DAI) - First priority as it's the destination chain
-  1,     // Ethereum Mainnet
-  8453,  // Base
+  100, // Gnosis (DAI) - First priority as it's the destination chain
+  1, // Ethereum Mainnet
+  8453, // Base
   42161, // Arbitrum
-  10,    // Optimism
+  10, // Optimism
   43114, // Avalanche
-  56,    // Binance Smart Chain
-  137,   // Polygon
+  56, // Binance Smart Chain
+  137, // Polygon
 ]; // Prioritize Gnosis and other major chains
 
 export interface ChainDropdownProps {
@@ -35,71 +35,66 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
   sortMethod = 'priority', // Default to priority sorting
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const selectedChain = availableChains.find(
-    (chain) => chain.id === selectedChainId
-  );
+  const selectedChain = availableChains.find(chain => chain.id === selectedChainId);
 
   // Filter chains based on search query
-  const filteredChains = availableChains.filter((chain) =>
+  const filteredChains = availableChains.filter(chain =>
     chain.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  
+
   // Sort the filtered chains based on the specified method
   const sortedChains = [...filteredChains].sort((a, b) => {
     // First handle priority sorting
     if (sortMethod === 'priority') {
       const aIndex = PRIORITY_CHAINS.indexOf(a.id);
       const bIndex = PRIORITY_CHAINS.indexOf(b.id);
-      
+
       // If both chains are in priority list, sort by their position in the list
       if (aIndex !== -1 && bIndex !== -1) {
         return aIndex - bIndex;
       }
-      
+
       // If only one chain is in priority list, it should come first
       if (aIndex !== -1) return -1;
       if (bIndex !== -1) return 1;
-      
+
       // If neither chain is in priority list, fall back to alphabetical sorting
       return a.name.localeCompare(b.name);
     }
-    
+
     // Alphabetical sorting
     if (sortMethod === 'alphabetical') {
       return a.name.localeCompare(b.name);
     }
-    
+
     // Chain ID sorting
     if (sortMethod === 'id') {
       return a.id - b.id;
     }
-    
+
     return 0;
   });
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
 
   useEffect(() => {
     // Close this dropdown if another one opens
-    if (activeDropdown !== "chain" && isOpen) {
+    if (activeDropdown !== 'chain' && isOpen) {
       setIsOpen(false);
     }
   }, [activeDropdown, isOpen]);
@@ -110,16 +105,16 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
 
     // Notify parent component
     if (newIsOpen) {
-      onOpenDropdown("chain");
+      onOpenDropdown('chain');
     } else {
-      onOpenDropdown("");
+      onOpenDropdown('');
     }
   };
 
   return (
     <div className={styles.dropdownContainer} ref={dropdownRef}>
       <div
-        className={`${styles.dropdownButton} ${isOpen ? styles.open : ""}`}
+        className={`${styles.dropdownButton} ${isOpen ? styles.open : ''}`}
         onClick={toggleDropdown}
       >
         {selectedChain ? (
@@ -129,8 +124,8 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
                 src={selectedChain.logoURI}
                 alt={selectedChain.name}
                 className={styles.chainLogo}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
+                onError={e => {
+                  (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
             )}
@@ -138,7 +133,7 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
           </div>
         ) : (
           <div className={styles.placeholder}>
-            {isLoading ? "Loading chains..." : "Select a chain"}
+            {isLoading ? 'Loading chains...' : 'Select a chain'}
           </div>
         )}
         <svg
@@ -162,22 +157,22 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
             className={styles.searchInput}
             placeholder="Search chains..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
+            onChange={e => setSearchQuery(e.target.value)}
+            onClick={e => e.stopPropagation()}
           />
           {isLoading ? (
             <div className={styles.loadingIndicator}>Loading chains...</div>
           ) : sortedChains.length > 0 ? (
-            sortedChains.map((chain) => (
+            sortedChains.map(chain => (
               <div
                 key={chain.id}
                 className={`${styles.option} ${
-                  chain.id === selectedChainId ? styles.selected : ""
+                  chain.id === selectedChainId ? styles.selected : ''
                 }`}
                 onClick={() => {
                   onChainSelect(chain.id);
                   setIsOpen(false);
-                  setSearchQuery("");
+                  setSearchQuery('');
                 }}
               >
                 <div className={styles.chainContainer}>
@@ -186,8 +181,8 @@ const SearchableChainDropdown: React.FC<ChainDropdownProps> = ({
                       src={chain.logoURI}
                       alt={chain.name}
                       className={styles.chainLogo}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
+                      onError={e => {
+                        (e.target as HTMLImageElement).style.display = 'none';
                       }}
                     />
                   )}

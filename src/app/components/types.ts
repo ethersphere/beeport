@@ -9,7 +9,7 @@ export type ExecutionStatus = {
   filename?: string;
 };
 
-export type UploadStep = "idle" | "ready" | "uploading" | "complete";
+export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';
 
 export type SwarmConfigType = {
   toChain: number;

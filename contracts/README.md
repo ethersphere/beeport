@@ -37,6 +37,7 @@ npx hardhat deploy --network gnosis --tags StampsRegistry
 ```
 
 The deployment script will:
+
 1. Deploy the StampsRegistry contract
 2. Automatically verify the contract on GnosisScan (if API key is provided)
 
@@ -60,4 +61,4 @@ Once deployed, you can interact with the contract using the following functions:
 
 ## Notes
 
-The terms "Batch" and "Stamps" are used interchangeably throughout the codebase. "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the Swarm protocol, while "Stamps" is a more user-friendly term used to describe the same concept. 
+The terms "Batch" and "Stamps" are used interchangeably throughout the codebase. "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the Swarm protocol, while "Stamps" is a more user-friendly term used to describe the same concept.

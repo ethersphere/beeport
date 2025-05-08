@@ -1,6 +1,6 @@
-import React from "react";
-import styles from "./css/HelpSection.module.css";
-import { DEFAULT_BEE_API_URL } from "./constants";
+import React from 'react';
+import styles from './css/HelpSection.module.css';
+import { DEFAULT_BEE_API_URL } from './constants';
 
 interface HelpSectionProps {
   nodeAddress: string;
@@ -28,7 +28,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
     // Remove trailing slashes
-    value = value.replace(/\/+$/, "");
+    value = value.replace(/\/+$/, '');
     setBeeApiUrl(value);
   };
 
@@ -43,7 +43,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   const handleCustomRpcUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
     // Remove trailing slashes
-    value = value.replace(/\/+$/, "");
+    value = value.replace(/\/+$/, '');
     setCustomRpcUrl(value);
   };
 
@@ -51,7 +51,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
     setIsCustomRpc(checked);
     if (!checked) {
       // Reset to default when turning off custom RPC
-      setCustomRpcUrl("");
+      setCustomRpcUrl('');
     }
   };
 
@@ -69,7 +69,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               <input
                 type="checkbox"
                 checked={isCustomNode}
-                onChange={(e) => handleCustomNodeToggle(e.target.checked)}
+                onChange={e => handleCustomNodeToggle(e.target.checked)}
               />
               <span className={styles.slider}></span>
             </label>
@@ -88,23 +88,20 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                 />
 
                 <div className={styles.hint}>
-                  Change API URL to custom value if you have remote node or
-                  local node running
+                  Change API URL to custom value if you have remote node or local node running
                 </div>
-                <div className={styles.nodeAddress}>
-                  API Node Address {nodeAddress}
-                </div>
+                <div className={styles.nodeAddress}>API Node Address {nodeAddress}</div>
               </div>
             </div>
           )}
-          
+
           <div className={styles.switchContainer} style={{ marginTop: '20px' }}>
             <span className={styles.switchLabel}>Custom RPC</span>
             <label className={styles.switch}>
               <input
                 type="checkbox"
                 checked={isCustomRpc}
-                onChange={(e) => handleCustomRpcToggle(e.target.checked)}
+                onChange={e => handleCustomRpcToggle(e.target.checked)}
               />
               <span className={styles.slider}></span>
             </label>
@@ -123,7 +120,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                 />
 
                 <div className={styles.hint}>
-                  Set custom RPC URL for the Gnosis chain. This will be used for all Gnosis chain operations.
+                  Set custom RPC URL for the Gnosis chain. This will be used for all Gnosis chain
+                  operations.
                 </div>
               </div>
             </div>
@@ -135,24 +133,23 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           <li>
             <h3>Using swarm central node</h3>
             <p>
-              By default this app provides central node for uploads and you can
-              just buy storage and upload data
+              By default this app provides central node for uploads and you can just buy storage and
+              upload data
             </p>
           </li>
           <li>
             <h3>Using local node</h3>
             <p>
-              Connect to your local node, you need a PAID plan for NGROK to
-              expose it to world and then start it with this command &quot;ngrok
-              http 1633
+              Connect to your local node, you need a PAID plan for NGROK to expose it to world and
+              then start it with this command &quot;ngrok http 1633
               --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;&quot;
             </p>
           </li>
           <li>
             <h3>Remote node</h3>
             <p>
-              This app can also be run with remote node, hosted on a server and
-              its endpoints exposed, you can use{" "}
+              This app can also be run with remote node, hosted on a server and its endpoints
+              exposed, you can use{' '}
               <a
                 href="https://github.com/ethersphere/multichain/blob/main/backend/index.js"
                 target="_blank"
@@ -160,7 +157,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                 className={styles.link}
               >
                 this code snippet
-              </a>{" "}
+              </a>{' '}
               for that, or make your own
             </p>
           </li>
@@ -171,36 +168,33 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           <div className={styles.faqItem}>
             <h3>What happens if my upload fails?</h3>
             <p>
-              If an upload fails, the system will automatically retry several
-              times. If it continues to fail, your stamps and tokens remain
-              safe, and you can try the upload again. The most common cause of
-              upload failures is network connectivity issues.
+              If an upload fails, the system will automatically retry several times. If it continues
+              to fail, your stamps and tokens remain safe, and you can try the upload again. The
+              most common cause of upload failures is network connectivity issues.
             </p>
           </div>
 
           <div className={styles.faqItem}>
             <h3>How long does it take for my storage to become available?</h3>
             <p>
-              After purchasing storage, it typically takes 2-5 minutes for your
-              storage stamps to become usable. The app will automatically notify
-              you once your storage is ready for use.
+              After purchasing storage, it typically takes 2-5 minutes for your storage stamps to
+              become usable. The app will automatically notify you once your storage is ready for
+              use.
             </p>
           </div>
           <div className={styles.faqItem}>
             <h3>I get &quot;no routes available&quot;, why? </h3>
             <p>
-              If messaged &quot;no routes available&quot;, this usually means
-              that you choose too low amount of USD value to be crossed between
-              chains. For below $0.5 you should try to swap and upload directly
-              from Gnosis chain.
+              If messaged &quot;no routes available&quot;, this usually means that you choose too
+              low amount of USD value to be crossed between chains. For below $0.5 you should try to
+              swap and upload directly from Gnosis chain.
             </p>
           </div>
           <div className={styles.faqItem}>
             <h3>How to prepare archives? </h3>
             <p>
-              Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to
-              make your folder ready for upload as TAR file. You can also upload
-              ZIP files and GZIP files.
+              Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to make your folder ready
+              for upload as TAR file. You can also upload ZIP files and GZIP files.
             </p>
           </div>
         </div>

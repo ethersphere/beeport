@@ -5,8 +5,8 @@ import {
   parseAbiParameters,
   createPublicClient,
   http,
-} from "viem";
-import { gnosis } from "viem/chains";
+} from 'viem';
+import { gnosis } from 'viem/chains';
 
 // Global state for custom RPC URL
 let globalCustomRpcUrl: string | undefined = undefined;
@@ -17,27 +17,23 @@ let globalCustomRpcUrl: string | undefined = undefined;
  */
 export const setGnosisRpcUrl = (url: string | undefined) => {
   globalCustomRpcUrl = url;
-  console.log("Set global RPC URL:", url || "default");
+  console.log('Set global RPC URL:', url || 'default');
 };
 
-export const toChecksumAddress = (
-  address: string | undefined | null
-): string | null => {
+export const toChecksumAddress = (address: string | undefined | null): string | null => {
   if (!address) return null;
   try {
     return getAddress(address);
   } catch (error) {
-    console.log("Invalid address:", address, error);
+    console.log('Invalid address:', address, error);
     return null;
   }
 };
 
 export const formatErrorMessage = (error: unknown): string => {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const requestArgsIndex = errorMessage.indexOf("Request Arguments:");
-  return requestArgsIndex > -1
-    ? errorMessage.slice(0, requestArgsIndex).trim()
-    : errorMessage;
+  const requestArgsIndex = errorMessage.indexOf('Request Arguments:');
+  return requestArgsIndex > -1 ? errorMessage.slice(0, requestArgsIndex).trim() : errorMessage;
 };
 
 export const createBatchId = async (
@@ -46,16 +42,16 @@ export const createBatchId = async (
   setPostageBatchId: (batchId: string) => void
 ): Promise<string> => {
   try {
-    const encodedData = encodeAbiParameters(
-      parseAbiParameters(["address", "bytes32"]),
-      [sender as `0x${string}`, nonce as `0x${string}`]
-    );
+    const encodedData = encodeAbiParameters(parseAbiParameters(['address', 'bytes32']), [
+      sender as `0x${string}`,
+      nonce as `0x${string}`,
+    ]);
 
     const calculatedBatchId = keccak256(encodedData);
     setPostageBatchId(calculatedBatchId.slice(2));
     return calculatedBatchId.slice(2);
   } catch (error) {
-    console.error("Error creating batch ID:", error);
+    console.error('Error creating batch ID:', error);
     throw error;
   }
 };
@@ -75,7 +71,7 @@ export const performWithRetry = async <T>(
         console.log(`${name} aborted before attempt ${attempt}`);
         throw new Error(`Operation ${name} was aborted`);
       }
-      
+
       const result = await operation();
 
       if (validateResult && !validateResult(result)) {
@@ -89,7 +85,7 @@ export const performWithRetry = async <T>(
         console.log(`${name} aborted during attempt ${attempt}`);
         throw new Error(`Operation ${name} was aborted`);
       }
-      
+
       console.log(`${name} attempt ${attempt}/${maxRetries} failed:`, error);
 
       if (attempt === maxRetries) {
@@ -99,16 +95,16 @@ export const performWithRetry = async <T>(
       // Create a promise that resolves after delay or rejects if aborted
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(resolve, delayMs);
-        
+
         // If we have an abort signal, listen for abort events
         if (abortSignal) {
           const abortHandler = () => {
             clearTimeout(timeout);
             reject(new Error(`Operation ${name} was aborted during delay`));
           };
-          
+
           abortSignal.addEventListener('abort', abortHandler, { once: true });
-          
+
           // Clean up event listener after timeout completes
           setTimeout(() => {
             abortSignal.removeEventListener('abort', abortHandler);
@@ -130,26 +126,21 @@ export const logTokenRoute = (steps: any[], type: string) => {
   steps.forEach((step, index) => {
     // Check if this is a contract call step
     if (
-      step.action.fromToken.symbol === "BZZ" &&
-      step.action.toToken.symbol === "BZZ" &&
+      step.action.fromToken.symbol === 'BZZ' &&
+      step.action.toToken.symbol === 'BZZ' &&
       step.action.toContractCallData?.length > 0
     ) {
-      console.info(
-        `   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`
-      );
+      console.info(`   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`);
       return;
     }
 
-    const fromToken =
-      step.action.fromToken.name || step.action.fromToken.symbol;
+    const fromToken = step.action.fromToken.name || step.action.fromToken.symbol;
     const toToken = step.action.toToken.name || step.action.toToken.symbol;
     const fromChain = step.action.fromChainId;
     const toChain = step.action.toChainId;
 
     console.info(
-      `   Step ${
-        index + 1
-      }: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
+      `   Step ${index + 1}: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
     );
   });
 };
@@ -164,11 +155,11 @@ export const generateAndUpdateNonce = (
   swarmConfig: any,
   setSwarmConfig?: (config: any) => void
 ): any => {
-  console.log("Current nonce", swarmConfig.swarmBatchNonce);
+  console.log('Current nonce', swarmConfig.swarmBatchNonce);
 
   // Generate a properly sized nonce (exactly 32 bytes)
   const uniqueNonce = generateProperNonce();
-  console.log("Generated new nonce:", uniqueNonce);
+  console.log('Generated new nonce:', uniqueNonce);
 
   // Create updated config with the new nonce
   const updatedConfig = {
@@ -181,8 +172,8 @@ export const generateAndUpdateNonce = (
     setSwarmConfig(updatedConfig);
   }
 
-  console.log("Will use swarm batch nonce:", updatedConfig.swarmBatchNonce);
-  
+  console.log('Will use swarm batch nonce:', updatedConfig.swarmBatchNonce);
+
   return updatedConfig;
 };
 
@@ -191,9 +182,12 @@ export const generateAndUpdateNonce = (
  * @returns 32-byte nonce as a 0x-prefixed hex string
  */
 export const generateProperNonce = (): string => {
-  return "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return (
+    '0x' +
+    Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  );
 };
 
 /**

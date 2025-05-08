@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
-import { ExecutionStatus } from "./types";
+import { useState, useEffect, useRef } from 'react';
+import { ExecutionStatus } from './types';
 
 /**
  * Custom hook for managing timer functionality
- * 
+ *
  * @param statusMessage Current execution status
  * @returns Timer-related states and functions
  */
@@ -14,15 +14,15 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
 
   /**
    * Format seconds into minutes:seconds display format
-   * 
+   *
    * @param seconds Time in seconds
    * @returns Formatted time string (e.g., "2:45")
    */
   const formatTime = (seconds: number): string => {
-    if (seconds <= 0) return "0:00";
+    if (seconds <= 0) return '0:00';
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   /**
@@ -46,8 +46,8 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
     }
 
     // Start a new timer if we have an estimated time and we're in the Route step
-    if (estimatedTime !== null && statusMessage.step === "Route") {
-      console.log("Starting timer with duration:", estimatedTime);
+    if (estimatedTime !== null && statusMessage.step === 'Route') {
+      console.log('Starting timer with duration:', estimatedTime);
 
       // Initialize the remaining time if it's not set
       if (remainingTime === null) {
@@ -57,11 +57,11 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
 
       // Create the interval
       timerIntervalRef.current = setInterval(() => {
-        setRemainingTime((prevTime) => {
+        setRemainingTime(prevTime => {
           const newTime = prevTime !== null ? prevTime - 1 : 0;
           // Reduce log frequency to avoid console spam
           if (newTime % 5 === 0) {
-            console.log("Timer tick, remaining time:", newTime);
+            console.log('Timer tick, remaining time:', newTime);
           }
           if (newTime <= 0) {
             if (timerIntervalRef.current) {
@@ -78,7 +78,7 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
     // Cleanup function
     return () => {
       if (timerIntervalRef.current) {
-        console.log("Cleaning up timer");
+        console.log('Cleaning up timer');
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
@@ -90,6 +90,6 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
     setEstimatedTime,
     remainingTime,
     formatTime,
-    resetTimer
+    resetTimer,
   };
 };

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
-import styles from "./css/StampListSection.module.css";
-import { formatUnits } from "viem";
-import { UploadStep } from "./types";
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS, REGISTRY_ABI } from "./constants";
-import { createPublicClient, http } from "viem";
-import { gnosis } from "viem/chains";
+import React, { useState, useEffect } from 'react';
+import styles from './css/StampListSection.module.css';
+import { formatUnits } from 'viem';
+import { UploadStep } from './types';
+import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS, REGISTRY_ABI } from './constants';
+import { createPublicClient, http } from 'viem';
+import { gnosis } from 'viem/chains';
 
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
@@ -52,15 +52,13 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
   // Helper function to get the size string for a depth value
   const getSizeForDepth = (depth: number): string => {
-    const option = STORAGE_OPTIONS.find((option) => option.depth === depth);
+    const option = STORAGE_OPTIONS.find(option => option.depth === depth);
     return option ? option.size : `${depth} (unknown size)`;
   };
 
   useEffect(() => {
     // Move fetchStampInfo inside useEffect since it's only used here
-    const fetchStampInfo = async (
-      batchId: string
-    ): Promise<StampInfo | null> => {
+    const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
       try {
         const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`);
         if (!response.ok) return null;
@@ -79,19 +77,19 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         // Create a client with the registry ABI
         const client = createPublicClient({
           chain: gnosis,
-          transport: http()
+          transport: http(),
         });
-        
+
         // Call the getOwnerBatches function from the registry
         const batchesData = await client.readContract({
           address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
           abi: REGISTRY_ABI,
           functionName: 'getOwnerBatches',
-          args: [address as `0x${string}`]
+          args: [address as `0x${string}`],
         });
-        
+
         // Process the batches data
-        const stampPromises = (batchesData as any[]).map(async (batch) => {
+        const stampPromises = (batchesData as any[]).map(async batch => {
           const batchId = batch.batchId.toString();
           const stampInfo = await fetchStampInfo(batchId);
 
@@ -119,11 +117,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           (stamp): stamp is NonNullable<typeof stamp> => stamp !== null
         );
 
-        setStamps(
-          stampEvents.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-        );
+        setStamps(stampEvents.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
       } catch (error) {
-        console.error("Error fetching stamps:", error);
+        console.error('Error fetching stamps:', error);
       } finally {
         setIsLoading(false);
       }
@@ -135,7 +131,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const handleStampSelect = (stamp: any) => {
     setPostageBatchId(stamp.batchId.slice(2));
     setShowOverlay(true);
-    setUploadStep("ready");
+    setUploadStep('ready');
     setShowStampList(false);
   };
 
@@ -156,23 +152,16 @@ const StampListSection: React.FC<StampListSectionProps> = ({
               <div key={index} className={styles.stampListItem}>
                 <div className={styles.stampListId}>ID: {stamp.batchId}</div>
                 <div className={styles.stampListDetails}>
-                  <span>
-                    Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ
-                  </span>
+                  <span>Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
                   {stamp.utilization !== undefined && (
                     <span>Utilization: {stamp.utilization}%</span>
                   )}
                   {stamp.batchTTL !== undefined && (
-                    <span>
-                      Expires: {Math.floor(stamp.batchTTL / 86400)} days
-                    </span>
+                    <span>Expires: {Math.floor(stamp.batchTTL / 86400)} days</span>
                   )}
                   {stamp.timestamp && (
-                    <span>
-                      Created:{" "}
-                      {new Date(stamp.timestamp * 1000).toLocaleDateString()}
-                    </span>
+                    <span>Created: {new Date(stamp.timestamp * 1000).toLocaleDateString()}</span>
                   )}
                 </div>
                 <button

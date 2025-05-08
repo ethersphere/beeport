@@ -1,19 +1,19 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef } from "react";
-import styles from "./css/PriceTracker.module.css";
-import { getGnosisPublicClient } from "./utils";
+import { useState, useEffect, useRef } from 'react';
+import styles from './css/PriceTracker.module.css';
+import { getGnosisPublicClient } from './utils';
 import {
   V3_POOL_ABI,
   GNOSIS_BZZ_ADDRESS as BZZ_ADDRESS,
   BZZ_WXDAI_POOL_ADDRESS,
-} from "./constants";
+} from './constants';
 
 interface PriceInfo {
   token: string;
   price: string;
   previousPrice?: string;
-  change?: "up" | "down" | "same";
+  change?: 'up' | 'down' | 'same';
 }
 
 const PriceTracker = () => {
@@ -35,11 +35,10 @@ const PriceTracker = () => {
         const token0 = (await publicClient.readContract({
           address: BZZ_WXDAI_POOL_ADDRESS as `0x${string}`,
           abi: V3_POOL_ABI,
-          functionName: "token0",
+          functionName: 'token0',
         })) as `0x${string}`;
 
-        console.log("token0", token0);
-
+        console.log('token0', token0);
 
         const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
 
@@ -47,7 +46,7 @@ const PriceTracker = () => {
         const slot0Data = (await publicClient.readContract({
           address: BZZ_WXDAI_POOL_ADDRESS as `0x${string}`,
           abi: V3_POOL_ABI,
-          functionName: "slot0",
+          functionName: 'slot0',
         })) as [bigint, number, number, number, number, number, boolean];
 
         const sqrtPriceX96 = slot0Data[0];
@@ -62,9 +61,9 @@ const PriceTracker = () => {
         // Determine price change
         const newPrices = [
           {
-            token: "BZZ",
+            token: 'BZZ',
             price: `$${formattedPrice}`,
-            change: determineChange("BZZ", formattedPrice),
+            change: determineChange('BZZ', formattedPrice),
           },
         ];
 
@@ -80,18 +79,15 @@ const PriceTracker = () => {
         // Reset update animation after 2 seconds
         setTimeout(() => setHasUpdated(false), 2000);
       } catch (error) {
-        console.error("Error fetching BZZ price from V3 pool:", error);
-        setError("Unable to fetch BZZ price from SushiSwap V3 pool");
+        console.error('Error fetching BZZ price from V3 pool:', error);
+        setError('Unable to fetch BZZ price from SushiSwap V3 pool');
       } finally {
         setLoading(false);
       }
     };
 
     // Calculate price from sqrtPriceX96
-    const calculatePriceFromSqrtX96 = (
-      sqrtPriceX96: bigint,
-      isBzzToken0: boolean
-    ): number => {
+    const calculatePriceFromSqrtX96 = (sqrtPriceX96: bigint, isBzzToken0: boolean): number => {
       // Price = (sqrtPriceX96 / 2^96)^2
       const Q96 = 2n ** 96n;
 
@@ -110,19 +106,16 @@ const PriceTracker = () => {
       }
     };
 
-    const determineChange = (
-      token: string,
-      currentPrice: string
-    ): "up" | "down" | "same" => {
+    const determineChange = (token: string, currentPrice: string): 'up' | 'down' | 'same' => {
       const previous = previousPrices.current[token];
-      if (!previous) return "same";
+      if (!previous) return 'same';
 
       const current = parseFloat(currentPrice);
       const prev = parseFloat(previous);
 
-      if (current > prev) return "up";
-      if (current < prev) return "down";
-      return "same";
+      if (current > prev) return 'up';
+      if (current < prev) return 'down';
+      return 'same';
     };
 
     fetchPrices();
@@ -136,11 +129,7 @@ const PriceTracker = () => {
   if ((loading && prices.length === 0) || error) return null;
 
   return (
-    <div
-      className={`${styles.priceTrackerContainer} ${
-        hasUpdated ? styles.updated : ""
-      }`}
-    >
+    <div className={`${styles.priceTrackerContainer} ${hasUpdated ? styles.updated : ''}`}>
       {loading ? (
         <div className={styles.loading}>Updating...</div>
       ) : (
@@ -149,20 +138,18 @@ const PriceTracker = () => {
             <span
               key={item.token}
               className={`${styles.priceItem} ${
-                item.change === "up"
+                item.change === 'up'
                   ? styles.priceUp
-                  : item.change === "down"
-                  ? styles.priceDown
-                  : ""
+                  : item.change === 'down'
+                    ? styles.priceDown
+                    : ''
               }`}
               title="Price from SushiSwap V3 (WXDAI/BZZ)"
             >
               {item.token}: {item.price}
-              {item.change === "up" && <span className={styles.arrow}>↑</span>}
-              {item.change === "down" && (
-                <span className={styles.arrow}>↓</span>
-              )}
-              {index < prices.length - 1 && " • "}
+              {item.change === 'up' && <span className={styles.arrow}>↑</span>}
+              {item.change === 'down' && <span className={styles.arrow}>↓</span>}
+              {index < prices.length - 1 && ' • '}
             </span>
           ))}
         </div>

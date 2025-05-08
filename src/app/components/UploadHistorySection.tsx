@@ -1,6 +1,6 @@
-import React from "react";
-import styles from "./css/UploadHistorySection.module.css";
-import { BEE_GATEWAY_URL } from "./constants";
+import React from 'react';
+import styles from './css/UploadHistorySection.module.css';
+import { BEE_GATEWAY_URL } from './constants';
 
 interface UploadHistoryProps {
   address: string | undefined;
@@ -19,29 +19,26 @@ interface UploadHistory {
   [address: string]: UploadRecord[];
 }
 
-const UploadHistorySection: React.FC<UploadHistoryProps> = ({
-  address,
-  setShowUploadHistory,
-}) => {
+const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUploadHistory }) => {
   const [history, setHistory] = React.useState<UploadRecord[]>([]);
 
   const formatStampId = (stampId: string) => {
-    if (!stampId || typeof stampId !== "string" || stampId.length < 10) {
-      return stampId || "Invalid Stamp ID";
+    if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
+      return stampId || 'Invalid Stamp ID';
     }
     return `${stampId.slice(0, 6)}...${stampId.slice(-4)}`;
   };
 
   const formatReference = (reference: string) => {
-    if (!reference || typeof reference !== "string" || reference.length < 10) {
-      return reference || "Invalid Reference";
+    if (!reference || typeof reference !== 'string' || reference.length < 10) {
+      return reference || 'Invalid Reference';
     }
     return `${reference.slice(0, 6)}...${reference.slice(-4)}`;
   };
 
   React.useEffect(() => {
     if (address) {
-      const savedHistory = localStorage.getItem("uploadHistory");
+      const savedHistory = localStorage.getItem('uploadHistory');
       if (savedHistory) {
         const parsedHistory: UploadHistory = JSON.parse(savedHistory);
         setHistory(parsedHistory[address] || []);
@@ -50,7 +47,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
   }, [address]);
 
   const formatDate = (timestamp: number) => {
-    if (timestamp === undefined) return "Unknown";
+    if (timestamp === undefined) return 'Unknown';
     return new Date(timestamp).toLocaleDateString();
   };
 
@@ -60,10 +57,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
 
   const isArchiveFile = (filename?: string) => {
     if (!filename) return false;
-    const archiveExtensions = [".zip", ".tar", ".gz", ".rar", ".7z", ".bz2"];
-    return archiveExtensions.some((ext) =>
-      filename.toLowerCase().endsWith(ext)
-    );
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    return archiveExtensions.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
   const getReferenceUrl = (record: UploadRecord) => {
@@ -80,20 +75,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
       <h2 className={styles.title}>Upload History</h2>
 
       {history.length === 0 ? (
-        <div className={styles.emptyState}>
-          No uploads found for this address
-        </div>
+        <div className={styles.emptyState}>No uploads found for this address</div>
       ) : (
         <div className={styles.historyList}>
           {history.map((record, index) => (
             <div key={index} className={styles.historyItem}>
               <div className={styles.itemHeader}>
-                <span className={styles.filename}>
-                  {record.filename || "Unnamed upload"}
-                </span>
-                <span className={styles.date}>
-                  {formatDate(record.timestamp)}
-                </span>
+                <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                <span className={styles.date}>{formatDate(record.timestamp)}</span>
               </div>
               <div className={styles.itemDetails}>
                 <div className={styles.referenceRow}>
@@ -108,7 +97,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                     {formatReference(record.reference)}
                     {record.filename && !isArchiveFile(record.filename)
                       ? `/${record.filename}`
-                      : ""}
+                      : ''}
                   </a>
                 </div>
                 <div className={styles.stampRow}>
@@ -119,9 +108,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span className={styles.expiryDate}>
-                    {formatExpiryDays(record.expiryDate)}
-                  </span>
+                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
                 </div>
               </div>
             </div>
@@ -129,10 +116,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({
         </div>
       )}
 
-      <button
-        className={styles.backButton}
-        onClick={() => setShowUploadHistory(false)}
-      >
+      <button className={styles.backButton} onClick={() => setShowUploadHistory(false)}>
         Back
       </button>
     </div>
