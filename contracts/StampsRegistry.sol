@@ -307,7 +307,7 @@ contract StampsRegistry {
      * @param _batchId The id of the batch to top up
      * @param _topupAmountPerChunk The amount of additional tokens to add per chunk
      */
-    function topUpBatchRegistry(
+    function topUpBatch(
         bytes32 _batchId,
         uint256 _topupAmountPerChunk
     ) external {
@@ -364,7 +364,7 @@ contract StampsRegistry {
      * @param _batchId The id of the batch to increase depth
      * @param _newDepth The new depth for the batch (must be greater than current depth)
      */
-    function increaseDepthRegistry(bytes32 _batchId, uint8 _newDepth) external {
+    function increaseBatchDepth(bytes32 _batchId, uint8 _newDepth) external {
         // Find the batch info in owner's batches
         address owner = batchPayers[_batchId];
         require(owner != address(0), "Batch does not exist in registry");
