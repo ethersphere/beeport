@@ -36,6 +36,8 @@ interface ISwarmContract {
         bool _immutable
     ) external;
 
+    function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;
+
     function currentTotalOutPayment() external view returns (uint256);
 }
 
@@ -83,6 +85,13 @@ contract StampsRegistry {
         uint8 depth,
         uint8 bucketDepth,
         bool immutable_
+    );
+
+    event BatchTopUp(
+        bytes32 indexed batchId,
+        uint256 totalAmount,
+        uint256 topupAmountPerChunk,
+        address indexed owner
     );
 
     event BatchMigrated(
@@ -267,6 +276,63 @@ contract StampsRegistry {
             _depth,
             _bucketDepth,
             _immutable
+        );
+    }
+
+    /**
+     * @notice Top up an existing batch
+     * @param _batchId The id of the batch to top up
+     * @param _topupAmountPerChunk The amount of additional tokens to add per chunk
+     */
+    function topUpBatchRegistry(
+        bytes32 _batchId,
+        uint256 _topupAmountPerChunk
+    ) external {
+        // Find the batch info in owner's batches
+        address owner = batchPayers[_batchId];
+        require(owner != address(0), "Batch does not exist in registry");
+        
+        // Find the batch to get its depth for total amount calculation
+        uint8 depth;
+        uint256 currentNormalisedBalance;
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                depth = ownerBatches[owner][i].depth;
+                currentNormalisedBalance = ownerBatches[owner][i].normalisedBalance;
+                break;
+            }
+        }
+        
+        // Calculate total amount to be topped up
+        uint256 totalAmount = _topupAmountPerChunk * (1 << depth);
+        
+        // Transfer BZZ tokens from sender to this contract
+        if (!BZZ_TOKEN.transferFrom(msg.sender, address(this), totalAmount)) {
+            revert TransferFailed();
+        }
+        
+        // Approve swarmStampContract to spend the BZZ tokens
+        if (!BZZ_TOKEN.approve(address(swarmStampContract), totalAmount)) {
+            revert ApprovalFailed();
+        }
+        
+        // Call the topUp function on the swarm contract
+        swarmStampContract.topUp(_batchId, _topupAmountPerChunk);
+        
+        // Update the batch info in the registry
+        for (uint i = 0; i < ownerBatches[owner].length; i++) {
+            if (ownerBatches[owner][i].batchId == _batchId) {
+                ownerBatches[owner][i].normalisedBalance = currentNormalisedBalance + _topupAmountPerChunk;
+                break;
+            }
+        }
+        
+        // Emit the batch top up event
+        emit BatchTopUp(
+            _batchId,
+            totalAmount,
+            _topupAmountPerChunk,
+            owner
         );
     }
 
