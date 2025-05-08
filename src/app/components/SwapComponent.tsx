@@ -54,7 +54,6 @@ import {
   createBatchId,
   performWithRetry,
   toChecksumAddress,
-  generateProperNonce,
   getGnosisPublicClient,
   setGnosisRpcUrl,
 } from "./utils";
