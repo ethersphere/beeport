@@ -60,7 +60,10 @@ import {
 import { useTimer } from "./TimerUtils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
-import { handleFileUpload as uploadFile, isArchiveFile } from "./FileUploadUtils";
+import {
+  handleFileUpload as uploadFile,
+  isArchiveFile,
+} from "./FileUploadUtils";
 import { generateAndUpdateNonce } from "./utils";
 
 // Update the StampInfo interface to include the additional properties
@@ -142,13 +145,19 @@ const SwapComponent: React.FC = () => {
 
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
-  
+
   // Update the ref whenever walletClient changes
   useEffect(() => {
     currentWalletClientRef.current = walletClient;
   }, [walletClient]);
 
-  const { estimatedTime, setEstimatedTime, remainingTime, formatTime, resetTimer } = useTimer(statusMessage);
+  const {
+    estimatedTime,
+    setEstimatedTime,
+    remainingTime,
+    formatTime,
+    resetTimer,
+  } = useTimer(statusMessage);
 
   // Add a ref for the abort controller
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
@@ -269,23 +278,23 @@ const SwapComponent: React.FC = () => {
     setTotalUsdAmount(null);
     setLiquidityError(false);
     setIsPriceEstimating(true);
-    
+
     // Cancel any previous price estimate operations
     if (priceEstimateAbortControllerRef.current) {
       console.log("Cancelling previous price estimate");
       priceEstimateAbortControllerRef.current.abort();
     }
-    
+
     // Create a new abort controller for this run
     priceEstimateAbortControllerRef.current = new AbortController();
     const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
       if (!selectedChainId) return;
-      
+
       // Reset insufficient funds state at the beginning of new price estimation
       setInsufficientFunds(false);
-      
+
       try {
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
@@ -381,16 +390,20 @@ const SwapComponent: React.FC = () => {
         if (!abortSignal.aborted) {
           console.log("Total amount:", totalAmount);
           setTotalUsdAmount(totalAmount.toString());
-          
+
           // Check if user has enough funds
           if (selectedTokenInfo) {
-            const tokenBalanceInUsd = Number(
-              formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)
-            ) * Number(selectedTokenInfo.priceUSD);
-            
+            const tokenBalanceInUsd =
+              Number(
+                formatUnits(
+                  selectedTokenInfo.amount || 0n,
+                  selectedTokenInfo.decimals
+                )
+              ) * Number(selectedTokenInfo.priceUSD);
+
             console.log("User token balance in USD:", tokenBalanceInUsd);
             console.log("Required amount in USD:", totalAmount);
-            
+
             // Set insufficient funds flag if cost exceeds available balance
             setInsufficientFunds(totalAmount > tokenBalanceInUsd);
           }
@@ -416,7 +429,7 @@ const SwapComponent: React.FC = () => {
       // If no days selected, still reset the loading state
       setIsPriceEstimating(false);
     }
-    
+
     // Cleanup: abort any pending operations when the effect is cleaned up
     return () => {
       if (priceEstimateAbortControllerRef.current) {
@@ -447,7 +460,7 @@ const SwapComponent: React.FC = () => {
             // Get a fresh wallet client for the new chain
             try {
               // Wait briefly for the chain to switch
-              await new Promise(resolve => setTimeout(resolve, 500));
+              await new Promise((resolve) => setTimeout(resolve, 500));
               // Create a new wallet client with the specified chainId
               const client = await getWalletClient(config, { chainId });
               // Update our ref
@@ -455,7 +468,8 @@ const SwapComponent: React.FC = () => {
               return client;
             } catch (error) {
               console.error("Error getting wallet client:", error);
-              if (currentWalletClientRef.current) return currentWalletClientRef.current;
+              if (currentWalletClientRef.current)
+                return currentWalletClientRef.current;
               throw new Error("Failed to get wallet client for the new chain");
             }
           },
@@ -661,7 +675,10 @@ const SwapComponent: React.FC = () => {
         });
 
         // Use the utility function to generate and update the nonce
-        const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+        const updatedConfig = generateAndUpdateNonce(
+          swarmConfig,
+          setSwarmConfig
+        );
 
         // Second transaction: Create Batch - directly write contract without simulation
         const createBatchTxHash = await walletClient.writeContract({
@@ -736,7 +753,7 @@ const SwapComponent: React.FC = () => {
     currentConfig: any
   ) => {
     if (!selectedChainId) return;
-    
+
     setStatusMessage({
       step: "Route",
       message: "Executing contract calls...",
@@ -784,8 +801,8 @@ const SwapComponent: React.FC = () => {
           setUploadStep("ready");
         } else if (status === "FAILED") {
           // Use the utility function to generate and update the nonce
-          const updatedConfig = generateAndUpdateNonce(currentConfig, setSwarmConfig);
-          
+          generateAndUpdateNonce(currentConfig, setSwarmConfig);
+
           console.log("Transaction failed, regenerated nonce for recovery");
 
           // Reset timer if failed
@@ -802,7 +819,7 @@ const SwapComponent: React.FC = () => {
     updatedConfig: any
   ) => {
     if (!selectedChainId) return;
-    
+
     setStatusMessage({
       step: "Quote",
       message: "Getting quote...",
@@ -861,15 +878,15 @@ const SwapComponent: React.FC = () => {
         if (chainId === ChainId.DAI) {
           console.log("Detected switch to Gnosis, executing second route...");
           unwatch();
-          
+
           // Get a fresh wallet client for the new chain
           try {
             const newClient = await getWalletClient(config, { chainId });
             console.log("Route 2 wallet client:", newClient);
-            
+
             // Update our ref
             currentWalletClientRef.current = newClient;
-            
+
             await handleGnosisRoute(contractCallsRoute, updatedConfig);
           } catch (error) {
             console.error("Error getting new wallet client:", error);
@@ -881,7 +898,6 @@ const SwapComponent: React.FC = () => {
     });
 
     switchChain({ chainId: ChainId.DAI });
-    
   };
 
   const handleGnosisRoute = async (
@@ -948,13 +964,21 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleSwap = async () => {
-    if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
-      console.error("Wallet not connected, clients not available, or chain not selected");
+    if (
+      !isConnected ||
+      !address ||
+      !publicClient ||
+      !walletClient ||
+      selectedChainId === null
+    ) {
+      console.error(
+        "Wallet not connected, clients not available, or chain not selected"
+      );
       return;
     }
 
     // Reset the timer when starting a new transaction
-    resetTimer();   
+    resetTimer();
 
     // Use the utility function to generate and update the nonce
     const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
@@ -996,7 +1020,7 @@ const SwapComponent: React.FC = () => {
 
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
-        selectedChainId !== null && 
+        selectedChainId !== null &&
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
@@ -1116,7 +1140,6 @@ const SwapComponent: React.FC = () => {
       setUploadStep("idle");
       setUploadProgress(0);
       setIsDistributing(false);
-
     }
   };
 
@@ -1138,7 +1161,9 @@ const SwapComponent: React.FC = () => {
   }, [selectedChainId, selectedDays]);
 
   // Add a new state variable to the component
-  const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
+  const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(
+    null
+  );
 
   return (
     <div className={styles.container}>
@@ -1210,7 +1235,7 @@ const SwapComponent: React.FC = () => {
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Select chain with funds"
             >
@@ -1232,7 +1257,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Select token you want to spend"
             >
@@ -1248,7 +1273,7 @@ const SwapComponent: React.FC = () => {
               selectedTokenInfo={selectedTokenInfo}
               onTokenSelect={(address, token) => {
                 console.log("Token manually selected:", address, token?.symbol);
-                
+
                 // Only reset duration if this is a user-initiated token change (not during initial loading)
                 if (fromToken && address !== fromToken) {
                   console.log("Resetting duration due to token change");
@@ -1258,7 +1283,7 @@ const SwapComponent: React.FC = () => {
                   setLiquidityError(false);
                   setIsPriceEstimating(false);
                 }
-                
+
                 setFromToken(address);
                 setSelectedTokenInfo(token);
               }}
@@ -1269,7 +1294,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
             >
@@ -1289,7 +1314,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Duration of storage stamps for which you are paying for"
             >
@@ -1319,16 +1344,25 @@ const SwapComponent: React.FC = () => {
                 {liquidityError
                   ? "Not enough liquidity for this swap"
                   : insufficientFunds
-                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                  ? `Cost ($${Number(totalUsdAmount).toFixed(
+                      2
+                    )}) exceeds your balance`
                   : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
               </p>
             )}
 
           <button
             className={`${styles.button} ${
-              !selectedDays || liquidityError || insufficientFunds ? styles.buttonDisabled : ""
+              !selectedDays || liquidityError || insufficientFunds
+                ? styles.buttonDisabled
+                : ""
             } ${isPriceEstimating ? styles.calculatingButton : ""}`}
-            disabled={!selectedDays || liquidityError || insufficientFunds || isPriceEstimating}
+            disabled={
+              !selectedDays ||
+              liquidityError ||
+              insufficientFunds ||
+              isPriceEstimating
+            }
             onClick={handleSwap}
           >
             {isLoading ? (
@@ -1428,7 +1462,8 @@ const SwapComponent: React.FC = () => {
                   <div className={styles.uploadBox}>
                     <h3 className={styles.uploadTitle}>Upload File</h3>
                     <div className={styles.uploadWarning}>
-                      Warning! Upload data is public and can not be removed from the Swarm network
+                      Warning! Upload data is public and can not be removed from
+                      the Swarm network
                     </div>
                     {statusMessage.step === "waiting_creation" ||
                     statusMessage.step === "waiting_usable" ? (
@@ -1611,16 +1646,20 @@ const SwapComponent: React.FC = () => {
                     <div className={styles.referenceBox}>
                       <p>Reference:</p>
                       <div className={styles.referenceCopyWrapper}>
-                        <code 
-                          className={styles.referenceCode} 
+                        <code
+                          className={styles.referenceCode}
                           onClick={() => {
-                            navigator.clipboard.writeText(statusMessage.reference || "");
+                            navigator.clipboard.writeText(
+                              statusMessage.reference || ""
+                            );
                             // Show a temporary "Copied!" message by using a data attribute
-                            const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                            const codeEl = document.querySelector(
+                              `.${styles.referenceCode}`
+                            );
                             if (codeEl) {
-                              codeEl.setAttribute('data-copied', 'true');
+                              codeEl.setAttribute("data-copied", "true");
                               setTimeout(() => {
-                                codeEl.setAttribute('data-copied', 'false');
+                                codeEl.setAttribute("data-copied", "false");
                               }, 2000);
                             }
                           }}
@@ -1633,14 +1672,17 @@ const SwapComponent: React.FC = () => {
                         <button
                           className={`${styles.referenceLink} ${styles.copyLinkButton}`}
                           onClick={() => {
-                            const url = statusMessage.filename &&
+                            const url =
+                              statusMessage.filename &&
                               !isArchiveFile(statusMessage.filename)
-                              ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                              : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
+                                ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                                : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
                             navigator.clipboard.writeText(url);
-                            
+
                             // Show a temporary message using a more specific selector
-                            const button = document.querySelector(`.${styles.copyLinkButton}`);
+                            const button = document.querySelector(
+                              `.${styles.copyLinkButton}`
+                            );
                             if (button) {
                               const originalText = button.textContent;
                               button.textContent = "Link copied!";
@@ -1667,14 +1709,18 @@ const SwapComponent: React.FC = () => {
                         </a>
                       </div>
                     </div>
-                    
+
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
                         <h4>Storage Stamps Details</h4>
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>
-                            <span>{uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%</span>
+                            <span>
+                              {uploadStampInfo.utilizationPercent?.toFixed(2) ||
+                                0}
+                              %
+                            </span>
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Total Size:</span>
@@ -1686,18 +1732,27 @@ const SwapComponent: React.FC = () => {
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Expires in:</span>
-                            <span>{Math.floor(uploadStampInfo.batchTTL / 86400)} days</span>
+                            <span>
+                              {Math.floor(uploadStampInfo.batchTTL / 86400)}{" "}
+                              days
+                            </span>
                           </div>
                         </div>
                         <div className={styles.utilizationBarContainer}>
-                          <div 
-                            className={styles.utilizationBar} 
-                            style={{ width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%` }}
+                          <div
+                            className={styles.utilizationBar}
+                            style={{
+                              width: `${
+                                uploadStampInfo.utilizationPercent?.toFixed(
+                                  2
+                                ) || 0
+                              }%`,
+                            }}
                           ></div>
                         </div>
                       </div>
                     )}
-                    
+
                     <button
                       className={styles.closeSuccessButton}
                       onClick={() => {
