@@ -53,10 +53,10 @@ export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
 // Define time options with appropriate display labels
 export const TIME_OPTIONS = [
-  // { days: 1, display: "1 day" },
-  // { days: 2, display: "2 days" },
-  // { days: 7, display: "7 days" },
-  // { days: 15, display: "15 days" },
+  { days: 1, display: "1 day" },
+  { days: 2, display: "2 days" },
+  { days: 7, display: "7 days" },
+  { days: 15, display: "15 days" },
   { days: 30, display: "30 days" },
   { days: 90, display: "90 days" },
   { days: 180, display: "180 days" },

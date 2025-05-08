@@ -62,6 +62,7 @@ import { useTimer } from "./TimerUtils";
 
 import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
 import { handleFileUpload as uploadFile, isArchiveFile } from "./FileUploadUtils";
+import { generateAndUpdateNonce } from "./utils";
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -660,19 +661,22 @@ const SwapComponent: React.FC = () => {
           message: "Buying storage...",
         });
 
+        // Use the utility function to generate and update the nonce
+        const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+
         // Second transaction: Create Batch - directly write contract without simulation
         const createBatchTxHash = await walletClient.writeContract({
           address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(swarmConfig.swarmContractAbi),
+          abi: parseAbi(updatedConfig.swarmContractAbi),
           functionName: "createBatchRegistry",
           args: [
             address,
             nodeAddress,
-            swarmConfig.swarmBatchInitialBalance,
-            swarmConfig.swarmBatchDepth,
-            swarmConfig.swarmBatchBucketDepth,
-            swarmConfig.swarmBatchNonce,
-            swarmConfig.swarmBatchImmutable,
+            updatedConfig.swarmBatchInitialBalance,
+            updatedConfig.swarmBatchDepth,
+            updatedConfig.swarmBatchBucketDepth,
+            updatedConfig.swarmBatchNonce,
+            updatedConfig.swarmBatchImmutable,
           ],
           account: address,
         });
@@ -690,14 +694,14 @@ const SwapComponent: React.FC = () => {
           try {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
-              swarmConfig.swarmBatchNonce,
+              updatedConfig.swarmBatchNonce,
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
             console.log(
               "Created batch ID:",
               batchId,
-              swarmConfig.swarmBatchNonce
+              updatedConfig.swarmBatchNonce
             );
 
             setStatusMessage({
@@ -780,21 +784,10 @@ const SwapComponent: React.FC = () => {
           });
           setUploadStep("ready");
         } else if (status === "FAILED") {
-          // Generate a new proper nonce if the transaction fails
-          const recoveryNonce = generateProperNonce();
-          console.log(
-            "Transaction failed, setting new recovery nonce:",
-            recoveryNonce
-          );
-
-          // Create a new config with the recovery nonce
-          currentConfig = {
-            ...currentConfig,
-            swarmBatchNonce: recoveryNonce,
-          };
-
-          // Update the state
-          setSwarmConfig(currentConfig);
+          // Use the utility function to generate and update the nonce
+          const updatedConfig = generateAndUpdateNonce(currentConfig, setSwarmConfig);
+          
+          console.log("Transaction failed, regenerated nonce for recovery");
 
           // Reset timer if failed
           resetTimer();
@@ -962,24 +955,10 @@ const SwapComponent: React.FC = () => {
     }
 
     // Reset the timer when starting a new transaction
-    resetTimer();
+    resetTimer();   
 
-    console.log("Current nonce", swarmConfig.swarmBatchNonce);
-
-    // Generate a properly sized nonce (exactly 32 bytes)
-    const uniqueNonce = generateProperNonce();
-    console.log("Generated new nonce:", uniqueNonce);
-
-    // Set the nonce directly in the config we'll use for this transaction
-    const updatedConfig = {
-      ...swarmConfig,
-      swarmBatchNonce: uniqueNonce,
-    };
-
-    // Update the state for future reference
-    setSwarmConfig(updatedConfig);
-
-    console.log("Will use swarm batch nonce:", updatedConfig.swarmBatchNonce);
+    // Use the utility function to generate and update the nonce
+    const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
     setIsLoading(true);
     setShowOverlay(true);
