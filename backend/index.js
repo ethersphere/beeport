@@ -9,7 +9,7 @@ const { gnosis } = require('viem/chains');
 const PORT = process.env.PORT || 3333;
 const PROXY_TARGET = process.env.PROXY_TARGET || 'http://localhost:1633';
 const REGISTRY_ADDRESS =
-  process.env.REGISTRY_ADDRESS || '0x27429910641560EF5308CF76027e05a674Ab0B70';
+  process.env.REGISTRY_ADDRESS || '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
 
 const BATCH_REGISTRY_ABI = [
   {
