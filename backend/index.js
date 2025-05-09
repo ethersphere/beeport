@@ -8,6 +8,8 @@ const { gnosis } = require('viem/chains');
 // Add this near the top with other environment variables
 const PORT = process.env.PORT || 3333;
 const PROXY_TARGET = process.env.PROXY_TARGET || 'http://localhost:1633';
+const REGISTRY_ADDRESS =
+  process.env.REGISTRY_ADDRESS || '0x27429910641560EF5308CF76027e05a674Ab0B70';
 
 const BATCH_REGISTRY_ABI = [
   {
@@ -37,7 +39,6 @@ const verifySignature = async (req, res, next) => {
     const fileName = req.headers['x-file-name'];
     const batchId = req.headers['swarm-postage-batch-id'];
     const messageContent = req.headers['x-message-content'];
-    const registryAddress = req.headers['registry-address'];
 
     console.log('Headers received:', {
       signedMessage: signedMessage ? 'exists' : 'missing',
@@ -83,16 +84,16 @@ const verifySignature = async (req, res, next) => {
       }
 
       // Continue with batch ownership verification...
-      if (registryAddress) {
+      if (REGISTRY_ADDRESS) {
         try {
           console.log(
-            `Verifying batch ownership for batch ${batchId} with registry ${registryAddress}`
+            `Verifying batch ownership for batch ${batchId} with registry ${REGISTRY_ADDRESS}`
           );
 
           const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
 
           const batchPayer = await gnosisPublicClient.readContract({
-            address: registryAddress,
+            address: REGISTRY_ADDRESS,
             abi: BATCH_REGISTRY_ABI,
             functionName: 'getBatchPayer',
             args: [formattedBatchId],

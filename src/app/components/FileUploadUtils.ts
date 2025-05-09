@@ -213,7 +213,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
       'swarm-deferred-upload': 'false',
-      'registry-address': GNOSIS_CUSTOM_REGISTRY_ADDRESS,
       'swarm-collection': serveUncompressed && (isTarFile || isArchive) ? 'true' : 'false',
     };
 
