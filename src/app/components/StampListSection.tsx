@@ -150,9 +150,30 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           <>
             {stamps.map((stamp, index) => (
               <div key={index} className={styles.stampListItem}>
-                <div className={styles.stampListId}>ID: {stamp.batchId}</div>
+                <div
+                  className={styles.stampListId}
+                  onClick={() => {
+                    const idToCopy = stamp.batchId.startsWith('0x')
+                      ? stamp.batchId.slice(2)
+                      : stamp.batchId;
+                    navigator.clipboard.writeText(idToCopy);
+                    // Show temporary "Copied!" message
+                    const element = document.querySelector(`[data-stamp-id="${stamp.batchId}"]`);
+                    if (element) {
+                      element.setAttribute('data-copied', 'true');
+                      setTimeout(() => {
+                        element.setAttribute('data-copied', 'false');
+                      }, 2000);
+                    }
+                  }}
+                  data-stamp-id={stamp.batchId}
+                  data-copied="false"
+                  title="Click to copy stamp ID"
+                >
+                  ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
+                </div>
                 <div className={styles.stampListDetails}>
-                  <span>Amount: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
+                  <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
                   {stamp.utilization !== undefined && (
                     <span>Utilization: {stamp.utilization}%</span>
@@ -170,7 +191,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     handleStampSelect(stamp);
                   }}
                 >
-                  Upload to these stamps
+                  Upload with these stamps
                 </button>
               </div>
             ))}
