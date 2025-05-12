@@ -4,15 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { config } from '@/app/wagmi';
-import {
-  createConfig,
-  EVM,
-  executeRoute,
-  ChainId,
-  ChainType,
-  getChains,
-  Chain,
-} from '@lifi/sdk';
+import { createConfig, EVM, executeRoute, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
 import { parseAbi, formatUnits } from 'viem';
 import { getAddress } from 'viem';
@@ -109,7 +101,7 @@ const SwapComponent: React.FC = () => {
 
   const [isWalletLoading, setIsWalletLoading] = useState(true);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
-  
+
   // Use the token management hook
   const {
     fromToken,
@@ -120,7 +112,7 @@ const SwapComponent: React.FC = () => {
     tokenBalances,
     isTokensLoading,
     fetchTokensAndBalances,
-    resetTokens
+    resetTokens,
   } = useTokenManagement(address, isConnected);
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
@@ -1178,15 +1170,25 @@ const SwapComponent: React.FC = () => {
 
           <button
             className={`${styles.button} ${
-              !selectedDays || liquidityError || insufficientFunds ? styles.buttonDisabled : ''
+              !selectedDays || !fromToken || liquidityError || insufficientFunds
+                ? styles.buttonDisabled
+                : ''
             } ${isPriceEstimating ? styles.calculatingButton : ''}`}
-            disabled={!selectedDays || liquidityError || insufficientFunds || isPriceEstimating}
+            disabled={
+              !selectedDays ||
+              !fromToken ||
+              liquidityError ||
+              insufficientFunds ||
+              isPriceEstimating
+            }
             onClick={handleSwap}
           >
             {isLoading ? (
               <div>Loading...</div>
             ) : !selectedDays ? (
               'Choose Timespan'
+            ) : !fromToken ? (
+              'No Token Available'
             ) : isPriceEstimating ? (
               'Calculating Cost...'
             ) : liquidityError ? (
