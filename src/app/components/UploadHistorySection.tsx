@@ -102,7 +102,23 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
-                  <span className={styles.stampId} title={record.stampId}>
+                  <span
+                    className={styles.stampId}
+                    title={record.stampId}
+                    onClick={() => {
+                      navigator.clipboard.writeText(record.stampId);
+                      // Show temporary "Copied!" message
+                      const element = document.querySelector(`[data-stamp-id="${record.stampId}"]`);
+                      if (element) {
+                        element.setAttribute('data-copied', 'true');
+                        setTimeout(() => {
+                          element.setAttribute('data-copied', 'false');
+                        }, 2000);
+                      }
+                    }}
+                    data-stamp-id={record.stampId}
+                    data-copied="false"
+                  >
                     {formatStampId(record.stampId)}
                   </span>
                 </div>

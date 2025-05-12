@@ -1239,8 +1239,8 @@ const SwapComponent: React.FC = () => {
               {liquidityError
                 ? 'Not enough liquidity for this swap'
                 : insufficientFunds
-                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
-                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
+                ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
             </p>
           )}
 
@@ -1330,7 +1330,15 @@ const SwapComponent: React.FC = () => {
 
                 {['ready', 'uploading'].includes(uploadStep) && (
                   <div className={styles.uploadBox}>
-                    <h3 className={styles.uploadTitle}>Upload File</h3>
+                    <h3 className={styles.uploadTitle}>
+                      {postageBatchId
+                        ? `Upload to ${
+                            postageBatchId.startsWith('0x')
+                              ? postageBatchId.slice(2, 8)
+                              : postageBatchId.slice(0, 6)
+                          }...${postageBatchId.slice(-4)}`
+                        : 'Upload File'}
+                    </h3>
                     <div className={styles.uploadWarning}>
                       Warning! Upload data is public and can not be removed from the Swarm network
                     </div>
@@ -1408,12 +1416,12 @@ const SwapComponent: React.FC = () => {
                               {statusMessage.step === '404'
                                 ? 'Searching for batch ID...'
                                 : statusMessage.step === '422'
-                                  ? 'Waiting for batch to be usable...'
-                                  : statusMessage.step === 'Uploading'
-                                    ? isDistributing
-                                      ? 'Distributing file chunks...'
-                                      : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                    : 'Processing...'}
+                                ? 'Waiting for batch to be usable...'
+                                : statusMessage.step === 'Uploading'
+                                ? isDistributing
+                                  ? 'Distributing file chunks...'
+                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
+                                : 'Processing...'}
                             </>
                           ) : (
                             'Upload'

@@ -100,11 +100,30 @@
 
 .stampId {
   font-family: monospace;
-  background-color: #1f2937;
-  padding: 6px 10px;
+  font-size: 14px;
+  color: #8b949e;
+  cursor: pointer;
   border-radius: 4px;
-  color: #ffffff;
-  word-break: break-all;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.stampId:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.stampId[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+  width: 50%;
+}
+
+.stampId[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  right: 8px;
+  font-size: 12px;
+  color: #28a745;
 }
 
 .expiryDate {
