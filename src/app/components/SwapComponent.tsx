@@ -10,10 +10,7 @@ import {
   executeRoute,
   ChainId,
   ChainType,
-  getTokens,
   getChains,
-  TokensResponse,
-  getTokenBalancesByChain,
   Chain,
 } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
@@ -56,6 +53,7 @@ import { useTimer } from './TimerUtils';
 import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
 import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
 import { generateAndUpdateNonce } from './utils';
+import { useTokenManagement } from './TokenUtils';
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -83,7 +81,6 @@ const SwapComponent: React.FC = () => {
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
-  const [fromToken, setFromToken] = useState('0x0000000000000000000000000000000000000000');
   const [executionResult, setExecutionResult] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
@@ -110,13 +107,21 @@ const SwapComponent: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
-  const [selectedTokenInfo, setSelectedTokenInfo] = useState<any>(null);
-  const [availableTokens, setAvailableTokens] = useState<TokensResponse | null>(null);
-  const [isTokensLoading, setIsTokensLoading] = useState(true);
   const [isWalletLoading, setIsWalletLoading] = useState(true);
-
-  const [tokenBalances, setTokenBalances] = useState<any>(null);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
+  
+  // Use the token management hook
+  const {
+    fromToken,
+    setFromToken,
+    selectedTokenInfo,
+    setSelectedTokenInfo,
+    availableTokens,
+    tokenBalances,
+    isTokensLoading,
+    fetchTokensAndBalances,
+    resetTokens
+  } = useTokenManagement(address, isConnected);
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
 
@@ -168,8 +173,7 @@ const SwapComponent: React.FC = () => {
       setIsWalletLoading(true);
       if (isConnected && address && isInitialized) {
         setSelectedDays(null);
-        setFromToken('');
-        setSelectedTokenInfo(null);
+        resetTokens();
       }
       setIsWalletLoading(false);
     };
@@ -193,9 +197,7 @@ const SwapComponent: React.FC = () => {
         console.log('Chain changed from', selectedChainId, 'to', chainId);
         setSelectedChainId(chainId);
         setSelectedDays(null);
-        setFromToken('');
-        setSelectedTokenInfo(null);
-        setTokenBalances(null);
+        resetTokens();
       }
     }
   }, [chainId, isInitialized]);
@@ -462,76 +464,6 @@ const SwapComponent: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching node wallet address:', error);
-    }
-  };
-
-  const fetchTokensAndBalances = async (currentChainId?: number) => {
-    if (!address || !isConnected || !currentChainId) {
-      setTokenBalances(null);
-      setAvailableTokens(null);
-      setFromToken('');
-      setSelectedTokenInfo(null);
-      return;
-    }
-
-    console.log('Using chain ID for token fetch:', currentChainId);
-    setIsTokensLoading(true);
-    try {
-      // First fetch all available tokens with retry
-      const tokens = await performWithRetry(
-        () =>
-          getTokens({
-            chains: [currentChainId],
-            chainTypes: [ChainType.EVM],
-          }),
-        'getTokens',
-        result => Boolean(result?.tokens?.[currentChainId]?.length)
-      );
-      console.log('Available tokens:', tokens);
-      setAvailableTokens(tokens);
-
-      // Then get balances for these tokens with retry
-      const tokensByChain = {
-        [currentChainId]: tokens.tokens[currentChainId],
-      };
-
-      const balances = await performWithRetry(
-        () => getTokenBalancesByChain(address, tokensByChain),
-        'getTokenBalances',
-        result => {
-          // Validate that we have a non-empty balance result for the selected chain
-          const chainBalances = result?.[currentChainId];
-          return Boolean(chainBalances && chainBalances.length > 0);
-        }
-      );
-      console.log('Token balances:', balances);
-      setTokenBalances(balances);
-
-      // Find tokens with balance
-      if (balances?.[currentChainId]) {
-        const tokensWithBalance = balances[currentChainId]
-          .filter(t => (t?.amount ?? 0n) > 0n)
-          .sort((a, b) => {
-            const aUsdValue = Number(formatUnits(a.amount || 0n, a.decimals)) * Number(a.priceUSD);
-            const bUsdValue = Number(formatUnits(b.amount || 0n, b.decimals)) * Number(b.priceUSD);
-            return bUsdValue - aUsdValue;
-          });
-
-        console.log('Tokens with balance:', tokensWithBalance);
-
-        // Set initial token if we have any with balance
-        if (tokensWithBalance.length > 0) {
-          const checksumAddress = toChecksumAddress(tokensWithBalance[0].address);
-          if (checksumAddress) {
-            setFromToken(checksumAddress);
-            setSelectedTokenInfo(tokensWithBalance[0]);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching tokens and balances:', error);
-    } finally {
-      setIsTokensLoading(false);
     }
   };
 
