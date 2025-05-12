@@ -16,6 +16,7 @@
 # production
 /build
 swap_uploader.tar
+/misc/registry_data.json
 
 # misc
 .DS_Store
