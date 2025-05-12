@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Configuration
-const GNOSIS_RPC_URL =
-  process.env.GNOSIS_RPC_URL || 'https://go.getblock.io/a18f56245cf042b7863b369ba9d9301f';
+const GNOSIS_RPC_URL = process.env.GNOSIS_RPC_URL || 'https://gnosis-rpc.publicnode.com';
 const CONTRACT_ADDRESS = '0x1a3dc4cef861a7d3dcdc0d7c5adebf76c2197f20';
 const START_BLOCK = 25780238; // Contract creation block
 const OUTPUT_FILE = path.join(__dirname, 'registry_data.json');
