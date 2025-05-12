@@ -1,0 +1,23 @@
+# Ignore artifacts:
+build
+coverage
+node_modules
+.next
+out
+artifacts
+cache
+public
+hardhat.config.ts
+
+# Ignore generated files
+*.d.ts
+*.bundle.js
+
+# Ignore all HTML, CSS, SCSS, and JSON files:
+*.html
+*.css
+*.min.css
+*.scss
+
+# Ignore package-lock.json
+package-lock.json 

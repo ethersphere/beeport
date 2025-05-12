@@ -9,7 +9,7 @@ export type ExecutionStatus = {
   filename?: string;
 };
 
-export type UploadStep = "idle" | "ready" | "uploading" | "complete";
+export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';
 
 export type SwarmConfigType = {
   toChain: number;
@@ -104,6 +104,22 @@ export interface TransactionRequest {
   chainId: number;
   gasPrice: string;
   gasLimit: string;
+}
+
+export interface StampInfo {
+  batchID: string;
+  utilization: number;
+  usable: boolean;
+  depth: number;
+  amount: string;
+  bucketDepth: number;
+  exists: boolean;
+  batchTTL: number;
+  // Additional properties for UI display
+  totalSize?: string;
+  usedSize?: string;
+  remainingSize?: string;
+  utilizationPercent?: number;
 }
 
 export interface IncludedStep {

@@ -1,7 +1,7 @@
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import SwapComponent from "./components/SwapComponent";
-import PriceTracker from "@/app/components/PriceTracker";
-import styles from "./page.module.css";
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import SwapComponent from './components/SwapComponent';
+import PriceTracker from '@/app/components/PriceTracker';
+import styles from './page.module.css';
 
 export default function SwapPage() {
   return (
@@ -13,8 +13,8 @@ export default function SwapPage() {
       <div className={styles.contentWrapper}>
         <div
           style={{
-            display: "flex",
-            justifyContent: "flex-end",
+            display: 'flex',
+            justifyContent: 'flex-end',
             padding: 12,
           }}
         >

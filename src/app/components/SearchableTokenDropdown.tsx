@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { formatUnits } from "viem";
-import styles from "./css/SearchableTokenDropdown.module.css";
-import { toChecksumAddress } from "./utils";
-import { MIN_TOKEN_BALANCE_USD } from "./constants";
+import React, { useState, useEffect } from 'react';
+import { formatUnits } from 'viem';
+import styles from './css/SearchableTokenDropdown.module.css';
+import { toChecksumAddress } from './utils';
+import { MIN_TOKEN_BALANCE_USD } from './constants';
 
 interface TokenDropdownProps {
   fromToken: string;
@@ -35,19 +35,15 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
   const getLoadingText = () => {
     if (isWalletLoading || isTokensLoading) {
-      return "Finding tokens...";
+      return 'Finding tokens...';
     }
     if (!isConnected) {
-      return "Connect wallet to see tokens";
+      return 'Connect wallet to see tokens';
     }
-    return "No tokens with balance";
+    return 'No tokens with balance';
   };
 
-  const renderTokenContent = (
-    token: any,
-    balance: number,
-    usdValue: number
-  ) => (
+  const renderTokenContent = (token: any, balance: number, usdValue: number) => (
     <>
       <div className={styles.tokenLeft}>
         {token.logoURI && (
@@ -55,8 +51,8 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
             src={token.logoURI}
             alt={token.symbol}
             className={styles.tokenLogo}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
+            onError={e => {
+              (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
         )}
@@ -84,14 +80,13 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
   useEffect(() => {
     // Reset token selection when chain changes
-    onTokenSelect("", null);
+    onTokenSelect('', null);
   }, [selectedChainId]);
 
   useEffect(() => {
     if (availableTokensList?.length > 0 && !selectedTokenInfo) {
       const firstToken = tokenBalances?.[selectedChainId]?.find(
-        (t: any) =>
-          toChecksumAddress(t.address) === availableTokensList[0].address
+        (t: any) => toChecksumAddress(t.address) === availableTokensList[0].address
       );
       if (firstToken) {
         onTokenSelect(availableTokensList[0].address, firstToken);
@@ -101,7 +96,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
   useEffect(() => {
     // Close this dropdown if another one opens
-    if (activeDropdown !== "token" && isOpen) {
+    if (activeDropdown !== 'token' && isOpen) {
       setIsOpen(false);
     }
   }, [activeDropdown, isOpen]);
@@ -112,37 +107,26 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
     // Notify parent component
     if (newIsOpen) {
-      onOpenDropdown("token");
+      onOpenDropdown('token');
     } else {
-      onOpenDropdown("");
+      onOpenDropdown('');
     }
   };
 
   return (
     <div className={styles.dropdownContainer}>
       <div
-        className={`${styles.dropdownButton} ${isOpen ? styles.open : ""} ${
-          availableTokensList && availableTokensList.length > 1
-            ? styles.clickable
-            : ""
+        className={`${styles.dropdownButton} ${isOpen ? styles.open : ''} ${
+          availableTokensList && availableTokensList.length > 1 ? styles.clickable : ''
         }`}
         onClick={toggleDropdown}
       >
         {selectedTokenInfo ? (
           renderTokenContent(
             selectedTokenInfo,
-            Number(
-              formatUnits(
-                selectedTokenInfo.amount || 0n,
-                selectedTokenInfo.decimals
-              )
-            ),
-            Number(
-              formatUnits(
-                selectedTokenInfo.amount || 0n,
-                selectedTokenInfo.decimals
-              )
-            ) * Number(selectedTokenInfo.priceUSD)
+            Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)),
+            Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
+              Number(selectedTokenInfo.priceUSD)
           )
         ) : (
           <div className={styles.placeholder}>{getLoadingText()}</div>
@@ -151,28 +135,33 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
 
       {isOpen && availableTokensList && availableTokensList.length > 1 && (
         <div className={styles.dropdown}>
-          {availableTokensList?.map(({ token, balance, usdValue, address }: {
-            token: any;
-            balance: number;
-            usdValue: number;
-            address: string;
-          }) => (
-            <div
-              key={address}
-              className={`${styles.option} ${
-                address === fromToken ? styles.selected : ""
-              }`}
-              onClick={() => {
-                const selectedToken = tokenBalances?.[selectedChainId]?.find(
-                  (t: any) => toChecksumAddress(t.address) === address
-                );
-                onTokenSelect(address, selectedToken);
-                toggleDropdown();
-              }}
-            >
-              {renderTokenContent(token, balance, usdValue)}
-            </div>
-          ))}
+          {availableTokensList?.map(
+            ({
+              token,
+              balance,
+              usdValue,
+              address,
+            }: {
+              token: any;
+              balance: number;
+              usdValue: number;
+              address: string;
+            }) => (
+              <div
+                key={address}
+                className={`${styles.option} ${address === fromToken ? styles.selected : ''}`}
+                onClick={() => {
+                  const selectedToken = tokenBalances?.[selectedChainId]?.find(
+                    (t: any) => toChecksumAddress(t.address) === address
+                  );
+                  onTokenSelect(address, selectedToken);
+                  toggleDropdown();
+                }}
+              >
+                {renderTokenContent(token, balance, usdValue)}
+              </div>
+            )
+          )}
         </div>
       )}
     </div>

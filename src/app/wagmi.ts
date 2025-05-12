@@ -1,4 +1,4 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import {
   mainnet, // Ethereum
   gnosis,
@@ -37,11 +37,11 @@ import {
   taiko,
   unichain,
   worldchain,
-} from "wagmi/chains";
+} from 'wagmi/chains';
 
 export const config = getDefaultConfig({
-  appName: "RainbowKit demo",
-  projectId: "YOUR_PROJECT_ID",
+  appName: 'RainbowKit demo',
+  projectId: 'YOUR_PROJECT_ID',
   chains: [
     // Primary chains in specified order
     mainnet, // Ethereum
@@ -81,7 +81,7 @@ export const config = getDefaultConfig({
     unichain,
     worldchain,
     // Testnets if enabled
-    ...(process.env.NEXT_PUBLIC_ENABLE_TESTNETS === "true" ? [sepolia] : []),
+    ...(process.env.NEXT_PUBLIC_ENABLE_TESTNETS === 'true' ? [sepolia] : []),
   ],
   ssr: false,
 });

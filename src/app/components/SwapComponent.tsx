@@ -1,15 +1,9 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useRef } from "react";
-import {
-  useAccount,
-  useChainId,
-  usePublicClient,
-  useWalletClient,
-  useSwitchChain,
-} from "wagmi";
-import { watchChainId, getWalletClient } from "@wagmi/core";
-import { config } from "@/app/wagmi";
+import React, { useState, useEffect, useRef } from 'react';
+import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
+import { watchChainId, getWalletClient } from '@wagmi/core';
+import { config } from '@/app/wagmi';
 import {
   createConfig,
   EVM,
@@ -21,12 +15,12 @@ import {
   TokensResponse,
   getTokenBalancesByChain,
   Chain,
-} from "@lifi/sdk";
-import styles from "./css/SwapComponent.module.css";
-import { parseAbi, formatUnits } from "viem";
-import { getAddress } from "viem";
+} from '@lifi/sdk';
+import styles from './css/SwapComponent.module.css';
+import { parseAbi, formatUnits } from 'viem';
+import { getAddress } from 'viem';
 
-import { ExecutionStatus, UploadStep } from "./types";
+import { ExecutionStatus, UploadStep } from './types';
 import {
   GNOSIS_PRICE_ORACLE_ADDRESS,
   GNOSIS_PRICE_ORACLE_ABI,
@@ -41,26 +35,27 @@ import {
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
-} from "./constants";
+} from './constants';
 
-import HelpSection from "./HelpSection";
-import StampListSection from "./StampListSection";
-import UploadHistorySection from "./UploadHistorySection";
-import SearchableChainDropdown from "./SearchableChainDropdown";
-import SearchableTokenDropdown from "./SearchableTokenDropdown";
+import HelpSection from './HelpSection';
+import StampListSection from './StampListSection';
+import UploadHistorySection from './UploadHistorySection';
+import SearchableChainDropdown from './SearchableChainDropdown';
+import SearchableTokenDropdown from './SearchableTokenDropdown';
 
 import {
   formatErrorMessage,
   createBatchId,
   performWithRetry,
   toChecksumAddress,
-  generateProperNonce,
   getGnosisPublicClient,
   setGnosisRpcUrl,
-} from "./utils";
+} from './utils';
+import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getCrossChainQuote } from "./CustomQuotes";
-import { processArchiveFile } from "./ArchiveProcessor";
+import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
+import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
+import { generateAndUpdateNonce } from './utils';
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -88,9 +83,7 @@ const SwapComponent: React.FC = () => {
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
-  const [fromToken, setFromToken] = useState(
-    "0x0000000000000000000000000000000000000000"
-  );
+  const [fromToken, setFromToken] = useState('0x0000000000000000000000000000000000000000');
   const [executionResult, setExecutionResult] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
@@ -108,24 +101,22 @@ const SwapComponent: React.FC = () => {
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
-    step: "",
-    message: "",
+    step: '',
+    message: '',
   });
   const [showOverlay, setShowOverlay] = useState(false);
-  const [uploadStep, setUploadStep] = useState<UploadStep>("idle");
+  const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
   const [selectedTokenInfo, setSelectedTokenInfo] = useState<any>(null);
-  const [availableTokens, setAvailableTokens] = useState<TokensResponse | null>(
-    null
-  );
+  const [availableTokens, setAvailableTokens] = useState<TokensResponse | null>(null);
   const [isTokensLoading, setIsTokensLoading] = useState(true);
   const [isWalletLoading, setIsWalletLoading] = useState(true);
 
   const [tokenBalances, setTokenBalances] = useState<any>(null);
-  const [postageBatchId, setPostageBatchId] = useState<string>("");
+  const [postageBatchId, setPostageBatchId] = useState<string>('');
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
 
@@ -137,27 +128,25 @@ const SwapComponent: React.FC = () => {
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
-  const [remainingTime, setRemainingTime] = useState<number | null>(null);
-
   const [serveUncompressed, setServeUncompressed] = useState(true);
-
-  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
-  
+
   // Update the ref whenever walletClient changes
   useEffect(() => {
     currentWalletClientRef.current = walletClient;
   }, [walletClient]);
+
+  const { estimatedTime, setEstimatedTime, remainingTime, formatTime, resetTimer } =
+    useTimer(statusMessage);
 
   // Add a ref for the abort controller
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
 
   // Add state for custom RPC
   const [isCustomRpc, setIsCustomRpc] = useState(false);
-  const [customRpcUrl, setCustomRpcUrl] = useState<string>("");
+  const [customRpcUrl, setCustomRpcUrl] = useState<string>('');
 
   // Watch for changes to custom RPC URL settings and update global setting
   useEffect(() => {
@@ -168,7 +157,7 @@ const SwapComponent: React.FC = () => {
   // Initial setup that runs only once to set the chain ID from wallet
   useEffect(() => {
     if (chainId && !isInitialized) {
-      console.log("Initial chain setup with ID:", chainId);
+      console.log('Initial chain setup with ID:', chainId);
       setSelectedChainId(chainId);
       setIsInitialized(true);
     }
@@ -179,7 +168,7 @@ const SwapComponent: React.FC = () => {
       setIsWalletLoading(true);
       if (isConnected && address && isInitialized) {
         setSelectedDays(null);
-        setFromToken("");
+        setFromToken('');
         setSelectedTokenInfo(null);
       }
       setIsWalletLoading(false);
@@ -191,7 +180,7 @@ const SwapComponent: React.FC = () => {
   // Separate useEffect to fetch tokens after selectedChainId is updated
   useEffect(() => {
     if (isConnected && address && selectedChainId && isInitialized) {
-      console.log("Fetching tokens with chain ID:", selectedChainId);
+      console.log('Fetching tokens with chain ID:', selectedChainId);
       fetchTokensAndBalances(selectedChainId);
     }
   }, [isConnected, address, selectedChainId, isInitialized]);
@@ -201,10 +190,10 @@ const SwapComponent: React.FC = () => {
       // Only update selectedChainId if we've already initialized
       // This handles chain switching after initial load
       if (chainId !== selectedChainId) {
-        console.log("Chain changed from", selectedChainId, "to", chainId);
+        console.log('Chain changed from', selectedChainId, 'to', chainId);
         setSelectedChainId(chainId);
         setSelectedDays(null);
-        setFromToken("");
+        setFromToken('');
         setSelectedTokenInfo(null);
         setTokenBalances(null);
       }
@@ -239,7 +228,7 @@ const SwapComponent: React.FC = () => {
         const chains = await getChains({ chainTypes: [ChainType.EVM] });
         setAvailableChains(chains);
       } catch (error) {
-        console.error("Error fetching chains:", error);
+        console.error('Error fetching chains:', error);
       } finally {
         setIsChainsLoading(false);
       }
@@ -260,7 +249,7 @@ const SwapComponent: React.FC = () => {
     try {
       updateSwarmBatchInitialBalance();
     } catch (error) {
-      console.error("Error calculating total cost:", error);
+      console.error('Error calculating total cost:', error);
       setTotalUsdAmount(null);
       setSwarmConfig(DEFAULT_SWARM_CONFIG);
     }
@@ -271,37 +260,34 @@ const SwapComponent: React.FC = () => {
     setTotalUsdAmount(null);
     setLiquidityError(false);
     setIsPriceEstimating(true);
-    
+
     // Cancel any previous price estimate operations
     if (priceEstimateAbortControllerRef.current) {
-      console.log("Cancelling previous price estimate");
+      console.log('Cancelling previous price estimate');
       priceEstimateAbortControllerRef.current.abort();
     }
-    
+
     // Create a new abort controller for this run
     priceEstimateAbortControllerRef.current = new AbortController();
     const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
       if (!selectedChainId) return;
-      
+
       // Reset insufficient funds state at the beginning of new price estimation
       setInsufficientFunds(false);
-      
+
       try {
         const bzzAmount = calculateTotalAmount().toString();
         const gnosisSourceToken =
-          selectedChainId === ChainId.DAI
-            ? fromToken
-            : GNOSIS_DESTINATION_TOKEN;
+          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
         // Add detailed logging
-        console.log("BZZ amount needed:", formatUnits(BigInt(bzzAmount), 16));
-        console.log("Selected days:", selectedDays);
+        console.log('BZZ amount needed:', formatUnits(BigInt(bzzAmount), 16));
+        console.log('Selected days:', selectedDays);
         console.log(
-          "Selected stamps size:",
-          STORAGE_OPTIONS.find((option) => option.depth === selectedDepth)
-            ?.size || "Unknown"
+          'Selected stamps size:',
+          STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown'
         );
 
         const { gnosisContactCallsQuoteResponse } = await performWithRetry(
@@ -314,7 +300,7 @@ const SwapComponent: React.FC = () => {
               swarmConfig,
               setEstimatedTime,
             }),
-          "getGnosisQuote",
+          'getGnosisQuote',
           undefined,
           5,
           300,
@@ -323,13 +309,11 @@ const SwapComponent: React.FC = () => {
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
-          console.log("Price estimate aborted after Gnosis quote");
+          console.log('Price estimate aborted after Gnosis quote');
           return;
         }
 
-        let totalAmount = Number(
-          gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0
-        );
+        let totalAmount = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
 
         if (selectedChainId !== ChainId.DAI) {
           const { crossChainContractQuoteResponse } = await performWithRetry(
@@ -342,7 +326,7 @@ const SwapComponent: React.FC = () => {
                 gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
                 setEstimatedTime,
               }),
-            "getCrossChainQuote",
+            'getCrossChainQuote',
             undefined,
             5,
             300,
@@ -351,7 +335,7 @@ const SwapComponent: React.FC = () => {
 
           // If operation was aborted, don't continue
           if (abortSignal.aborted) {
-            console.log("Price estimate aborted after cross-chain quote");
+            console.log('Price estimate aborted after cross-chain quote');
             return;
           }
 
@@ -363,36 +347,33 @@ const SwapComponent: React.FC = () => {
               )
             : 0;
 
-          console.log("Bridge fees:", bridgeFees);
+          console.log('Bridge fees:', bridgeFees);
           console.log(
-            "Gas fees:",
-            crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD ||
-              "0"
+            'Gas fees:',
+            crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD || '0'
           );
           console.log(
-            "Cross chain amount:",
+            'Cross chain amount:',
             crossChainContractQuoteResponse.estimate.fromAmountUSD
           );
 
-          totalAmount = Number(
-            crossChainContractQuoteResponse.estimate.fromAmountUSD || 0
-          );
+          totalAmount = Number(crossChainContractQuoteResponse.estimate.fromAmountUSD || 0);
         }
 
         // One final check if aborted before updating state
         if (!abortSignal.aborted) {
-          console.log("Total amount:", totalAmount);
+          console.log('Total amount:', totalAmount);
           setTotalUsdAmount(totalAmount.toString());
-          
+
           // Check if user has enough funds
           if (selectedTokenInfo) {
-            const tokenBalanceInUsd = Number(
-              formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)
-            ) * Number(selectedTokenInfo.priceUSD);
-            
-            console.log("User token balance in USD:", tokenBalanceInUsd);
-            console.log("Required amount in USD:", totalAmount);
-            
+            const tokenBalanceInUsd =
+              Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
+              Number(selectedTokenInfo.priceUSD);
+
+            console.log('User token balance in USD:', tokenBalanceInUsd);
+            console.log('Required amount in USD:', totalAmount);
+
             // Set insufficient funds flag if cost exceeds available balance
             setInsufficientFunds(totalAmount > tokenBalanceInUsd);
           }
@@ -400,7 +381,7 @@ const SwapComponent: React.FC = () => {
       } catch (error) {
         // Only update error state if not aborted
         if (!abortSignal.aborted) {
-          console.error("Error estimating price:", error);
+          console.error('Error estimating price:', error);
           setTotalUsdAmount(null);
           setLiquidityError(true);
         }
@@ -418,7 +399,7 @@ const SwapComponent: React.FC = () => {
       // If no days selected, still reset the loading state
       setIsPriceEstimating(false);
     }
-    
+
     // Cleanup: abort any pending operations when the effect is cleaned up
     return () => {
       if (priceEstimateAbortControllerRef.current) {
@@ -432,17 +413,17 @@ const SwapComponent: React.FC = () => {
   const initializeLiFi = () => {
     // Create new config instead of modifying existing one
     createConfig({
-      integrator: "Swarm",
+      integrator: 'Swarm',
       apiKey: LIFI_API_KEY,
       providers: [
         EVM({
           getWalletClient: async () => {
             // Use the ref instead of the direct walletClient
             const client = currentWalletClientRef.current;
-            if (!client) throw new Error("Wallet client not available");
+            if (!client) throw new Error('Wallet client not available');
             return client;
           },
-          switchChain: async (chainId) => {
+          switchChain: async chainId => {
             if (switchChain) {
               switchChain({ chainId });
             }
@@ -456,9 +437,9 @@ const SwapComponent: React.FC = () => {
               currentWalletClientRef.current = client;
               return client;
             } catch (error) {
-              console.error("Error getting wallet client:", error);
+              console.error('Error getting wallet client:', error);
               if (currentWalletClientRef.current) return currentWalletClientRef.current;
-              throw new Error("Failed to get wallet client for the new chain");
+              throw new Error('Failed to get wallet client for the new chain');
             }
           },
         }),
@@ -476,11 +457,11 @@ const SwapComponent: React.FC = () => {
         const data = await response.json();
         if (data.walletAddress) {
           setNodeAddress(data.walletAddress);
-          console.log("Node wallet address set:", data.walletAddress);
+          console.log('Node wallet address set:', data.walletAddress);
         }
       }
     } catch (error) {
-      console.error("Error fetching node wallet address:", error);
+      console.error('Error fetching node wallet address:', error);
     }
   };
 
@@ -488,12 +469,12 @@ const SwapComponent: React.FC = () => {
     if (!address || !isConnected || !currentChainId) {
       setTokenBalances(null);
       setAvailableTokens(null);
-      setFromToken("");
+      setFromToken('');
       setSelectedTokenInfo(null);
       return;
     }
 
-    console.log("Using chain ID for token fetch:", currentChainId);
+    console.log('Using chain ID for token fetch:', currentChainId);
     setIsTokensLoading(true);
     try {
       // First fetch all available tokens with retry
@@ -503,10 +484,10 @@ const SwapComponent: React.FC = () => {
             chains: [currentChainId],
             chainTypes: [ChainType.EVM],
           }),
-        "getTokens",
-        (result) => Boolean(result?.tokens?.[currentChainId]?.length)
+        'getTokens',
+        result => Boolean(result?.tokens?.[currentChainId]?.length)
       );
-      console.log("Available tokens:", tokens);
+      console.log('Available tokens:', tokens);
       setAvailableTokens(tokens);
 
       // Then get balances for these tokens with retry
@@ -516,37 +497,31 @@ const SwapComponent: React.FC = () => {
 
       const balances = await performWithRetry(
         () => getTokenBalancesByChain(address, tokensByChain),
-        "getTokenBalances",
-        (result) => {
+        'getTokenBalances',
+        result => {
           // Validate that we have a non-empty balance result for the selected chain
           const chainBalances = result?.[currentChainId];
           return Boolean(chainBalances && chainBalances.length > 0);
         }
       );
-      console.log("Token balances:", balances);
+      console.log('Token balances:', balances);
       setTokenBalances(balances);
 
       // Find tokens with balance
       if (balances?.[currentChainId]) {
         const tokensWithBalance = balances[currentChainId]
-          .filter((t) => (t?.amount ?? 0n) > 0n)
+          .filter(t => (t?.amount ?? 0n) > 0n)
           .sort((a, b) => {
-            const aUsdValue =
-              Number(formatUnits(a.amount || 0n, a.decimals)) *
-              Number(a.priceUSD);
-            const bUsdValue =
-              Number(formatUnits(b.amount || 0n, b.decimals)) *
-              Number(b.priceUSD);
+            const aUsdValue = Number(formatUnits(a.amount || 0n, a.decimals)) * Number(a.priceUSD);
+            const bUsdValue = Number(formatUnits(b.amount || 0n, b.decimals)) * Number(b.priceUSD);
             return bUsdValue - aUsdValue;
           });
 
-        console.log("Tokens with balance:", tokensWithBalance);
+        console.log('Tokens with balance:', tokensWithBalance);
 
         // Set initial token if we have any with balance
         if (tokensWithBalance.length > 0) {
-          const checksumAddress = toChecksumAddress(
-            tokensWithBalance[0].address
-          );
+          const checksumAddress = toChecksumAddress(tokensWithBalance[0].address);
           if (checksumAddress) {
             setFromToken(checksumAddress);
             setSelectedTokenInfo(tokensWithBalance[0]);
@@ -554,7 +529,7 @@ const SwapComponent: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error("Error fetching tokens and balances:", error);
+      console.error('Error fetching tokens and balances:', error);
     } finally {
       setIsTokensLoading(false);
     }
@@ -567,12 +542,12 @@ const SwapComponent: React.FC = () => {
         const price = await getGnosisPublicClient().readContract({
           address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
           abi: GNOSIS_PRICE_ORACLE_ABI,
-          functionName: "currentPrice",
+          functionName: 'currentPrice',
         });
-        console.log("price", price);
+        console.log('price', price);
         setCurrentPrice(BigInt(price));
       } catch (error) {
-        console.error("Error fetching current price:", error);
+        console.error('Error fetching current price:', error);
         setCurrentPrice(BigInt(28000));
       }
     } else {
@@ -586,7 +561,7 @@ const SwapComponent: React.FC = () => {
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
       const totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
-      setSwarmConfig((prev) => ({
+      setSwarmConfig(prev => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
         swarmBatchTotal: totalAmount.toString(),
@@ -597,14 +572,13 @@ const SwapComponent: React.FC = () => {
   const calculateTotalAmount = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
     const initialPaymentPerChunkPerDay = price * 17280n;
-    const totalPricePerDuration =
-      initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
+    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
     return totalPricePerDuration * BigInt(2 ** selectedDepth);
   };
 
   const handleDepthChange = (newDepth: number) => {
     setSelectedDepth(newDepth);
-    setSwarmConfig((prev) => ({
+    setSwarmConfig(prev => ({
       ...prev,
       swarmBatchDepth: newDepth.toString(),
     }));
@@ -612,10 +586,10 @@ const SwapComponent: React.FC = () => {
 
   const handleDirectBzzTransactions = async () => {
     if (!publicClient || !walletClient) {
-      console.error("Clients not initialized");
+      console.error('Clients not initialized');
       setStatusMessage({
-        step: "Error",
-        message: "Wallet not connected",
+        step: 'Error',
+        message: 'Wallet not connected',
         isError: true,
       });
       return;
@@ -623,32 +597,29 @@ const SwapComponent: React.FC = () => {
 
     try {
       const bzzAmount = calculateTotalAmount().toString();
-      console.log("BZZ amount for approval:", bzzAmount);
+      console.log('BZZ amount for approval:', bzzAmount);
 
       setStatusMessage({
-        step: "Approval",
-        message: "Approving BZZ transfer...",
+        step: 'Approval',
+        message: 'Approving BZZ transfer...',
       });
 
       // First transaction: Approve - directly write contract without simulation
       const approveTxHash = await walletClient.writeContract({
         address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
         abi: parseAbi([
-          "function approve(address spender, uint256 amount) external returns (bool)",
+          'function approve(address spender, uint256 amount) external returns (bool)',
         ]),
-        functionName: "approve",
-        args: [
-          GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          BigInt(bzzAmount),
-        ],
+        functionName: 'approve',
+        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`, BigInt(bzzAmount)],
         account: address,
       });
 
-      console.log("Approve transaction hash:", approveTxHash);
+      console.log('Approve transaction hash:', approveTxHash);
 
       setStatusMessage({
-        step: "Approval",
-        message: "Waiting for approval confirmation...",
+        step: 'Approval',
+        message: 'Waiting for approval confirmation...',
       });
 
       // Wait for approval transaction to be mined
@@ -656,108 +627,101 @@ const SwapComponent: React.FC = () => {
         hash: approveTxHash,
       });
 
-      if (approveReceipt.status === "success") {
+      if (approveReceipt.status === 'success') {
         setStatusMessage({
-          step: "Batch",
-          message: "Buying storage...",
+          step: 'Batch',
+          message: 'Buying storage...',
         });
+
+        // Use the utility function to generate and update the nonce
+        const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
         // Second transaction: Create Batch - directly write contract without simulation
         const createBatchTxHash = await walletClient.writeContract({
           address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(swarmConfig.swarmContractAbi),
-          functionName: "createBatchRegistry",
+          abi: parseAbi(updatedConfig.swarmContractAbi),
+          functionName: 'createBatchRegistry',
           args: [
             address,
             nodeAddress,
-            swarmConfig.swarmBatchInitialBalance,
-            swarmConfig.swarmBatchDepth,
-            swarmConfig.swarmBatchBucketDepth,
-            swarmConfig.swarmBatchNonce,
-            swarmConfig.swarmBatchImmutable,
+            updatedConfig.swarmBatchInitialBalance,
+            updatedConfig.swarmBatchDepth,
+            updatedConfig.swarmBatchBucketDepth,
+            updatedConfig.swarmBatchNonce,
+            updatedConfig.swarmBatchImmutable,
           ],
           account: address,
         });
 
-        console.log("Create batch transaction hash:", createBatchTxHash);
+        console.log('Create batch transaction hash:', createBatchTxHash);
 
         // Wait for create batch transaction to be mined
-        const createBatchReceipt = await publicClient.waitForTransactionReceipt(
-          {
-            hash: createBatchTxHash,
-          }
-        );
+        const createBatchReceipt = await publicClient.waitForTransactionReceipt({
+          hash: createBatchTxHash,
+        });
 
-        if (createBatchReceipt.status === "success") {
+        if (createBatchReceipt.status === 'success') {
           try {
             // Batch will be created from registry contract for all cases
             const batchId = await createBatchId(
-              swarmConfig.swarmBatchNonce,
+              updatedConfig.swarmBatchNonce,
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
-            console.log(
-              "Created batch ID:",
-              batchId,
-              swarmConfig.swarmBatchNonce
-            );
+            console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
 
             setStatusMessage({
-              step: "Complete",
-              message: "Storage Bought Successfully",
+              step: 'Complete',
+              message: 'Storage Bought Successfully',
               isSuccess: true,
             });
-            setUploadStep("ready");
+            setUploadStep('ready');
           } catch (error) {
-            console.error("Failed to create batch ID:", error);
-            throw new Error("Failed to create batch ID");
+            console.error('Failed to create batch ID:', error);
+            throw new Error('Failed to create batch ID');
           }
         } else {
-          throw new Error("Batch creation failed");
+          throw new Error('Batch creation failed');
         }
       } else {
-        throw new Error("Approval failed");
+        throw new Error('Approval failed');
       }
     } catch (error) {
-      console.error("Error in direct BZZ transactions:", error);
+      console.error('Error in direct BZZ transactions:', error);
       setStatusMessage({
-        step: "Error",
-        message: "Transactionfailed",
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
+        step: 'Error',
+        message: 'Transactionfailed',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
         isError: true,
       });
     }
   };
 
-  const handleGnosisTokenSwap = async (
-    contractCallsRoute: any,
-    currentConfig: any
-  ) => {
+  const handleGnosisTokenSwap = async (contractCallsRoute: any, currentConfig: any) => {
     if (!selectedChainId) return;
-    
+
     setStatusMessage({
-      step: "Route",
-      message: "Executing contract calls...",
+      step: 'Route',
+      message: 'Executing contract calls...',
     });
 
     const executedRoute = await executeRoute(contractCallsRoute, {
-      updateRouteHook: async (updatedRoute) => {
-        console.log("Updated Route:", updatedRoute);
+      updateRouteHook: async updatedRoute => {
+        console.log('Updated Route:', updatedRoute);
         const status = updatedRoute.steps[0]?.execution?.status;
         console.log(`Status: ${status}`);
 
         setStatusMessage({
-          step: "Route",
-          message: `Status update: ${status?.replace(/_/g, " ")}`,
+          step: 'Route',
+          message: `Status update: ${status?.replace(/_/g, ' ')}`,
         });
 
-        if (status === "DONE") {
+        if (status === 'DONE') {
           // Reset timer when done
           resetTimer();
 
           const txHash = updatedRoute.steps[0]?.execution?.process[0]?.txHash;
-          console.log("Created new Batch at trx", txHash);
+          console.log('Created new Batch at trx', txHash);
 
           try {
             // Batch will be created from registry contract for all cases
@@ -766,44 +730,29 @@ const SwapComponent: React.FC = () => {
               GNOSIS_CUSTOM_REGISTRY_ADDRESS,
               setPostageBatchId
             );
-            console.log(
-              "Created batch ID:",
-              batchId,
-              currentConfig.swarmBatchNonce
-            );
+            console.log('Created batch ID:', batchId, currentConfig.swarmBatchNonce);
           } catch (error) {
-            console.error("Failed to create batch ID:", error);
+            console.error('Failed to create batch ID:', error);
           }
 
           setStatusMessage({
-            step: "Complete",
-            message: "Storage Bought Successfully",
+            step: 'Complete',
+            message: 'Storage Bought Successfully',
             isSuccess: true,
           });
-          setUploadStep("ready");
-        } else if (status === "FAILED") {
-          // Generate a new proper nonce if the transaction fails
-          const recoveryNonce = generateProperNonce();
-          console.log(
-            "Transaction failed, setting new recovery nonce:",
-            recoveryNonce
-          );
+          setUploadStep('ready');
+        } else if (status === 'FAILED') {
+          // Use the utility function to generate and update the nonce
+          generateAndUpdateNonce(currentConfig, setSwarmConfig);
 
-          // Create a new config with the recovery nonce
-          currentConfig = {
-            ...currentConfig,
-            swarmBatchNonce: recoveryNonce,
-          };
-
-          // Update the state
-          setSwarmConfig(currentConfig);
+          console.log('Transaction failed, regenerated nonce for recovery');
 
           // Reset timer if failed
           resetTimer();
         }
       },
     });
-    console.log("Contract calls execution completed:", executedRoute);
+    console.log('Contract calls execution completed:', executedRoute);
   };
 
   const handleCrossChainSwap = async (
@@ -812,10 +761,10 @@ const SwapComponent: React.FC = () => {
     updatedConfig: any
   ) => {
     if (!selectedChainId) return;
-    
+
     setStatusMessage({
-      step: "Quote",
-      message: "Getting quote...",
+      step: 'Quote',
+      message: 'Getting quote...',
     });
 
     const { crossChainContractCallsRoute } = await getCrossChainQuote({
@@ -828,61 +777,57 @@ const SwapComponent: React.FC = () => {
     });
 
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
-      updateRouteHook: async (crossChainContractCallsRoute) => {
-        console.log("Updated Route 1:", crossChainContractCallsRoute);
-        const step1Status =
-          crossChainContractCallsRoute.steps[0]?.execution?.status;
+      updateRouteHook: async crossChainContractCallsRoute => {
+        console.log('Updated Route 1:', crossChainContractCallsRoute);
+        const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
         console.log(`Step 1 Status: ${step1Status}`);
 
         setStatusMessage({
-          step: "Route",
-          message: `Bridging in progress: ${step1Status?.replace(/_/g, " ")}.`,
+          step: 'Route',
+          message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
         });
 
-        if (step1Status === "DONE") {
-          console.log("Route 1 wallet client:", walletClient);
+        if (step1Status === 'DONE') {
+          console.log('Route 1 wallet client:', walletClient);
           await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
-        } else if (step1Status === "FAILED") {
+        } else if (step1Status === 'FAILED') {
           // Add reset if the execution fails
           resetTimer();
         }
       },
     });
 
-    console.log("First route execution completed:", executedRoute);
+    console.log('First route execution completed:', executedRoute);
   };
 
-  const handleChainSwitch = async (
-    contractCallsRoute: any,
-    updatedConfig: any
-  ) => {
-    console.log("First route completed, triggering chain switch to Gnosis...");
+  const handleChainSwitch = async (contractCallsRoute: any, updatedConfig: any) => {
+    console.log('First route completed, triggering chain switch to Gnosis...');
 
     // Reset the timer when the action completes
     resetTimer();
 
     setStatusMessage({
-      step: "Switch",
-      message: "First route completed. Switching chain to Gnosis...",
+      step: 'Switch',
+      message: 'First route completed. Switching chain to Gnosis...',
     });
 
     const unwatch = watchChainId(config, {
-      onChange: async (chainId) => {
+      onChange: async chainId => {
         if (chainId === ChainId.DAI) {
-          console.log("Detected switch to Gnosis, executing second route...");
+          console.log('Detected switch to Gnosis, executing second route...');
           unwatch();
-          
+
           // Get a fresh wallet client for the new chain
           try {
             const newClient = await getWalletClient(config, { chainId });
-            console.log("Route 2 wallet client:", newClient);
-            
+            console.log('Route 2 wallet client:', newClient);
+
             // Update our ref
             currentWalletClientRef.current = newClient;
-            
+
             await handleGnosisRoute(contractCallsRoute, updatedConfig);
           } catch (error) {
-            console.error("Error getting new wallet client:", error);
+            console.error('Error getting new wallet client:', error);
             // Fall back to using the current wallet client
             await handleGnosisRoute(contractCallsRoute, updatedConfig);
           }
@@ -891,34 +836,29 @@ const SwapComponent: React.FC = () => {
     });
 
     switchChain({ chainId: ChainId.DAI });
-    
   };
 
-  const handleGnosisRoute = async (
-    contractCallsRoute: any,
-    updatedConfig: any
-  ) => {
+  const handleGnosisRoute = async (contractCallsRoute: any, updatedConfig: any) => {
     setStatusMessage({
-      step: "Route",
-      message: "Chain switched. Executing second route...",
+      step: 'Route',
+      message: 'Chain switched. Executing second route...',
     });
 
     try {
       const executedRoute2 = await executeRoute(contractCallsRoute, {
-        updateRouteHook: async (contractCallsRoute) => {
-          console.log("Updated Route 2:", contractCallsRoute);
+        updateRouteHook: async contractCallsRoute => {
+          console.log('Updated Route 2:', contractCallsRoute);
           const step2Status = contractCallsRoute.steps[0]?.execution?.status;
           console.log(`Step 2 Status: ${step2Status}`);
 
           setStatusMessage({
-            step: "Route",
-            message: `Second route status: ${step2Status?.replace(/_/g, " ")}`,
+            step: 'Route',
+            message: `Second route status: ${step2Status?.replace(/_/g, ' ')}`,
           });
 
-          if (step2Status === "DONE") {
-            const txHash =
-              contractCallsRoute.steps[0]?.execution?.process[1]?.txHash;
-            console.log("Created new Batch at trx", txHash);
+          if (step2Status === 'DONE') {
+            const txHash = contractCallsRoute.steps[0]?.execution?.process[1]?.txHash;
+            console.log('Created new Batch at trx', txHash);
 
             try {
               // Batch will be created from registry contract for all cases
@@ -927,31 +867,27 @@ const SwapComponent: React.FC = () => {
                 GNOSIS_CUSTOM_REGISTRY_ADDRESS,
                 setPostageBatchId
               );
-              console.log(
-                "Created batch ID:",
-                batchId,
-                updatedConfig.swarmBatchNonce
-              );
+              console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
             } catch (error) {
-              console.error("Failed to create batch ID:", error);
+              console.error('Failed to create batch ID:', error);
             }
 
             setStatusMessage({
-              step: "Complete",
-              message: "Storage Bought Successfully",
+              step: 'Complete',
+              message: 'Storage Bought Successfully',
               isSuccess: true,
             });
-            setUploadStep("ready");
+            setUploadStep('ready');
           }
         },
       });
-      console.log("Second route execution completed:", executedRoute2);
+      console.log('Second route execution completed:', executedRoute2);
     } catch (error) {
-      console.error("Error executing second route:", error);
+      console.error('Error executing second route:', error);
       setStatusMessage({
-        step: "Error",
-        message: "Error executing second route",
-        error: "Second route execution failed. Check console for details.",
+        step: 'Error',
+        message: 'Error executing second route',
+        error: 'Second route execution failed. Check console for details.',
         isError: true,
       });
     }
@@ -959,92 +895,71 @@ const SwapComponent: React.FC = () => {
 
   const handleSwap = async () => {
     if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
-      console.error("Wallet not connected, clients not available, or chain not selected");
+      console.error('Wallet not connected, clients not available, or chain not selected');
       return;
     }
 
     // Reset the timer when starting a new transaction
     resetTimer();
 
-    console.log("Current nonce", swarmConfig.swarmBatchNonce);
-
-    // Generate a properly sized nonce (exactly 32 bytes)
-    const uniqueNonce = generateProperNonce();
-    console.log("Generated new nonce:", uniqueNonce);
-
-    // Set the nonce directly in the config we'll use for this transaction
-    const updatedConfig = {
-      ...swarmConfig,
-      swarmBatchNonce: uniqueNonce,
-    };
-
-    // Update the state for future reference
-    setSwarmConfig(updatedConfig);
-
-    console.log("Will use swarm batch nonce:", updatedConfig.swarmBatchNonce);
+    // Use the utility function to generate and update the nonce
+    const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
     setIsLoading(true);
     setShowOverlay(true);
-    setUploadStep("idle");
+    setUploadStep('idle');
     setStatusMessage({
-      step: "Initialization",
-      message: "Preparing transaction...",
+      step: 'Initialization',
+      message: 'Preparing transaction...',
     });
 
     try {
       // Find the token in available tokens
-      const selectedToken = availableTokens?.tokens[selectedChainId]?.find(
-        (token) => {
-          try {
-            return (
-              toChecksumAddress(token.address) === toChecksumAddress(fromToken)
-            );
-          } catch (error) {
-            console.error("Error comparing token addresses:", error);
-            return false;
-          }
+      const selectedToken = availableTokens?.tokens[selectedChainId]?.find(token => {
+        try {
+          return toChecksumAddress(token.address) === toChecksumAddress(fromToken);
+        } catch (error) {
+          console.error('Error comparing token addresses:', error);
+          return false;
         }
-      );
+      });
 
       if (!selectedToken || !selectedToken.address) {
-        throw new Error("Selected token not found");
+        throw new Error('Selected token not found');
       }
 
       setStatusMessage({
-        step: "Calculation",
-        message: "Calculating amounts...",
+        step: 'Calculation',
+        message: 'Calculating amounts...',
       });
 
       const bzzAmount = calculateTotalAmount().toString();
-      console.log("bzzAmount", bzzAmount);
+      console.log('bzzAmount', bzzAmount);
 
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
-        selectedChainId !== null && 
+        selectedChainId !== null &&
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
         await handleDirectBzzTransactions();
       } else {
         setStatusMessage({
-          step: "Quoting",
-          message: "Getting quote...",
+          step: 'Quoting',
+          message: 'Getting quote...',
         });
 
         const gnosisSourceToken =
-          selectedChainId === ChainId.DAI
-            ? fromToken
-            : GNOSIS_DESTINATION_TOKEN;
+          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
-        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
-          await getGnosisQuote({
-            gnosisSourceToken,
-            address,
-            bzzAmount,
-            nodeAddress,
-            swarmConfig: updatedConfig,
-            setEstimatedTime,
-          });
+        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await getGnosisQuote({
+          gnosisSourceToken,
+          address,
+          bzzAmount,
+          nodeAddress,
+          swarmConfig: updatedConfig,
+          setEstimatedTime,
+        });
 
         // Check are we solving Gnosis chain or other chain Swap
         if (selectedChainId === ChainId.DAI) {
@@ -1052,18 +967,14 @@ const SwapComponent: React.FC = () => {
         } else {
           // This is gnosisSourceToken/gnosisDesatinationToken amount value
           const toAmount = gnosisContactCallsQuoteResponse.estimate.fromAmount;
-          await handleCrossChainSwap(
-            gnosisContractCallsRoute,
-            toAmount,
-            updatedConfig
-          );
+          await handleCrossChainSwap(gnosisContractCallsRoute, toAmount, updatedConfig);
         }
       }
     } catch (error) {
-      console.error("An error occurred:", error);
+      console.error('An error occurred:', error);
       setStatusMessage({
-        step: "Error",
-        message: "Execution failed",
+        step: 'Error',
+        message: 'Execution failed',
         error: formatErrorMessage(error),
         isError: true,
       });
@@ -1078,7 +989,7 @@ const SwapComponent: React.FC = () => {
   ) => {
     if (!address) return;
 
-    const savedHistory = localStorage.getItem("uploadHistory");
+    const savedHistory = localStorage.getItem('uploadHistory');
     const history = savedHistory ? JSON.parse(savedHistory) : {};
 
     const addressHistory = history[address] || [];
@@ -1091,324 +1002,53 @@ const SwapComponent: React.FC = () => {
     });
 
     history[address] = addressHistory;
-    localStorage.setItem("uploadHistory", JSON.stringify(history));
+    localStorage.setItem('uploadHistory', JSON.stringify(history));
   };
 
   const handleFileUpload = async () => {
     if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
-      console.error("Missing file, postage batch ID, or wallet");
-      console.log("selectedFile", selectedFile);
-      console.log("postageBatchId", postageBatchId);
-      console.log("walletClient", walletClient);
-      console.log("publicClient", publicClient);
+      console.error('Missing file, postage batch ID, or wallet');
+      console.log('selectedFile', selectedFile);
+      console.log('postageBatchId', postageBatchId);
+      console.log('walletClient', walletClient);
+      console.log('publicClient', publicClient);
       return;
     }
 
-    const isLocalhost =
-      beeApiUrl.includes("localhost") || beeApiUrl.includes("127.0.0.1");
-    setUploadStep("uploading");
-    setUploadProgress(0);
-
-    interface XHRResponse {
-      ok: boolean;
-      status: number;
-      text: () => Promise<string>;
-    }
-
-    interface StampResponse {
-      batchID: string;
-      utilization: number;
-      usable: boolean;
-      label: string;
-      depth: number;
-      amount: string;
-      bucketDepth: number;
-      blockNumber: number;
-      immutableFlag: boolean;
-      exists: boolean;
-      batchTTL: number;
-    }
-
-    const checkStampStatus = async (
-      batchId: string
-    ): Promise<StampResponse> => {
-      console.log(`Checking stamps status for batch ${batchId}`);
-      const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
-      const data = await response.json();
-      console.log("Stamp status response:", data);
-      return data;
-    };
-
-    const uploadLargeFile = async (
-      file: File,
-      headers: Record<string, string>,
-      baseUrl: string
-    ): Promise<XHRResponse> => {
-      console.log("Starting file upload...");
-
-      // Add the filename as a query parameter
-      const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
-      console.log("Upload URL with filename:", url);
-
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-
-        xhr.open("POST", url);
-        xhr.timeout = 3600000; // 1 hour timeout
-
-        Object.entries(headers).forEach(([key, value]) => {
-          xhr.setRequestHeader(key, value);
-        });
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = (event.loaded / event.total) * 100;
-            setUploadProgress(Math.min(99, percent));
-            console.log("Upload progress:", percent);
-            console.log(`Upload progress: ${percent.toFixed(1)}%`);
-
-            if (percent === 100) {
-              setIsDistributing(true);
-            }
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setUploadProgress(100);
-          }
-          console.log(`Upload completed with status: ${xhr.status}`);
-          resolve({
-            ok: xhr.status >= 200 && xhr.status < 300,
-            status: xhr.status,
-            text: () => Promise.resolve(xhr.responseText),
-          });
-        };
-
-        xhr.onerror = (e) => {
-          console.error("XHR Error:", e);
-          reject(new Error("Network request failed"));
-        };
-
-        xhr.ontimeout = () => {
-          console.error("Upload timed out");
-          reject(new Error("Upload timed out"));
-        };
-
-        console.log("Sending file:", file.name, file.size);
-        xhr.send(file);
-      });
-    };
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
 
     try {
-      // Check if it's an archive file that needs processing
-      let processedFile = selectedFile;
-      const isArchive =
-        selectedFile.type === "application/zip" ||
-        selectedFile.name.toLowerCase().endsWith(".zip") ||
-        selectedFile.type === "application/gzip" ||
-        selectedFile.name.toLowerCase().endsWith(".gz");
-
-      // Only process if it's an archive AND serveUncompressed is checked
-      if (isArchive && serveUncompressed) {
-        setUploadProgress(0);
-        console.log("Processing archive file before upload");
-        processedFile = await processArchiveFile(selectedFile);
-        console.log("Archive processed, starting upload...");
-      }
-
-      const messageToSign = `${processedFile.name}:${postageBatchId}`;
-      console.log("Message to sign:", messageToSign);
-
-      const signedMessage = await walletClient.signMessage({
-        message: messageToSign, // Just sign the plain string directly
+      await uploadFile({
+        selectedFile,
+        postageBatchId,
+        walletClient,
+        publicClient,
+        address,
+        beeApiUrl,
+        serveUncompressed,
+        isTarFile,
+        isWebpageUpload,
+        setUploadProgress,
+        setStatusMessage,
+        setIsDistributing,
+        setUploadStep,
+        setSelectedDays,
+        setShowOverlay,
+        setIsLoading,
+        setUploadStampInfo,
+        saveUploadReference,
       });
-
-      const baseHeaders: Record<string, string> = {
-        "Content-Type":
-          serveUncompressed && (isTarFile || isArchive)
-            ? "application/x-tar"
-            : processedFile.type,
-        "swarm-postage-batch-id": postageBatchId,
-        "swarm-pin": "false",
-        "swarm-deferred-upload": "false",
-        "registry-address": GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-        "swarm-collection":
-          serveUncompressed && (isTarFile || isArchive) ? "true" : "false",
-      };
-
-      if (!isLocalhost) {
-        baseHeaders["x-upload-signed-message"] = signedMessage;
-        baseHeaders["x-uploader-address"] = address as string;
-        baseHeaders["x-file-name"] = processedFile.name;
-        baseHeaders["x-message-content"] = messageToSign; // Send the original message for verification
-      }
-
-      if (isWebpageUpload && isTarFile) {
-        baseHeaders["Swarm-Index-Document"] = "index.html";
-        baseHeaders["Swarm-Error-Document"] = "error.html";
-      }
-
-      const waitForBatch = async (
-        maxRetries404 = 50,
-        maxRetries422 = 50,
-        retryDelay404 = 3000,
-        retryDelay422 = 3000
-      ): Promise<void> => {
-        // First wait for batch to exist
-        for (let attempt404 = 1; attempt404 <= maxRetries404; attempt404++) {
-          try {
-            console.log(
-              `Checking batch existence, attempt ${attempt404}/${maxRetries404}`
-            );
-            setStatusMessage({
-              step: "404",
-              message: "Searching for storage ID...",
-            });
-
-            const stampStatus = await checkStampStatus(postageBatchId);
-
-            if (stampStatus.exists) {
-              console.log("Batch exists, checking usability");
-
-              // Now wait for batch to become usable
-              for (
-                let attempt422 = 1;
-                attempt422 <= maxRetries422;
-                attempt422++
-              ) {
-                console.log(
-                  `Checking batch usability, attempt ${attempt422}/${maxRetries422}`
-                );
-                setStatusMessage({
-                  step: "422",
-                  message: "Waiting for storage to be usable...",
-                });
-
-                const usabilityStatus = await checkStampStatus(postageBatchId);
-
-                if (usabilityStatus.usable) {
-                  console.log("Batch is usable, ready for upload");
-                  return;
-                }
-
-                console.log(
-                  `Batch not usable yet, waiting ${retryDelay422}ms before next attempt`
-                );
-                await new Promise((resolve) =>
-                  setTimeout(resolve, retryDelay422)
-                );
-              }
-              throw new Error(
-                "Batch never became usable after maximum retries"
-              );
-            }
-
-            console.log(
-              `Batch not found, waiting ${retryDelay404}ms before next attempt`
-            );
-            await new Promise((resolve) => setTimeout(resolve, retryDelay404));
-          } catch (error) {
-            console.error(`Error checking stamps status:`, error);
-            if (attempt404 === maxRetries404) {
-              throw new Error("Batch never found after maximum retries");
-            }
-            await new Promise((resolve) => setTimeout(resolve, retryDelay404));
-          }
-        }
-        throw new Error("Maximum retry attempts reached");
-      };
-
-      // Wait for batch to be ready
-      await waitForBatch();
-
-      // Once batch is ready, proceed with upload
-      console.log("Starting actual file upload");
-      setStatusMessage({
-        step: "Uploading",
-        message: "Uploading file...",
-      });
-
-      const uploadResponse = await uploadLargeFile(
-        processedFile,
-        baseHeaders,
-        `${beeApiUrl}/bzz`
-      );
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed with status ${uploadResponse.status}`);
-      }
-
-      const reference = await uploadResponse.text();
-      const parsedReference = JSON.parse(reference);
-
-      console.log("Upload successful, reference:", parsedReference);
-
-      setStatusMessage({
-        step: "Complete",
-        message: `Upload Successful. Reference: ${parsedReference.reference.slice(
-          0,
-          6
-        )}...${parsedReference.reference.slice(-4)}`,
-        isSuccess: true,
-        reference: parsedReference.reference,
-        filename: processedFile?.name,
-      });
-
-      setUploadStep("complete");
-      setSelectedDays(null);
-      setTimeout(() => {
-        setUploadStep("idle");
-        setShowOverlay(false);
-        setIsLoading(false);
-        setUploadProgress(0);
-        setIsDistributing(false);
-      }, 900000);
-
-      if (parsedReference.reference) {
-        try {
-          const stamp = await checkStampStatus(postageBatchId);
-          
-          // Get the size string directly from STORAGE_OPTIONS mapping
-          const getSizeForDepth = (depth: number): string => {
-            const option = STORAGE_OPTIONS.find((option) => option.depth === depth);
-            return option ? option.size : `${depth} (unknown size)`;
-          };
-          
-          // Get the human-readable total size from the options
-          const totalSizeString = getSizeForDepth(stamp.depth);
-          
-          // Calculate the used and remaining sizes as percentages for display
-          const utilizationPercent = stamp.utilization;
-          
-          // Update state with stamp info
-          setUploadStampInfo({
-            ...stamp,
-            totalSize: totalSizeString,
-            usedSize: `${utilizationPercent.toFixed(1)}%`,
-            remainingSize: `${(100 - utilizationPercent).toFixed(1)}%`,
-            utilizationPercent: utilizationPercent,
-          });
-          
-          saveUploadReference(
-            parsedReference.reference,
-            postageBatchId,
-            stamp.batchTTL,
-            processedFile?.name
-          );
-        } catch (error) {
-          console.error("Failed to get stamp details:", error);
-        }
-      }
     } catch (error) {
-      console.error("Upload error:", error);
+      console.error('Upload error:', error);
       setStatusMessage({
-        step: "Error",
-        message: "Upload failed",
-        error: error instanceof Error ? error.message : "Unknown error",
+        step: 'Error',
+        message: 'Upload failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
         isError: true,
       });
-      setUploadStep("idle");
+      setUploadStep('idle');
       setUploadProgress(0);
       setIsDistributing(false);
     }
@@ -1416,79 +1056,6 @@ const SwapComponent: React.FC = () => {
 
   const handleOpenDropdown = (dropdownName: string) => {
     setActiveDropdown(dropdownName);
-  };
-
-  const isArchiveFile = (filename?: string) => {
-    if (!filename) return false;
-    const archiveExtensions = [".zip", ".tar", ".gz", ".rar", ".7z", ".bz2"];
-    return archiveExtensions.some((ext) =>
-      filename.toLowerCase().endsWith(ext)
-    );
-  };
-
-  useEffect(() => {
-    // Clear any existing timer first
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-
-    // Start a new timer if we have an estimated time and we're in the Route step
-    if (estimatedTime !== null && statusMessage.step === "Route") {
-      console.log("Starting timer with duration:", estimatedTime);
-
-      // Initialize the remaining time if it's not set
-      if (remainingTime === null) {
-        const buffer: number = 10;
-        setRemainingTime(estimatedTime + buffer);
-      }
-
-      // Create the interval
-      timerIntervalRef.current = setInterval(() => {
-        setRemainingTime((prevTime) => {
-          const newTime = prevTime !== null ? prevTime - 1 : 0;
-          // Reduce log frequency to avoid console spam
-          if (newTime % 5 === 0) {
-            console.log("Timer tick, remaining time:", newTime);
-          }
-
-          if (newTime <= 0) {
-            if (timerIntervalRef.current) {
-              clearInterval(timerIntervalRef.current);
-              timerIntervalRef.current = null;
-            }
-            return 0;
-          }
-          return newTime;
-        });
-      }, 1000);
-    }
-
-    // Clean up function
-    return () => {
-      if (timerIntervalRef.current) {
-        console.log("Cleaning up timer");
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    };
-  }, [estimatedTime, statusMessage.step]);
-
-  const formatTime = (seconds: number): string => {
-    if (seconds <= 0) return "0:00";
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-  };
-
-  // 3. Update the reset function to also clear the interval
-  const resetTimer = () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    setEstimatedTime(null);
-    setRemainingTime(null);
   };
 
   // Reset insufficientFunds whenever the selected token changes
@@ -1513,9 +1080,7 @@ const SwapComponent: React.FC = () => {
       <div className={styles.tabContainer}>
         <button
           className={`${styles.tabButton} ${
-            !showHelp && !showStampList && !showUploadHistory
-              ? styles.activeTab
-              : ""
+            !showHelp && !showStampList && !showUploadHistory ? styles.activeTab : ''
           }`}
           onClick={() => {
             setShowHelp(false);
@@ -1526,9 +1091,7 @@ const SwapComponent: React.FC = () => {
           Buy
         </button>
         <button
-          className={`${styles.tabButton} ${
-            showStampList ? styles.activeTab : ""
-          }`}
+          className={`${styles.tabButton} ${showStampList ? styles.activeTab : ''}`}
           onClick={() => {
             setShowHelp(false);
             setShowStampList(true);
@@ -1538,9 +1101,7 @@ const SwapComponent: React.FC = () => {
           Stamps
         </button>
         <button
-          className={`${styles.tabButton} ${
-            showUploadHistory ? styles.activeTab : ""
-          }`}
+          className={`${styles.tabButton} ${showUploadHistory ? styles.activeTab : ''}`}
           onClick={() => {
             setShowHelp(false);
             setShowStampList(false);
@@ -1550,7 +1111,7 @@ const SwapComponent: React.FC = () => {
           History
         </button>
         <button
-          className={`${styles.tabButton} ${showHelp ? styles.activeTab : ""}`}
+          className={`${styles.tabButton} ${showHelp ? styles.activeTab : ''}`}
           onClick={() => {
             setShowHelp(true);
             setShowStampList(false);
@@ -1577,16 +1138,13 @@ const SwapComponent: React.FC = () => {
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
           <div className={styles.inputGroup}>
-            <label 
-              className={styles.label}
-              data-tooltip="Select chain with funds"
-            >
+            <label className={styles.label} data-tooltip="Select chain with funds">
               From chain
             </label>
             <SearchableChainDropdown
               selectedChainId={selectedChainId || ChainId.DAI}
               availableChains={availableChains}
-              onChainSelect={(chainId) => {
+              onChainSelect={chainId => {
                 setSelectedChainId(chainId);
                 switchChain?.({ chainId });
               }}
@@ -1599,10 +1157,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
-              className={styles.label}
-              data-tooltip="Select token you want to spend"
-            >
+            <label className={styles.label} data-tooltip="Select token you want to spend">
               From token
             </label>
             <SearchableTokenDropdown
@@ -1614,18 +1169,18 @@ const SwapComponent: React.FC = () => {
               tokenBalances={tokenBalances}
               selectedTokenInfo={selectedTokenInfo}
               onTokenSelect={(address, token) => {
-                console.log("Token manually selected:", address, token?.symbol);
-                
+                console.log('Token manually selected:', address, token?.symbol);
+
                 // Only reset duration if this is a user-initiated token change (not during initial loading)
                 if (fromToken && address !== fromToken) {
-                  console.log("Resetting duration due to token change");
+                  console.log('Resetting duration due to token change');
                   setSelectedDays(null);
                   setTotalUsdAmount(null);
                   setInsufficientFunds(false);
                   setLiquidityError(false);
                   setIsPriceEstimating(false);
                 }
-                
+
                 setFromToken(address);
                 setSelectedTokenInfo(token);
               }}
@@ -1636,7 +1191,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
             >
@@ -1645,7 +1200,7 @@ const SwapComponent: React.FC = () => {
             <select
               className={styles.select}
               value={selectedDepth}
-              onChange={(e) => handleDepthChange(Number(e.target.value))}
+              onChange={e => handleDepthChange(Number(e.target.value))}
             >
               {STORAGE_OPTIONS.map(({ depth, size }) => (
                 <option key={depth} value={depth}>
@@ -1656,7 +1211,7 @@ const SwapComponent: React.FC = () => {
           </div>
 
           <div className={styles.inputGroup}>
-            <label 
+            <label
               className={styles.label}
               data-tooltip="Duration of storage stamps for which you are paying for"
             >
@@ -1664,14 +1219,14 @@ const SwapComponent: React.FC = () => {
             </label>
             <select
               className={styles.select}
-              value={selectedDays || ""}
-              onChange={(e) => {
+              value={selectedDays || ''}
+              onChange={e => {
                 const value = e.target.value;
-                setSelectedDays(value === "" ? null : Number(value));
+                setSelectedDays(value === '' ? null : Number(value));
               }}
             >
               <option value="">Please select duration</option>
-              {TIME_OPTIONS.map((option) => (
+              {TIME_OPTIONS.map(option => (
                 <option key={option.days} value={option.days}>
                   {option.display}
                 </option>
@@ -1679,60 +1234,54 @@ const SwapComponent: React.FC = () => {
             </select>
           </div>
 
-          {selectedDays &&
-            totalUsdAmount !== null &&
-            Number(totalUsdAmount) !== 0 && (
-              <p className={styles.priceInfo}>
-                {liquidityError
-                  ? "Not enough liquidity for this swap"
-                  : insufficientFunds
-                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
-                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
-              </p>
-            )}
+          {selectedDays && totalUsdAmount !== null && Number(totalUsdAmount) !== 0 && (
+            <p className={styles.priceInfo}>
+              {liquidityError
+                ? 'Not enough liquidity for this swap'
+                : insufficientFunds
+                ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
+            </p>
+          )}
 
           <button
             className={`${styles.button} ${
-              !selectedDays || liquidityError || insufficientFunds ? styles.buttonDisabled : ""
-            } ${isPriceEstimating ? styles.calculatingButton : ""}`}
+              !selectedDays || liquidityError || insufficientFunds ? styles.buttonDisabled : ''
+            } ${isPriceEstimating ? styles.calculatingButton : ''}`}
             disabled={!selectedDays || liquidityError || insufficientFunds || isPriceEstimating}
             onClick={handleSwap}
           >
             {isLoading ? (
               <div>Loading...</div>
             ) : !selectedDays ? (
-              "Choose Timespan"
+              'Choose Timespan'
             ) : isPriceEstimating ? (
-              "Calculating Cost..."
+              'Calculating Cost...'
             ) : liquidityError ? (
               "Cannot Swap - Can't Find Route"
             ) : insufficientFunds ? (
-              "Insufficient Balance"
+              'Insufficient Balance'
             ) : (
-              "Execute Swap"
+              'Execute Swap'
             )}
           </button>
 
           {executionResult && (
-            <pre className={styles.resultBox}>
-              {JSON.stringify(executionResult, null, 2)}
-            </pre>
+            <pre className={styles.resultBox}>{JSON.stringify(executionResult, null, 2)}</pre>
           )}
 
-          {(isLoading || (showOverlay && uploadStep !== "idle")) && (
+          {(isLoading || (showOverlay && uploadStep !== 'idle')) && (
             <div className={styles.overlay}>
               <div
-                className={`${styles.statusBox} ${
-                  statusMessage.isSuccess ? styles.success : ""
-                }`}
+                className={`${styles.statusBox} ${statusMessage.isSuccess ? styles.success : ''}`}
               >
                 {/* Always show close button */}
                 <button
                   className={styles.closeButton}
                   onClick={() => {
                     setShowOverlay(false);
-                    setStatusMessage({ step: "", message: "" });
-                    setUploadStep("idle");
+                    setStatusMessage({ step: '', message: '' });
+                    setUploadStep('idle');
                     setIsLoading(false);
                     setExecutionResult(null);
                     setSelectedFile(null);
@@ -1744,43 +1293,31 @@ const SwapComponent: React.FC = () => {
                   ×
                 </button>
 
-                {!["ready", "uploading"].includes(uploadStep) && (
+                {!['ready', 'uploading'].includes(uploadStep) && (
                   <>
-                    {isLoading && statusMessage.step !== "Complete" && (
+                    {isLoading && statusMessage.step !== 'Complete' && (
                       <div className={styles.spinner}></div>
                     )}
                     <div className={styles.statusMessage}>
-                      <h3
-                        className={
-                          statusMessage.isSuccess ? styles.success : ""
-                        }
-                      >
+                      <h3 className={statusMessage.isSuccess ? styles.success : ''}>
                         {statusMessage.message}
                       </h3>
                       {statusMessage.error && (
-                        <div className={styles.errorMessage}>
-                          {statusMessage.error}
-                        </div>
+                        <div className={styles.errorMessage}>{statusMessage.error}</div>
                       )}
 
                       {remainingTime !== null &&
                         estimatedTime !== null &&
-                        statusMessage.step === "Route" && (
+                        statusMessage.step === 'Route' && (
                           <div className={styles.bridgeTimer}>
-                            <p>
-                              Estimated time remaining:{" "}
-                              {formatTime(remainingTime)}
-                            </p>
+                            <p>Estimated time remaining: {formatTime(remainingTime)}</p>
                             <div className={styles.progressBarContainer}>
                               <div
                                 className={styles.progressBar}
                                 style={{
                                   width: `${Math.max(
                                     0,
-                                    Math.min(
-                                      100,
-                                      (1 - remainingTime / estimatedTime) * 100
-                                    )
+                                    Math.min(100, (1 - remainingTime / estimatedTime) * 100)
                                   )}%`,
                                 }}
                               />
@@ -1791,14 +1328,22 @@ const SwapComponent: React.FC = () => {
                   </>
                 )}
 
-                {["ready", "uploading"].includes(uploadStep) && (
+                {['ready', 'uploading'].includes(uploadStep) && (
                   <div className={styles.uploadBox}>
-                    <h3 className={styles.uploadTitle}>Upload File</h3>
+                    <h3 className={styles.uploadTitle}>
+                      {postageBatchId
+                        ? `Upload to ${
+                            postageBatchId.startsWith('0x')
+                              ? postageBatchId.slice(2, 8)
+                              : postageBatchId.slice(0, 6)
+                          }...${postageBatchId.slice(-4)}`
+                        : 'Upload File'}
+                    </h3>
                     <div className={styles.uploadWarning}>
                       Warning! Upload data is public and can not be removed from the Swarm network
                     </div>
-                    {statusMessage.step === "waiting_creation" ||
-                    statusMessage.step === "waiting_usable" ? (
+                    {statusMessage.step === 'waiting_creation' ||
+                    statusMessage.step === 'waiting_usable' ? (
                       <div className={styles.waitingMessage}>
                         <div className={styles.spinner}></div>
                         <p>{statusMessage.message}</p>
@@ -1808,45 +1353,37 @@ const SwapComponent: React.FC = () => {
                         <div className={styles.fileInputWrapper}>
                           <input
                             type="file"
-                            onChange={(e) => {
+                            onChange={e => {
                               const file = e.target.files?.[0] || null;
                               setSelectedFile(file);
                               setIsTarFile(
-                                file?.name.toLowerCase().endsWith(".tar") ||
-                                  file?.name.toLowerCase().endsWith(".zip") ||
-                                  file?.name.toLowerCase().endsWith(".gz") ||
+                                file?.name.toLowerCase().endsWith('.tar') ||
+                                  file?.name.toLowerCase().endsWith('.zip') ||
+                                  file?.name.toLowerCase().endsWith('.gz') ||
                                   false
                               );
                             }}
                             className={styles.fileInput}
-                            disabled={uploadStep === "uploading"}
+                            disabled={uploadStep === 'uploading'}
                             id="file-upload"
                           />
-                          <label
-                            htmlFor="file-upload"
-                            className={styles.fileInputLabel}
-                          >
-                            {selectedFile ? selectedFile.name : "Choose file"}
+                          <label htmlFor="file-upload" className={styles.fileInputLabel}>
+                            {selectedFile ? selectedFile.name : 'Choose file'}
                           </label>
                         </div>
 
-                        {(selectedFile?.name.toLowerCase().endsWith(".zip") ||
-                          selectedFile?.name.toLowerCase().endsWith(".gz")) && (
+                        {(selectedFile?.name.toLowerCase().endsWith('.zip') ||
+                          selectedFile?.name.toLowerCase().endsWith('.gz')) && (
                           <div className={styles.checkboxWrapper}>
                             <input
                               type="checkbox"
                               id="serve-uncompressed"
                               checked={serveUncompressed}
-                              onChange={(e) =>
-                                setServeUncompressed(e.target.checked)
-                              }
+                              onChange={e => setServeUncompressed(e.target.checked)}
                               className={styles.checkbox}
-                              disabled={uploadStep === "uploading"}
+                              disabled={uploadStep === 'uploading'}
                             />
-                            <label
-                              htmlFor="serve-uncompressed"
-                              className={styles.checkboxLabel}
-                            >
+                            <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
                               Serve uncompressed
                             </label>
                           </div>
@@ -1858,16 +1395,11 @@ const SwapComponent: React.FC = () => {
                               type="checkbox"
                               id="webpage-upload"
                               checked={isWebpageUpload}
-                              onChange={(e) =>
-                                setIsWebpageUpload(e.target.checked)
-                              }
+                              onChange={e => setIsWebpageUpload(e.target.checked)}
                               className={styles.checkbox}
-                              disabled={uploadStep === "uploading"}
+                              disabled={uploadStep === 'uploading'}
                             />
-                            <label
-                              htmlFor="webpage-upload"
-                              className={styles.checkboxLabel}
-                            >
+                            <label htmlFor="webpage-upload" className={styles.checkboxLabel}>
                               Upload as webpage
                             </label>
                           </div>
@@ -1875,27 +1407,27 @@ const SwapComponent: React.FC = () => {
 
                         <button
                           onClick={handleFileUpload}
-                          disabled={!selectedFile || uploadStep === "uploading"}
+                          disabled={!selectedFile || uploadStep === 'uploading'}
                           className={styles.uploadButton}
                         >
-                          {uploadStep === "uploading" ? (
+                          {uploadStep === 'uploading' ? (
                             <>
                               <div className={styles.smallSpinner}></div>
-                              {statusMessage.step === "404"
-                                ? "Searching for batch ID..."
-                                : statusMessage.step === "422"
-                                ? "Waiting for batch to be usable..."
-                                : statusMessage.step === "Uploading"
+                              {statusMessage.step === '404'
+                                ? 'Searching for batch ID...'
+                                : statusMessage.step === '422'
+                                ? 'Waiting for batch to be usable...'
+                                : statusMessage.step === 'Uploading'
                                 ? isDistributing
-                                  ? "Distributing file chunks..."
+                                  ? 'Distributing file chunks...'
                                   : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                : "Processing..."}
+                                : 'Processing...'}
                             </>
                           ) : (
-                            "Upload"
+                            'Upload'
                           )}
                         </button>
-                        {uploadStep === "uploading" && (
+                        {uploadStep === 'uploading' && (
                           <>
                             {!isDistributing ? (
                               // Show the regular progress bar during upload
@@ -1912,56 +1444,24 @@ const SwapComponent: React.FC = () => {
                                 <div className={styles.centerNode}></div>
 
                                 {/* Target nodes (cubes) */}
-                                <div
-                                  className={`${styles.node} ${styles.node1}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node2}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node3}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node4}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node5}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node6}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node7}`}
-                                ></div>
-                                <div
-                                  className={`${styles.node} ${styles.node8}`}
-                                ></div>
+                                <div className={`${styles.node} ${styles.node1}`}></div>
+                                <div className={`${styles.node} ${styles.node2}`}></div>
+                                <div className={`${styles.node} ${styles.node3}`}></div>
+                                <div className={`${styles.node} ${styles.node4}`}></div>
+                                <div className={`${styles.node} ${styles.node5}`}></div>
+                                <div className={`${styles.node} ${styles.node6}`}></div>
+                                <div className={`${styles.node} ${styles.node7}`}></div>
+                                <div className={`${styles.node} ${styles.node8}`}></div>
 
                                 {/* Chunks being distributed */}
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk1}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk2}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk3}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk4}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk5}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk6}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk7}`}
-                                ></div>
-                                <div
-                                  className={`${styles.chunk} ${styles.chunk8}`}
-                                ></div>
+                                <div className={`${styles.chunk} ${styles.chunk1}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk2}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk3}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk4}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk5}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk6}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk7}`}></div>
+                                <div className={`${styles.chunk} ${styles.chunk8}`}></div>
                               </div>
                             )}
                           </>
@@ -1971,17 +1471,17 @@ const SwapComponent: React.FC = () => {
                   </div>
                 )}
 
-                {uploadStep === "complete" && (
+                {uploadStep === 'complete' && (
                   <div className={styles.successMessage}>
                     <div className={styles.successIcon}>✓</div>
                     <h3>Upload Successful!</h3>
                     <div className={styles.referenceBox}>
                       <p>Reference:</p>
                       <div className={styles.referenceCopyWrapper}>
-                        <code 
-                          className={styles.referenceCode} 
+                        <code
+                          className={styles.referenceCode}
                           onClick={() => {
-                            navigator.clipboard.writeText(statusMessage.reference || "");
+                            navigator.clipboard.writeText(statusMessage.reference || '');
                             // Show a temporary "Copied!" message by using a data attribute
                             const codeEl = document.querySelector(`.${styles.referenceCode}`);
                             if (codeEl) {
@@ -2000,17 +1500,17 @@ const SwapComponent: React.FC = () => {
                         <button
                           className={`${styles.referenceLink} ${styles.copyLinkButton}`}
                           onClick={() => {
-                            const url = statusMessage.filename &&
-                              !isArchiveFile(statusMessage.filename)
-                              ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                              : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
+                            const url =
+                              statusMessage.filename && !isArchiveFile(statusMessage.filename)
+                                ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                                : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
                             navigator.clipboard.writeText(url);
-                            
+
                             // Show a temporary message using a more specific selector
                             const button = document.querySelector(`.${styles.copyLinkButton}`);
                             if (button) {
                               const originalText = button.textContent;
-                              button.textContent = "Link copied!";
+                              button.textContent = 'Link copied!';
                               setTimeout(() => {
                                 button.textContent = originalText;
                               }, 2000);
@@ -2021,8 +1521,7 @@ const SwapComponent: React.FC = () => {
                         </button>
                         <a
                           href={
-                            statusMessage.filename &&
-                            !isArchiveFile(statusMessage.filename)
+                            statusMessage.filename && !isArchiveFile(statusMessage.filename)
                               ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
                               : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
                           }
@@ -2034,7 +1533,7 @@ const SwapComponent: React.FC = () => {
                         </a>
                       </div>
                     </div>
-                    
+
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
                         <h4>Storage Stamps Details</h4>
@@ -2057,20 +1556,22 @@ const SwapComponent: React.FC = () => {
                           </div>
                         </div>
                         <div className={styles.utilizationBarContainer}>
-                          <div 
-                            className={styles.utilizationBar} 
-                            style={{ width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%` }}
+                          <div
+                            className={styles.utilizationBar}
+                            style={{
+                              width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%`,
+                            }}
                           ></div>
                         </div>
                       </div>
                     )}
-                    
+
                     <button
                       className={styles.closeSuccessButton}
                       onClick={() => {
                         setShowOverlay(false);
-                        setUploadStep("idle");
-                        setStatusMessage({ step: "", message: "" });
+                        setUploadStep('idle');
+                        setStatusMessage({ step: '', message: '' });
                         setIsLoading(false);
                         setExecutionResult(null);
                         setSelectedFile(null);
@@ -2110,10 +1611,7 @@ const SwapComponent: React.FC = () => {
           setUploadStep={setUploadStep}
         />
       ) : showUploadHistory ? (
-        <UploadHistorySection
-          address={address}
-          setShowUploadHistory={setShowUploadHistory}
-        />
+        <UploadHistorySection address={address} setShowUploadHistory={setShowUploadHistory} />
       ) : null}
     </div>
   );

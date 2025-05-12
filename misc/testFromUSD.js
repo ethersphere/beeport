@@ -1,6 +1,8 @@
 const fetch = require('node-fetch');
 
-const url = 'https://li.quest/v1/quote?' + new URLSearchParams({
+const url =
+  'https://li.quest/v1/quote?' +
+  new URLSearchParams({
     fromChain: '100',
     toChain: '100',
     fromToken: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
@@ -10,17 +12,17 @@ const url = 'https://li.quest/v1/quote?' + new URLSearchParams({
     fromAmount: '200000000',
     slippage: '0.05',
     allowExchanges: 'sushiswap',
-    integrator: 'Swarm'
-});
+    integrator: 'Swarm',
+  });
 
 const options = {
-    method: 'GET',
-    headers: {
-        accept: 'application/json'
-    }
+  method: 'GET',
+  headers: {
+    accept: 'application/json',
+  },
 };
 
 fetch(url, options)
-    .then(res => res.json())
-    .then(json => console.log(json))
-    .catch(err => console.error('Fetch error:', err));
+  .then(res => res.json())
+  .then(json => console.log(json))
+  .catch(err => console.error('Fetch error:', err));

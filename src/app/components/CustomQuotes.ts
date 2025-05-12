@@ -4,27 +4,23 @@ import {
   convertQuoteToRoute,
   ChainId,
   getQuote,
-} from "@lifi/sdk";
-import { parseAbi, encodeFunctionData } from "viem";
+} from '@lifi/sdk';
+import { parseAbi, encodeFunctionData } from 'viem';
 
 import {
   GetGnosisQuoteParams,
   GetCrossChainQuoteParams,
   ToAmountQuoteParams,
   ToAmountQuoteResponse,
-} from "./types";
+} from './types';
 import {
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   LIFI_API_KEY,
   DEFAULT_SLIPPAGE,
   MIN_BRIDGE_USD_VALUE,
-} from "./constants";
+} from './constants';
 
-import {
-  logTokenRoute,
-  performWithRetry,
-  getGnosisPublicClient,
-} from "./utils";
+import { logTokenRoute, performWithRetry, getGnosisPublicClient } from './utils';
 
 /**
  * Checks if gas forwarding is needed and returns the amount to forward
@@ -43,7 +39,7 @@ export const checkGasForwarding = async (
     });
 
     if (balance === 0n) {
-      console.log("No balance on Gnosis, adding gas forwarding");
+      console.log('No balance on Gnosis, adding gas forwarding');
 
       const gasApiUrl = `https://li.quest/v1/gas/suggestion/100?fromChain=${selectedChainId}&fromToken=${fromToken}`;
       const gasResponse = await fetch(gasApiUrl);
@@ -59,15 +55,10 @@ export const checkGasForwarding = async (
         );
       }
     } else {
-      console.log(
-        "User already has balance on Gnosis, no gas forwarding needed"
-      );
+      console.log('User already has balance on Gnosis, no gas forwarding needed');
     }
   } catch (error) {
-    console.error(
-      "Error checking Gnosis balance or fetching gas suggestion:",
-      error
-    );
+    console.error('Error checking Gnosis balance or fetching gas suggestion:', error);
   }
 
   return fromAmountForGas;
@@ -87,7 +78,7 @@ export const getGnosisQuote = async ({
   // Create postage stamp transaction data
   const postagStampTxData = encodeFunctionData({
     abi: parseAbi(swarmConfig.swarmContractAbi),
-    functionName: "createBatchRegistry",
+    functionName: 'createBatchRegistry',
     args: [
       address,
       nodeAddress,
@@ -125,28 +116,21 @@ export const getGnosisQuote = async ({
     gnosisContractCallsQuoteRequest
   );
 
-  console.info(">> Gnosis Calls Quote", gnosisContactCallsQuoteResponse);
-  logTokenRoute(
-    gnosisContactCallsQuoteResponse.includedSteps,
-    "Gnosis Calls Quote"
-  );
+  console.info('>> Gnosis Calls Quote', gnosisContactCallsQuoteResponse);
+  logTokenRoute(gnosisContactCallsQuoteResponse.includedSteps, 'Gnosis Calls Quote');
 
   // Extract the estimated execution duration
   if (setEstimatedTime && gnosisContactCallsQuoteResponse.estimate?.executionDuration) {
-    setEstimatedTime(
-      gnosisContactCallsQuoteResponse.estimate.executionDuration
-    );
+    setEstimatedTime(gnosisContactCallsQuoteResponse.estimate.executionDuration);
     console.log(
-      "Gnosis Estimated Time:",
+      'Gnosis Estimated Time:',
       gnosisContactCallsQuoteResponse.estimate.executionDuration
     );
   }
 
   return {
     gnosisContactCallsQuoteResponse,
-    gnosisContractCallsRoute: convertQuoteToRoute(
-      gnosisContactCallsQuoteResponse
-    ),
+    gnosisContractCallsRoute: convertQuoteToRoute(gnosisContactCallsQuoteResponse),
   };
 };
 
@@ -171,46 +155,33 @@ export const getCrossChainQuote = async ({
     toAmount: toAmount,
   };
 
-  console.log("Fetching toAmount quote for cross-chain transaction...");
+  console.log('Fetching toAmount quote for cross-chain transaction...');
 
   // Try getToAmountContractQuote first, then fall back to getToAmountQuote if it fails
   let toAmountQuoteResponse;
   try {
-    console.log("Trying getToAmountContractQuote first...");
+    console.log('Trying getToAmountContractQuote first...');
     toAmountQuoteResponse = await getToAmountContractQuote(toAmountQuoteParams);
-    console.log("Successfully got quote from getToAmountContractQuote");
+    console.log('Successfully got quote from getToAmountContractQuote');
   } catch (error) {
-    console.warn(
-      "getToAmountContractQuote failed, falling back to getToAmountQuote:",
-      error
-    );
+    console.warn('getToAmountContractQuote failed, falling back to getToAmountQuote:', error);
     try {
-      toAmountQuoteResponse = await getToAmountQuote(
-        toAmountQuoteParams,
-        LIFI_API_KEY
-      );
-      console.log("Successfully got quote from fallback getToAmountQuote");
+      toAmountQuoteResponse = await getToAmountQuote(toAmountQuoteParams, LIFI_API_KEY);
+      console.log('Successfully got quote from fallback getToAmountQuote');
     } catch (fallbackError) {
-      console.error("Both quote methods failed:", fallbackError);
-      throw new Error("Failed to get quote using both methods");
+      console.error('Both quote methods failed:', fallbackError);
+      throw new Error('Failed to get quote using both methods');
     }
   }
 
-  console.info(
-    ">> Initial Cross Chain Quote (toAmount)",
-    toAmountQuoteResponse
-  );
+  console.info('>> Initial Cross Chain Quote (toAmount)', toAmountQuoteResponse);
 
   // Extract the fromAmount from the response
   const requiredFromAmount = toAmountQuoteResponse.estimate.fromAmount;
-  console.log("Required fromAmount:", requiredFromAmount);
+  console.log('Required fromAmount:', requiredFromAmount);
 
   // Check if user has any balance on Gnosis for gas forwarding
-  const gasForwarding = await checkGasForwarding(
-    address as string,
-    selectedChainId,
-    fromToken
-  );
+  const gasForwarding = await checkGasForwarding(address as string, selectedChainId, fromToken);
 
   // Calculate minimum bridge amount in the token's value
   const minCrossChainFromAmount = calculateMinCrossChainFromAmount(toAmountQuoteResponse);
@@ -219,12 +190,11 @@ export const getCrossChainQuote = async ({
   // Ensure we're bridging at least the minimum value
   const requiredAmountBigInt = BigInt(requiredFromAmount) + BigInt(gasForwarding.toString());
   const minBridgeAmountBigInt = BigInt(minCrossChainFromAmount);
-  
+
   // Use the larger of required amount or minimum bridge amount
-  const finalAmount = requiredAmountBigInt > minBridgeAmountBigInt 
-    ? requiredAmountBigInt 
-    : minBridgeAmountBigInt;
-  
+  const finalAmount =
+    requiredAmountBigInt > minBridgeAmountBigInt ? requiredAmountBigInt : minBridgeAmountBigInt;
+
   // Convert to string for the API
   const fromAmountToUse = finalAmount.toString();
   console.log(`Required amount: ${requiredAmountBigInt}, Minimum: ${minBridgeAmountBigInt}`);
@@ -240,37 +210,30 @@ export const getCrossChainQuote = async ({
     toToken: gnosisDestinationToken,
     fromAmountForGas: gasForwarding, // Cant change to to string because of https://github.com/lifinance/sdk/issues/239
     slippage: DEFAULT_SLIPPAGE,
-    order: "FASTEST" as const,
+    order: 'FASTEST' as const,
   };
 
   // Can't comply because of https://github.com/lifinance/sdk/issues/239
   const crossChainContractQuoteResponse = await getQuote(quoteRequest);
 
-  console.info(
-    ">> Cross Chain Quote with Gas Forwarding",
-    crossChainContractQuoteResponse
-  );
+  console.info('>> Cross Chain Quote with Gas Forwarding', crossChainContractQuoteResponse);
   logTokenRoute(
     crossChainContractQuoteResponse.includedSteps,
-    "Cross Chain Quote with Gas Forwarding"
+    'Cross Chain Quote with Gas Forwarding'
   );
 
   // Extract the estimated execution duration
   if (setEstimatedTime && crossChainContractQuoteResponse.estimate?.executionDuration) {
-    setEstimatedTime(
-      crossChainContractQuoteResponse.estimate.executionDuration
-    );
+    setEstimatedTime(crossChainContractQuoteResponse.estimate.executionDuration);
   }
   console.log(
-    "Estimated Bridge Time:",
+    'Estimated Bridge Time:',
     crossChainContractQuoteResponse.estimate?.executionDuration
   );
 
   return {
     crossChainContractQuoteResponse,
-    crossChainContractCallsRoute: convertQuoteToRoute(
-      crossChainContractQuoteResponse
-    ),
+    crossChainContractCallsRoute: convertQuoteToRoute(crossChainContractQuoteResponse),
   };
 };
 
@@ -280,39 +243,39 @@ export const getCrossChainQuote = async ({
 const calculateMinCrossChainFromAmount = (quoteResponse: any): string => {
   // If the response doesn't have USD value info, return a small default amount
   if (!quoteResponse.estimate?.fromAmountUSD || !quoteResponse.estimate?.fromAmount) {
-    return "1000000"; // Small default value
+    return '1000000'; // Small default value
   }
 
   try {
     // Get the USD value and token amount from the quote
     const fromAmountUsd = parseFloat(quoteResponse.estimate.fromAmountUSD);
     const fromAmount = quoteResponse.estimate.fromAmount;
-    
+
     console.log(`Current bridge value: $${fromAmountUsd}, token amount: ${fromAmount}`);
-    
+
     if (fromAmountUsd <= 0) return fromAmount;
-    
+
     // If the current USD value is already >= the minimum, return the original amount
     if (fromAmountUsd >= MIN_BRIDGE_USD_VALUE) {
       console.log(`Current value $${fromAmountUsd} already meets minimum $${MIN_BRIDGE_USD_VALUE}`);
       return fromAmount;
     }
-    
+
     // Calculate how many tokens would equal MIN_BRIDGE_USD_VALUE using BigInt for precision
     // We'll use a scaled ratio approach to maintain precision with BigInt
     const PRECISION = 1000000; // 6 decimal places of precision
     const scaledRatio = Math.ceil((MIN_BRIDGE_USD_VALUE / fromAmountUsd) * PRECISION);
     const fromAmountBigInt = BigInt(fromAmount);
     const minTokenAmount = (fromAmountBigInt * BigInt(scaledRatio)) / BigInt(PRECISION);
-    
+
     console.log(`Current USD value: $${fromAmountUsd}, Target USD value: $${MIN_BRIDGE_USD_VALUE}`);
     console.log(`Ratio: ${scaledRatio / PRECISION}, Original amount: ${fromAmount}`);
     console.log(`Calculated min token amount: ${minTokenAmount}`);
-    
+
     return minTokenAmount.toString();
   } catch (error) {
-    console.error("Error calculating min cross chain amount:", error);
-    return "1000000"; // Fallback value if calculation fails
+    console.error('Error calculating min cross chain amount:', error);
+    return '1000000'; // Fallback value if calculation fails
   }
 };
 
@@ -325,22 +288,21 @@ export const getToAmountQuote = async (
 ): Promise<ToAmountQuoteResponse> => {
   return performWithRetry(
     async () => {
-      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
-        params;
+      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } = params;
       const toAddress = params.toAddress || fromAddress;
 
       const url = `https://li.quest/v1/quote/toAmount?fromChain=${fromChain}&toChain=${toChain}&fromToken=${fromToken}&toToken=${toToken}&fromAddress=${fromAddress}&toAddress=${toAddress}&toAmount=${toAmount}`;
 
       const headers: HeadersInit = {
-        accept: "application/json",
+        accept: 'application/json',
       };
 
       if (apiKey) {
-        headers["x-lifi-api-key"] = apiKey;
+        headers['x-lifi-api-key'] = apiKey;
       }
 
       const options = {
-        method: "GET",
+        method: 'GET',
         headers,
       };
 
@@ -349,22 +311,16 @@ export const getToAmountQuote = async (
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(
-          `HTTP error! Status: ${response.status}, Details: ${errorText}`
-        );
+        throw new Error(`HTTP error! Status: ${response.status}, Details: ${errorText}`);
       }
 
       const data = await response.json();
       return data;
     },
-    "getToAmountQuote",
-    (result) => {
+    'getToAmountQuote',
+    result => {
       // Validate that we have a proper response with the required fields
-      return (
-        result &&
-        result.estimate &&
-        typeof result.estimate.fromAmount === "string"
-      );
+      return result && result.estimate && typeof result.estimate.fromAmount === 'string';
     },
     5, // 5 retries
     500 // 500ms delay between retries
@@ -374,13 +330,10 @@ export const getToAmountQuote = async (
 /**
  * Gets a quote for toAmount with contract calls as a backup method
  */
-export const getToAmountContractQuote = async (
-  params: ToAmountQuoteParams
-): Promise<any> => {
+export const getToAmountContractQuote = async (params: ToAmountQuoteParams): Promise<any> => {
   return performWithRetry(
     async () => {
-      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } =
-        params;
+      const { fromChain, toChain, fromToken, toToken, fromAddress, toAmount } = params;
 
       // Create quote request
       const contractCallsQuoteRequest: ContractCallsQuoteRequest = {
@@ -395,25 +348,19 @@ export const getToAmountContractQuote = async (
       };
 
       console.log(`Getting contract calls quote for toAmount`);
-      console.log("ContractCallsQuoteRequest:", contractCallsQuoteRequest);
+      console.log('ContractCallsQuoteRequest:', contractCallsQuoteRequest);
 
       // Get quote
-      const initialQuoteResponse = await getContractCallsQuote(
-        contractCallsQuoteRequest
-      );
+      const initialQuoteResponse = await getContractCallsQuote(contractCallsQuoteRequest);
 
-      console.info(">> Initial Contract Calls Quote", initialQuoteResponse);
+      console.info('>> Initial Contract Calls Quote', initialQuoteResponse);
 
       return initialQuoteResponse;
     },
-    "getToAmountContractQuote",
-    (result) => {
+    'getToAmountContractQuote',
+    result => {
       // Validate that we have a proper response with the required fields
-      return (
-        result &&
-        result.estimate &&
-        typeof result.estimate.fromAmount === "string"
-      );
+      return result && result.estimate && typeof result.estimate.fromAmount === 'string';
     },
     5, // 5 retries
     500 // 500ms delay between retries
