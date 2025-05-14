@@ -54,10 +54,31 @@
 }
 
 .stampListId {
-  font-weight: bold;
+  font-family: monospace;
+  font-size: 14px;
   margin-bottom: 8px;
-  color: #ffffff;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
   word-break: break-all;
+}
+
+.stampListId:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.stampListId[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+}
+
+.stampListId[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  right: 8px;
+  font-size: 12px;
+  color: #28a745;
 }
 
 .stampListDetails {

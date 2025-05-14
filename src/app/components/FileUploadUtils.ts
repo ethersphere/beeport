@@ -2,7 +2,7 @@ import { type PublicClient } from 'viem';
 import { ExecutionStatus, UploadStep } from './types';
 import { processArchiveFile } from './ArchiveProcessor';
 import { StampInfo } from './types';
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, STORAGE_OPTIONS } from './constants';
+import { STORAGE_OPTIONS } from './constants';
 
 /**
  * Interface for parameters needed for file upload function
