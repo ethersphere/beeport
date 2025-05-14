@@ -1353,7 +1353,7 @@ const SwapComponent: React.FC = () => {
                                 ? 'Waiting for batch to be usable...'
                                 : statusMessage.step === 'Uploading'
                                 ? isDistributing
-                                  ? 'Distributing file chunks...'
+                                  ? `Distributing file chunks... ${uploadProgress.toFixed(1)}%`
                                   : `Uploading... ${uploadProgress.toFixed(1)}%`
                                 : 'Processing...'}
                             </>
@@ -1363,40 +1363,38 @@ const SwapComponent: React.FC = () => {
                         </button>
                         {uploadStep === 'uploading' && (
                           <>
-                            {!isDistributing ? (
-                              // Show the regular progress bar during upload
-                              <div className={styles.progressBarContainer}>
-                                <div
-                                  className={styles.progressBar}
-                                  style={{ width: `${uploadProgress}%` }}
-                                />
-                              </div>
-                            ) : (
-                              // Show the distribution animation when distributing to Swarm
-                              <div className={styles.distributionContainer}>
-                                {/* Center cube (source node) */}
-                                <div className={styles.centerNode}></div>
+                            {/* Show the regular progress bar during upload */}
+                            <div className={styles.progressBarContainer}>
+                              <div
+                                className={styles.progressBar}
+                                style={{ width: `${uploadProgress}%` }}
+                              />
+                            </div>
+                            {/* Show the distribution animation when distributing to Swarm */}
+                            {isDistributing && (<div className={styles.distributionContainer}>
+                              {/* Center cube (source node) */}
+                              <div className={styles.centerNode}></div>
 
-                                {/* Target nodes (cubes) */}
-                                <div className={`${styles.node} ${styles.node1}`}></div>
-                                <div className={`${styles.node} ${styles.node2}`}></div>
-                                <div className={`${styles.node} ${styles.node3}`}></div>
-                                <div className={`${styles.node} ${styles.node4}`}></div>
-                                <div className={`${styles.node} ${styles.node5}`}></div>
-                                <div className={`${styles.node} ${styles.node6}`}></div>
-                                <div className={`${styles.node} ${styles.node7}`}></div>
-                                <div className={`${styles.node} ${styles.node8}`}></div>
+                              {/* Target nodes (cubes) */}
+                              <div className={`${styles.node} ${styles.node1}`}></div>
+                              <div className={`${styles.node} ${styles.node2}`}></div>
+                              <div className={`${styles.node} ${styles.node3}`}></div>
+                              <div className={`${styles.node} ${styles.node4}`}></div>
+                              <div className={`${styles.node} ${styles.node5}`}></div>
+                              <div className={`${styles.node} ${styles.node6}`}></div>
+                              <div className={`${styles.node} ${styles.node7}`}></div>
+                              <div className={`${styles.node} ${styles.node8}`}></div>
 
-                                {/* Chunks being distributed */}
-                                <div className={`${styles.chunk} ${styles.chunk1}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk2}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk3}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk4}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk5}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk6}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk7}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk8}`}></div>
-                              </div>
+                              {/* Chunks being distributed */}
+                              <div className={`${styles.chunk} ${styles.chunk1}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk2}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk3}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk4}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk5}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk6}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk7}`}></div>
+                              <div className={`${styles.chunk} ${styles.chunk8}`}></div>
+                            </div>
                             )}
                           </>
                         )}

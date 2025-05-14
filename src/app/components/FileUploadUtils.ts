@@ -88,7 +88,7 @@ const createTag = async (swarmApiUrl: string): Promise<number> => {
     })
 }
 
-const deleteTag = async (swarmApiUrl: string, tagId: number): Promise<number> => {
+const deleteTag = async (swarmApiUrl: string, tagId: number): Promise<void> => {
   return fetch(`${swarmApiUrl}/tags/${tagId}`, {
     method: 'DELETE',
     headers: {
@@ -99,7 +99,7 @@ const deleteTag = async (swarmApiUrl: string, tagId: number): Promise<number> =>
       if (!response.ok) {
         throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
       }
-      return response.json();
+      return
     })
     .catch(error => {
       console.error('Error deleting tag:', error);
@@ -122,7 +122,7 @@ const progressTag = async (swarmApiUrl: string, tagId: number): Promise<number> 
     })
     .then(data => {
       console.log('Tag progress:', data);
-      return Number(data.split) / (Number(data.synced) + Number(data.seen))
+      return (Number(data.synced) + Number(data.seen)) / Number(data.split)
     })
     .catch(error => {
       console.error('Error deleting tag:', error);
@@ -222,9 +222,11 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
             const pollTagProgress = async () => {
               while (true) {
                 const progress = await progressTag(beeApiUrl, tagId);
+                setUploadProgress(Math.min(99, Math.floor(progress*100)));
                 console.log('distribution progress', progress);
                 if (progress === 1) {
                   deleteTag(beeApiUrl, tagId);
+                  setUploadStep('complete');
                   break;
                 }
                 await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -293,7 +295,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         serveUncompressed && (isTarFile || isArchive) ? 'application/x-tar' : processedFile.type,
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
-      'swarm-deferred-upload': 'false',
+      'swarm-deferred-upload': 'true', // FIXME: https://github.com/ethersphere/bee/issues/5096
       'swarm-collection': serveUncompressed && (isTarFile || isArchive) ? 'true' : 'false',
     };
 
@@ -399,7 +401,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       filename: processedFile?.name,
     });
 
-    setUploadStep('complete');
     setSelectedDays(null);
     setTimeout(() => {
       setUploadStep('idle');
