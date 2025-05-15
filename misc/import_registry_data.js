@@ -46,7 +46,7 @@ async function main() {
 
       // Log the data we're about to send for debugging
       console.log('Batch data:', {
-        owner: batch.owner,
+        owner: batch.payer,
         batchId: batch.batchId,
         totalAmount: batch.totalAmount,
         normalisedBalance: batch.normalisedBalance,
@@ -59,7 +59,7 @@ async function main() {
 
       // Call with correct parameter order based on contract function signature
       const tx = await contract.migrateBatchRegistry(
-        batch.owner, // _owner
+        batch.payer, // _owner (using payer as the owner)
         batch.batchId, // _batchId
         batch.totalAmount, // _totalAmount
         batch.normalisedBalance, // _normalisedBalance
