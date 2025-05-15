@@ -1051,7 +1051,7 @@ const SwapComponent: React.FC = () => {
     // Only run on client-side
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      const stampParam = url.searchParams.get('stamp');
+      const stampParam = url.searchParams.get('topup');
 
       if (stampParam) {
         // Format with 0x prefix for contract call
