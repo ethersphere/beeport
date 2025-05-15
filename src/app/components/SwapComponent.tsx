@@ -1089,7 +1089,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(false);
           }}
         >
-          Buy
+          {isTopUp ? 'Top Up' : 'Buy'}
         </button>
         <button
           className={`${styles.tabButton} ${showStampList ? styles.activeTab : ''}`}
