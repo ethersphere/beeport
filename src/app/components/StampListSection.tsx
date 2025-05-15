@@ -185,14 +185,59 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     <span>Created: {new Date(stamp.timestamp * 1000).toLocaleDateString()}</span>
                   )}
                 </div>
-                <button
-                  className={styles.uploadWithStampButton}
-                  onClick={() => {
-                    handleStampSelect(stamp);
-                  }}
-                >
-                  Upload with these stamps
-                </button>
+                <div className={styles.stampActions}>
+                  <button
+                    className={styles.uploadWithStampButton}
+                    onClick={() => {
+                      handleStampSelect(stamp);
+                    }}
+                  >
+                    Upload with these stamps
+                  </button>
+
+                  <button
+                    className={styles.topUpButton}
+                    title="Top up this stamp"
+                    onClick={() => {
+                      try {
+                        console.log('Top-up button clicked');
+                        // Format the batch ID (ensure no 0x prefix for URL)
+                        const formattedId = stamp.batchId.startsWith('0x')
+                          ? stamp.batchId.slice(2)
+                          : stamp.batchId;
+
+                        // Create the topup URL
+                        const topupUrl = `${window.location.origin}/?topup=${formattedId}`;
+                        console.log('Opening new page:', topupUrl);
+
+                        // Use window.open which forces a completely new page load
+                        // The "_self" ensures it replaces the current page
+                        window.open(topupUrl, '_self');
+                      } catch (error) {
+                        console.error('Error during top-up navigation:', error);
+                        // Emergency fallback if all else fails
+                        alert('Navigation failed. Please copy the stamp ID and use it manually.');
+                      }
+                    }}
+                  >
+                    {/* Plus/Add icon in SVG format */}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <span style={{ marginLeft: '4px' }}>Top Up</span>
+                  </button>
+                </div>
               </div>
             ))}
           </>

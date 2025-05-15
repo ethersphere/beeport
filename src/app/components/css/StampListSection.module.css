@@ -104,8 +104,16 @@
   border: 1px solid #30363d;
 }
 
+.stampActions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 12px;
+  gap: 10px;
+}
+
 .uploadWithStampButton {
-  margin-top: 10px;
+  margin-top: 0;
   padding: 10px 16px;
   background-color: #ff7a00;
   color: white;
@@ -114,7 +122,7 @@
   cursor: pointer;
   font-size: 14px;
   transition: background-color 0.2s;
-  width: 100%;
+  flex: 1;
 }
 
 .uploadWithStampButton:hover {
@@ -124,4 +132,25 @@
 .uploadWithStampButton:disabled {
   background-color: #30363d;
   cursor: not-allowed;
+}
+
+.topUpButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  background-color: #2a4064;
+  color: white;
+  text-decoration: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.topUpButton:hover {
+  background-color: #35507f;
 }
