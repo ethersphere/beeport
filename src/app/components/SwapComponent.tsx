@@ -1046,17 +1046,29 @@ const SwapComponent: React.FC = () => {
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
 
-  // Restore the original URL parameter parsing effect that only runs once on mount
+  // Modified URL parameter parsing to also check for hash fragments
   useEffect(() => {
     // Only run on client-side
     if (typeof window !== 'undefined') {
+      // First check query parameters
       const url = new URL(window.location.href);
       const stampParam = url.searchParams.get('topup');
+
+      // Then check hash fragments (e.g., #topup=batchId)
+      const hash = window.location.hash;
+      const hashMatch = hash.match(/^#topup=([a-fA-F0-9]+)$/);
 
       if (stampParam) {
         // Format with 0x prefix for contract call
         const formattedBatchId = stampParam.startsWith('0x') ? stampParam : `0x${stampParam}`;
-        console.log(`Found stamp ID in URL: ${formattedBatchId}`);
+        console.log(`Found stamp ID in URL query: ${formattedBatchId}`);
+        setTopUpBatchId(formattedBatchId);
+        setIsTopUp(true);
+      } else if (hashMatch && hashMatch[1]) {
+        // Format with 0x prefix for contract call
+        const hashBatchId = hashMatch[1];
+        const formattedBatchId = hashBatchId.startsWith('0x') ? hashBatchId : `0x${hashBatchId}`;
+        console.log(`Found stamp ID in URL hash: ${formattedBatchId}`);
         setTopUpBatchId(formattedBatchId);
         setIsTopUp(true);
       }
