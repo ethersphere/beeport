@@ -116,6 +116,7 @@ export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   swarmContractAbi: [
     'function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
     'function createBatchRegistry(address _owner,  address _nodeAddress, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
+    'function topUpBatch(bytes32 _batchId, uint256 _topupAmountPerChunk) external',
   ],
   swarmBatchInitialBalance: '477774720',
   swarmBatchDepth: '20',

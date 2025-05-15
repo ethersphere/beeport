@@ -101,6 +101,8 @@ const SwapComponent: React.FC = () => {
 
   const [isWalletLoading, setIsWalletLoading] = useState(true);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
+  const [topUpBatchId, setTopUpBatchId] = useState<string | null>(null);
+  const [isTopUp, setIsTopUp] = useState(false);
 
   // Use the token management hook
   const {
@@ -509,42 +511,51 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleDirectBzzTransactions = async () => {
-    if (!publicClient || !walletClient) {
-      console.error('Clients not initialized');
-      setStatusMessage({
-        step: 'Error',
-        message: 'Wallet not connected',
-        isError: true,
-      });
+    // Ensure we have all needed objects and data
+    if (!address || !publicClient || !walletClient) {
+      console.error('Missing required objects for direct BZZ transaction');
       return;
     }
 
     try {
-      const bzzAmount = calculateTotalAmount().toString();
-      console.log('BZZ amount for approval:', bzzAmount);
-
       setStatusMessage({
         step: 'Approval',
-        message: 'Approving BZZ transfer...',
+        message: 'Approving Token...',
       });
 
-      // First transaction: Approve - directly write contract without simulation
-      const approveTxHash = await walletClient.writeContract({
+      // First transaction: Approve token spend
+      const totalAmount = calculateTotalAmount();
+
+      // Get updated nonce for this transaction
+      const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+
+      // Generate specific transaction message based on operation type
+      const operationMsg = isTopUp ? `Topping up batch ${topUpBatchId}...` : 'Buying storage...';
+
+      // First approve the token transfer
+      const approveCallData = {
         address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: parseAbi([
-          'function approve(address spender, uint256 amount) external returns (bool)',
-        ]),
+        abi: [
+          {
+            constant: false,
+            inputs: [
+              { name: '_spender', type: 'address' },
+              { name: '_value', type: 'uint256' },
+            ],
+            name: 'approve',
+            outputs: [{ name: 'success', type: 'bool' }],
+            type: 'function',
+          },
+        ],
         functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`, BigInt(bzzAmount)],
+        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, totalAmount],
         account: address,
-      });
+      };
 
-      console.log('Approve transaction hash:', approveTxHash);
+      console.log('Sending approval tx with args:', approveCallData);
 
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Waiting for approval confirmation...',
-      });
+      const approveTxHash = await walletClient.writeContract(approveCallData);
+      console.log('Approval transaction hash:', approveTxHash);
 
       // Wait for approval transaction to be mined
       const approveReceipt = await publicClient.waitForTransactionReceipt({
@@ -554,67 +565,95 @@ const SwapComponent: React.FC = () => {
       if (approveReceipt.status === 'success') {
         setStatusMessage({
           step: 'Batch',
-          message: 'Buying storage...',
+          message: operationMsg,
         });
 
-        // Use the utility function to generate and update the nonce
-        const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+        // Prepare contract write parameters - different based on operation type
+        let contractWriteParams;
 
-        // Second transaction: Create Batch - directly write contract without simulation
-        const createBatchTxHash = await walletClient.writeContract({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(updatedConfig.swarmContractAbi),
-          functionName: 'createBatchRegistry',
-          args: [
-            address,
-            nodeAddress,
-            updatedConfig.swarmBatchInitialBalance,
-            updatedConfig.swarmBatchDepth,
-            updatedConfig.swarmBatchBucketDepth,
-            updatedConfig.swarmBatchNonce,
-            updatedConfig.swarmBatchImmutable,
-          ],
-          account: address,
-        });
-
-        console.log('Create batch transaction hash:', createBatchTxHash);
-
-        // Wait for create batch transaction to be mined
-        const createBatchReceipt = await publicClient.waitForTransactionReceipt({
-          hash: createBatchTxHash,
-        });
-
-        if (createBatchReceipt.status === 'success') {
-          try {
-            // Batch will be created from registry contract for all cases
-            const batchId = await createBatchId(
+        if (isTopUp && topUpBatchId) {
+          // Top up existing batch
+          contractWriteParams = {
+            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+            abi: parseAbi(updatedConfig.swarmContractAbi),
+            functionName: 'topUpBatch',
+            args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
+            account: address,
+          };
+        } else {
+          // Create new batch
+          contractWriteParams = {
+            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+            abi: parseAbi(updatedConfig.swarmContractAbi),
+            functionName: 'createBatchRegistry',
+            args: [
+              address,
+              nodeAddress,
+              updatedConfig.swarmBatchInitialBalance,
+              updatedConfig.swarmBatchDepth,
+              updatedConfig.swarmBatchBucketDepth,
               updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-              setPostageBatchId
-            );
-            console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+              updatedConfig.swarmBatchImmutable,
+            ],
+            account: address,
+          };
+        }
+
+        console.log('Creating second transaction with params:', contractWriteParams);
+
+        // Execute the batch creation or top-up
+        const batchTxHash = await walletClient.writeContract(contractWriteParams);
+        console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+
+        // Wait for batch transaction to be mined
+        const batchReceipt = await publicClient.waitForTransactionReceipt({
+          hash: batchTxHash,
+        });
+
+        if (batchReceipt.status === 'success') {
+          if (isTopUp) {
+            // For top-up, we already have the batch ID
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId as string);
 
             setStatusMessage({
               step: 'Complete',
-              message: 'Storage Bought Successfully',
+              message: 'Batch Topped Up Successfully',
               isSuccess: true,
             });
             setUploadStep('ready');
-          } catch (error) {
-            console.error('Failed to create batch ID:', error);
-            throw new Error('Failed to create batch ID');
+          } else {
+            try {
+              // For new batch, create the batch ID
+              const batchId = await createBatchId(
+                updatedConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+                setPostageBatchId
+              );
+              console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Storage Bought Successfully',
+                isSuccess: true,
+              });
+              setUploadStep('ready');
+            } catch (error) {
+              console.error('Failed to create batch ID:', error);
+              throw new Error('Failed to create batch ID');
+            }
           }
         } else {
-          throw new Error('Batch creation failed');
+          throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
         }
       } else {
         throw new Error('Approval failed');
       }
     } catch (error) {
-      console.error('Error in direct BZZ transactions:', error);
+      console.error(`Error in direct BZZ transactions: ${error}`);
       setStatusMessage({
         step: 'Error',
-        message: 'Transactionfailed',
+        message: 'Transaction failed',
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         isError: true,
       });
@@ -860,6 +899,13 @@ const SwapComponent: React.FC = () => {
       const bzzAmount = calculateTotalAmount().toString();
       console.log('bzzAmount', bzzAmount);
 
+      // Add transaction type to the logged info
+      console.log(
+        `Initiating ${isTopUp ? 'top-up' : 'new batch'} transaction for ${
+          isTopUp ? `batch ${topUpBatchId}` : 'new batch'
+        }`
+      );
+
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
         selectedChainId !== null &&
@@ -876,6 +922,7 @@ const SwapComponent: React.FC = () => {
         const gnosisSourceToken =
           selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
+        // Pass topUpBatchId to getGnosisQuote when doing a top-up
         const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await getGnosisQuote({
           gnosisSourceToken,
           address,
@@ -883,6 +930,7 @@ const SwapComponent: React.FC = () => {
           nodeAddress,
           swarmConfig: updatedConfig,
           setEstimatedTime,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
         });
 
         // Check are we solving Gnosis chain or other chain Swap
@@ -997,6 +1045,23 @@ const SwapComponent: React.FC = () => {
 
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
+
+  // Restore the original URL parameter parsing effect that only runs once on mount
+  useEffect(() => {
+    // Only run on client-side
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const stampParam = url.searchParams.get('stamp');
+
+      if (stampParam) {
+        // Format with 0x prefix for contract call
+        const formattedBatchId = stampParam.startsWith('0x') ? stampParam : `0x${stampParam}`;
+        console.log(`Found stamp ID in URL: ${formattedBatchId}`);
+        setTopUpBatchId(formattedBatchId);
+        setIsTopUp(true);
+      }
+    }
+  }, []); // Only run once on mount
 
   return (
     <div className={styles.container}>
@@ -1163,8 +1228,8 @@ const SwapComponent: React.FC = () => {
               {liquidityError
                 ? 'Not enough liquidity for this swap'
                 : insufficientFunds
-                ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
-                : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
+                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
             </p>
           )}
 
@@ -1195,6 +1260,8 @@ const SwapComponent: React.FC = () => {
               "Cannot Swap - Can't Find Route"
             ) : insufficientFunds ? (
               'Insufficient Balance'
+            ) : isTopUp ? (
+              'Top Up Batch'
             ) : (
               'Execute Swap'
             )}
@@ -1350,12 +1417,12 @@ const SwapComponent: React.FC = () => {
                               {statusMessage.step === '404'
                                 ? 'Searching for batch ID...'
                                 : statusMessage.step === '422'
-                                ? 'Waiting for batch to be usable...'
-                                : statusMessage.step === 'Uploading'
-                                ? isDistributing
-                                  ? 'Distributing file chunks...'
-                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                : 'Processing...'}
+                                  ? 'Waiting for batch to be usable...'
+                                  : statusMessage.step === 'Uploading'
+                                    ? isDistributing
+                                      ? 'Distributing file chunks...'
+                                      : `Uploading... ${uploadProgress.toFixed(1)}%`
+                                    : 'Processing...'}
                             </>
                           ) : (
                             'Upload'
