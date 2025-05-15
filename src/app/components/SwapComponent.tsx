@@ -486,7 +486,21 @@ const SwapComponent: React.FC = () => {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
-      const totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
+
+      // Calculate total amount based on whether this is a top-up or new batch
+      let totalAmount: bigint;
+      let depthToUse: number;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        depthToUse = originalStampInfo.depth;
+      } else {
+        // For new batches, use the selected depth
+        depthToUse = selectedDepth;
+      }
+
+      totalAmount = totalPricePerDuration * BigInt(2 ** depthToUse);
+
       setSwarmConfig(prev => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
@@ -499,7 +513,19 @@ const SwapComponent: React.FC = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
     const initialPaymentPerChunkPerDay = price * 17280n;
     const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
-    return totalPricePerDuration * BigInt(2 ** selectedDepth);
+
+    // Use the appropriate depth based on whether this is a top-up
+    let depthToUse: number;
+
+    if (isTopUp && originalStampInfo) {
+      // For top-ups, use the original depth from the stamp
+      depthToUse = originalStampInfo.depth;
+    } else {
+      // For new batches, use the selected depth
+      depthToUse = selectedDepth;
+    }
+
+    return totalPricePerDuration * BigInt(2 ** depthToUse);
   };
 
   const handleDepthChange = (newDepth: number) => {
@@ -523,8 +549,32 @@ const SwapComponent: React.FC = () => {
         message: 'Approving Token...',
       });
 
-      // First transaction: Approve token spend
-      const totalAmount = calculateTotalAmount();
+      // Calculate amount based on whether this is a top-up or new batch
+      let totalAmount: bigint;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
+        console.log(
+          'Top-up totalAmount using original depth:',
+          originalStampInfo.depth,
+          totalAmount.toString()
+        );
+
+        // Update swarmBatchInitialBalance for top-up (price per chunk)
+        if (currentPrice !== null && selectedDays) {
+          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+          const pricePerChunkForDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+          setSwarmConfig(prev => ({
+            ...prev,
+            swarmBatchInitialBalance: pricePerChunkForDuration.toString(),
+          }));
+        }
+      } else {
+        // For new batches, use the selected depth
+        totalAmount = calculateTotalAmount();
+        console.log('New batch totalAmount:', totalAmount.toString());
+      }
 
       // Get updated nonce for this transaction
       const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
@@ -896,8 +946,18 @@ const SwapComponent: React.FC = () => {
         message: 'Calculating amounts...',
       });
 
-      const bzzAmount = calculateTotalAmount().toString();
-      console.log('bzzAmount', bzzAmount);
+      // Calculate amount based on whether this is a top-up or new batch
+      let bzzAmount: string;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        bzzAmount = calculateTopUpAmount(originalStampInfo.depth).toString();
+        console.log('Top-up bzzAmount using original depth:', originalStampInfo.depth, bzzAmount);
+      } else {
+        // For new batches, use the selected depth
+        bzzAmount = calculateTotalAmount().toString();
+        console.log('New batch bzzAmount:', bzzAmount);
+      }
 
       // Add transaction type to the logged info
       console.log(
@@ -1046,6 +1106,34 @@ const SwapComponent: React.FC = () => {
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
 
+  // Add this to the state variables near the beginning of the component
+  const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+
+  // Add this effect to fetch stamp info when topUpBatchId is set
+  useEffect(() => {
+    // Only fetch if we have a topUpBatchId and we're in top-up mode
+    if (topUpBatchId && isTopUp) {
+      const getStampInfo = async () => {
+        const stampInfo = await fetchStampInfo(topUpBatchId);
+        if (stampInfo) {
+          console.log('Fetched original stamp info:', stampInfo);
+          setOriginalStampInfo(stampInfo);
+
+          // Update the depth to match the original stamp
+          setSelectedDepth(stampInfo.depth);
+
+          // Lock the depth to the original value since we can't change it for top-ups
+          setSwarmConfig(prev => ({
+            ...prev,
+            swarmBatchDepth: stampInfo.depth.toString(),
+          }));
+        }
+      };
+
+      getStampInfo();
+    }
+  }, [topUpBatchId, isTopUp, beeApiUrl]);
+
   // Modified URL parameter parsing to also check for hash fragments
   useEffect(() => {
     // Only run on client-side
@@ -1074,6 +1162,41 @@ const SwapComponent: React.FC = () => {
       }
     }
   }, []); // Only run once on mount
+
+  // Function to fetch stamp information for a given batchId
+  const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
+    try {
+      // Make sure the batchId doesn't have 0x prefix for the API call
+      const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+
+      const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`Error fetching stamp info for ${batchId}:`, error);
+      return null;
+    }
+  };
+
+  // Calculate amount for topping up an existing batch
+  const calculateTopUpAmount = (originalDepth: number) => {
+    if (currentPrice === null || !selectedDays) return 0n;
+
+    // We use the original depth from the stamp, not the currently selected depth
+    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+
+    // Calculate for the original batch depth
+    return totalPricePerDuration * BigInt(2 ** originalDepth);
+  };
 
   return (
     <div className={styles.container}>
@@ -1202,6 +1325,8 @@ const SwapComponent: React.FC = () => {
               className={styles.select}
               value={selectedDepth}
               onChange={e => handleDepthChange(Number(e.target.value))}
+              disabled={isTopUp}
+              style={isTopUp ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
             >
               {STORAGE_OPTIONS.map(({ depth, size }) => (
                 <option key={depth} value={depth}>
@@ -1209,6 +1334,14 @@ const SwapComponent: React.FC = () => {
                 </option>
               ))}
             </select>
+            {isTopUp && originalStampInfo && (
+              <div className={styles.noteText || ''}>
+                <small>
+                  Cannot change size when topping up existing batch (depth:{' '}
+                  {originalStampInfo.depth})
+                </small>
+              </div>
+            )}
           </div>
 
           <div className={styles.inputGroup}>
