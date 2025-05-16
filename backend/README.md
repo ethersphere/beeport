@@ -47,6 +47,25 @@ server_name swarming.site www.swarming.site;
 
     # Proxy API Requests to Backend for /bzz
     location /bzz {
+
+    # Add CORS headers for development
+    add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag' always;
+    add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+
+    # Handle preflight requests (OPTIONS)
+    if ($request_method = 'OPTIONS') {
+        add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag' always;
+        add_header 'Access-Control-Max-Age' 1728000;
+        add_header 'Content-Type' 'text/plain; charset=utf-8';
+        add_header 'Content-Length' 0;
+        return 204;
+    }
+
+
         proxy_pass http://localhost:3333;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -65,11 +84,10 @@ server_name swarming.site www.swarming.site;
 
     # Proxy /stamps to Bee node
     location /stamps {
-        # Add CORS headers
+
     add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
-    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-    add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
 
     # Handle preflight requests (OPTIONS)
     if ($request_method = 'OPTIONS') {
@@ -98,11 +116,10 @@ server_name swarming.site www.swarming.site;
 
     # Proxy /wallet to Bee node
     location /wallet {
-    # Add CORS headers
+
     add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
-    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-    add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
 
     # Handle preflight requests (OPTIONS)
     if ($request_method = 'OPTIONS') {
@@ -115,6 +132,38 @@ server_name swarming.site www.swarming.site;
         return 204;
     }
 
+        proxy_pass http://localhost:1633;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 0;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Proxy /tags to Bee node
+    location /tags {
+
+    add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-tag' always;
+
+    # Handle preflight requests (OPTIONS)
+    if ($request_method = 'OPTIONS') {
+        add_header 'Access-Control-Allow-Origin' 'http://localhost:3000' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-tag' always;
+        add_header 'Access-Control-Max-Age' 1728000;
+        add_header 'Content-Type' 'text/plain; charset=utf-8';
+        add_header 'Content-Length' 0;
+        return 204;
+    }
         proxy_pass http://localhost:1633;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

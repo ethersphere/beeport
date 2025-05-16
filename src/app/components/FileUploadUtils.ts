@@ -68,6 +68,68 @@ interface StampResponse {
   batchTTL: number;
 }
 
+const createTag = async (swarmApiUrl: string): Promise<number> => {
+  return fetch(`${swarmApiUrl}/tags`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(data => data.uid)
+    .catch(error => {
+      console.error('Error creating tag:', error);
+      throw error;
+    })
+}
+
+const deleteTag = async (swarmApiUrl: string, tagId: number): Promise<void> => {
+  return fetch(`${swarmApiUrl}/tags/${tagId}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+      }
+      return
+    })
+    .catch(error => {
+      console.error('Error deleting tag:', error);
+      throw error;
+    })
+}
+
+const progressTag = async (swarmApiUrl: string, tagId: number): Promise<number> => {
+  return fetch(`${swarmApiUrl}/tags/${tagId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Tag progress:', data);
+      return (Number(data.synced) + Number(data.seen)) / Number(data.split)
+    })
+    .catch(error => {
+      console.error('Error deleting tag:', error);
+      throw error;
+    })
+}
+
 /**
  * Handle the file upload process
  * @param params Parameters for file upload
@@ -125,13 +187,17 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
   const uploadLargeFile = async (
     file: File,
     headers: Record<string, string>,
-    baseUrl: string
+    beeApiUrl: string
   ): Promise<XHRResponse> => {
-    console.log('Starting file upload...');
+    console.log("Starting file upload...");
+    const tagId = await createTag(beeApiUrl);
+    console.log("Tag created with ID:", tagId);
+    headers["Swarm-Tag"] = tagId.toString();
+    console.log("Headers with tag:", headers);
 
     // Add the filename as a query parameter
-    const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
-    console.log('Upload URL with filename:', url);
+    const url = `${beeApiUrl}/bzz?name=${encodeURIComponent(file.name)}`;
+    console.log("Upload URL with filename:", url);
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -152,30 +218,48 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
           if (percent === 100) {
             setIsDistributing(true);
+            // poll tagid progress and then delete tag
+            const pollTagProgress = async () => {
+              while (true) {
+                const progress = await progressTag(beeApiUrl, tagId);
+                setUploadProgress(isNaN(progress) ? 0 : Math.min(99, Math.floor(progress*100)));
+                console.log('distribution progress', progress);
+                if (progress === 1) {
+                  deleteTag(beeApiUrl, tagId);
+
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    setUploadProgress(100);
+                  }
+                  console.log(`Upload completed with status: ${xhr.status}`);
+                  resolve({
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    status: xhr.status,
+                    text: () => Promise.resolve(xhr.responseText),
+                  });
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+            };
+            pollTagProgress();
           }
         }
       };
 
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadProgress(100);
-        }
         console.log(`Upload completed with status: ${xhr.status}`);
-        resolve({
-          ok: xhr.status >= 200 && xhr.status < 300,
-          status: xhr.status,
-          text: () => Promise.resolve(xhr.responseText),
-        });
       };
 
-      xhr.onerror = e => {
-        console.error('XHR Error:', e);
-        reject(new Error('Network request failed'));
+      xhr.onerror = (e) => {
+        console.error("XHR Error:", e);
+        deleteTag(beeApiUrl, tagId);
+        reject(new Error("Network request failed"));
       };
 
       xhr.ontimeout = () => {
-        console.error('Upload timed out');
-        reject(new Error('Upload timed out'));
+        console.error("Upload timed out");
+        deleteTag(beeApiUrl, tagId);
+        reject(new Error("Upload timed out"));
       };
 
       console.log('Sending file:', file.name, file.size);
@@ -212,7 +296,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         serveUncompressed && (isTarFile || isArchive) ? 'application/x-tar' : processedFile.type,
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
-      'swarm-deferred-upload': 'false',
+      'swarm-deferred-upload': 'true', // FIXME: https://github.com/ethersphere/bee/issues/5096
       'swarm-collection': serveUncompressed && (isTarFile || isArchive) ? 'true' : 'false',
     };
 
@@ -292,7 +376,11 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       message: 'Uploading file...',
     });
 
-    const uploadResponse = await uploadLargeFile(processedFile, baseHeaders, `${beeApiUrl}/bzz`);
+    const uploadResponse = await uploadLargeFile(
+      processedFile,
+      baseHeaders,
+      beeApiUrl
+    );
 
     if (!uploadResponse.ok) {
       throw new Error(`Upload failed with status ${uploadResponse.status}`);
