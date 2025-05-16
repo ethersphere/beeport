@@ -222,11 +222,20 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
             const pollTagProgress = async () => {
               while (true) {
                 const progress = await progressTag(beeApiUrl, tagId);
-                setUploadProgress(Math.min(99, Math.floor(progress*100)));
+                setUploadProgress(isNaN(progress) ? 0 : Math.min(99, Math.floor(progress*100)));
                 console.log('distribution progress', progress);
                 if (progress === 1) {
                   deleteTag(beeApiUrl, tagId);
-                  setUploadStep('complete');
+
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    setUploadProgress(100);
+                  }
+                  console.log(`Upload completed with status: ${xhr.status}`);
+                  resolve({
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    status: xhr.status,
+                    text: () => Promise.resolve(xhr.responseText),
+                  });
                   break;
                 }
                 await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -238,15 +247,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       };
 
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadProgress(100);
-        }
         console.log(`Upload completed with status: ${xhr.status}`);
-        resolve({
-          ok: xhr.status >= 200 && xhr.status < 300,
-          status: xhr.status,
-          text: () => Promise.resolve(xhr.responseText),
-        });
       };
 
       xhr.onerror = (e) => {
@@ -401,6 +402,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       filename: processedFile?.name,
     });
 
+    setUploadStep('complete');
     setSelectedDays(null);
     setTimeout(() => {
       setUploadStep('idle');
