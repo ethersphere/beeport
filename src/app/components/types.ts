@@ -37,6 +37,7 @@ export interface GetGnosisQuoteParams {
   nodeAddress: string;
   swarmConfig: any;
   setEstimatedTime?: (time: number) => void;
+  topUpBatchId?: string;
 }
 
 export interface GetCrossChainQuoteParams {

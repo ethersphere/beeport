@@ -74,21 +74,35 @@ export const getGnosisQuote = async ({
   nodeAddress,
   swarmConfig,
   setEstimatedTime,
+  topUpBatchId,
 }: GetGnosisQuoteParams & { setEstimatedTime: (time: number) => void }) => {
-  // Create postage stamp transaction data
-  const postagStampTxData = encodeFunctionData({
-    abi: parseAbi(swarmConfig.swarmContractAbi),
-    functionName: 'createBatchRegistry',
-    args: [
-      address,
-      nodeAddress,
-      swarmConfig.swarmBatchInitialBalance,
-      swarmConfig.swarmBatchDepth,
-      swarmConfig.swarmBatchBucketDepth,
-      swarmConfig.swarmBatchNonce,
-      swarmConfig.swarmBatchImmutable,
-    ],
-  });
+  // Determine if we're doing a top-up or creating a new batch
+  let postagStampTxData;
+
+  if (topUpBatchId) {
+    // If topUpBatchId is provided, we're topping up an existing batch
+    console.log(`Creating top-up transaction for batch: ${topUpBatchId}`);
+    postagStampTxData = encodeFunctionData({
+      abi: parseAbi(swarmConfig.swarmContractAbi),
+      functionName: 'topUpBatch',
+      args: [topUpBatchId as `0x${string}`, swarmConfig.swarmBatchInitialBalance],
+    });
+  } else {
+    // Otherwise, use the original createBatchRegistry function
+    postagStampTxData = encodeFunctionData({
+      abi: parseAbi(swarmConfig.swarmContractAbi),
+      functionName: 'createBatchRegistry',
+      args: [
+        address,
+        nodeAddress,
+        swarmConfig.swarmBatchInitialBalance,
+        swarmConfig.swarmBatchDepth,
+        swarmConfig.swarmBatchBucketDepth,
+        swarmConfig.swarmBatchNonce,
+        swarmConfig.swarmBatchImmutable,
+      ],
+    });
+  }
 
   // Create quote request
   const gnosisContractCallsQuoteRequest: ContractCallsQuoteRequest = {

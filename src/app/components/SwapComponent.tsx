@@ -101,6 +101,8 @@ const SwapComponent: React.FC = () => {
 
   const [isWalletLoading, setIsWalletLoading] = useState(true);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
+  const [topUpBatchId, setTopUpBatchId] = useState<string | null>(null);
+  const [isTopUp, setIsTopUp] = useState(false);
 
   // Use the token management hook
   const {
@@ -484,7 +486,21 @@ const SwapComponent: React.FC = () => {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
-      const totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
+
+      // Calculate total amount based on whether this is a top-up or new batch
+      let totalAmount: bigint;
+      let depthToUse: number;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        depthToUse = originalStampInfo.depth;
+      } else {
+        // For new batches, use the selected depth
+        depthToUse = selectedDepth;
+      }
+
+      totalAmount = totalPricePerDuration * BigInt(2 ** depthToUse);
+
       setSwarmConfig(prev => ({
         ...prev,
         swarmBatchInitialBalance: totalPricePerDuration.toString(),
@@ -497,7 +513,19 @@ const SwapComponent: React.FC = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
     const initialPaymentPerChunkPerDay = price * 17280n;
     const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
-    return totalPricePerDuration * BigInt(2 ** selectedDepth);
+
+    // Use the appropriate depth based on whether this is a top-up
+    let depthToUse: number;
+
+    if (isTopUp && originalStampInfo) {
+      // For top-ups, use the original depth from the stamp
+      depthToUse = originalStampInfo.depth;
+    } else {
+      // For new batches, use the selected depth
+      depthToUse = selectedDepth;
+    }
+
+    return totalPricePerDuration * BigInt(2 ** depthToUse);
   };
 
   const handleDepthChange = (newDepth: number) => {
@@ -509,42 +537,75 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleDirectBzzTransactions = async () => {
-    if (!publicClient || !walletClient) {
-      console.error('Clients not initialized');
-      setStatusMessage({
-        step: 'Error',
-        message: 'Wallet not connected',
-        isError: true,
-      });
+    // Ensure we have all needed objects and data
+    if (!address || !publicClient || !walletClient) {
+      console.error('Missing required objects for direct BZZ transaction');
       return;
     }
 
     try {
-      const bzzAmount = calculateTotalAmount().toString();
-      console.log('BZZ amount for approval:', bzzAmount);
-
       setStatusMessage({
         step: 'Approval',
-        message: 'Approving BZZ transfer...',
+        message: 'Approving Token...',
       });
 
-      // First transaction: Approve - directly write contract without simulation
-      const approveTxHash = await walletClient.writeContract({
+      // Calculate amount based on whether this is a top-up or new batch
+      let totalAmount: bigint;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
+        console.log(
+          'Top-up totalAmount using original depth:',
+          originalStampInfo.depth,
+          totalAmount.toString()
+        );
+
+        // Update swarmBatchInitialBalance for top-up (price per chunk)
+        if (currentPrice !== null && selectedDays) {
+          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+          const pricePerChunkForDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+          setSwarmConfig(prev => ({
+            ...prev,
+            swarmBatchInitialBalance: pricePerChunkForDuration.toString(),
+          }));
+        }
+      } else {
+        // For new batches, use the selected depth
+        totalAmount = calculateTotalAmount();
+        console.log('New batch totalAmount:', totalAmount.toString());
+      }
+
+      // Get updated nonce for this transaction
+      const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+
+      // Generate specific transaction message based on operation type
+      const operationMsg = isTopUp ? `Topping up batch ${topUpBatchId}...` : 'Buying storage...';
+
+      // First approve the token transfer
+      const approveCallData = {
         address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: parseAbi([
-          'function approve(address spender, uint256 amount) external returns (bool)',
-        ]),
+        abi: [
+          {
+            constant: false,
+            inputs: [
+              { name: '_spender', type: 'address' },
+              { name: '_value', type: 'uint256' },
+            ],
+            name: 'approve',
+            outputs: [{ name: 'success', type: 'bool' }],
+            type: 'function',
+          },
+        ],
         functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`, BigInt(bzzAmount)],
+        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, totalAmount],
         account: address,
-      });
+      };
 
-      console.log('Approve transaction hash:', approveTxHash);
+      console.log('Sending approval tx with args:', approveCallData);
 
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Waiting for approval confirmation...',
-      });
+      const approveTxHash = await walletClient.writeContract(approveCallData);
+      console.log('Approval transaction hash:', approveTxHash);
 
       // Wait for approval transaction to be mined
       const approveReceipt = await publicClient.waitForTransactionReceipt({
@@ -554,67 +615,95 @@ const SwapComponent: React.FC = () => {
       if (approveReceipt.status === 'success') {
         setStatusMessage({
           step: 'Batch',
-          message: 'Buying storage...',
+          message: operationMsg,
         });
 
-        // Use the utility function to generate and update the nonce
-        const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+        // Prepare contract write parameters - different based on operation type
+        let contractWriteParams;
 
-        // Second transaction: Create Batch - directly write contract without simulation
-        const createBatchTxHash = await walletClient.writeContract({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(updatedConfig.swarmContractAbi),
-          functionName: 'createBatchRegistry',
-          args: [
-            address,
-            nodeAddress,
-            updatedConfig.swarmBatchInitialBalance,
-            updatedConfig.swarmBatchDepth,
-            updatedConfig.swarmBatchBucketDepth,
-            updatedConfig.swarmBatchNonce,
-            updatedConfig.swarmBatchImmutable,
-          ],
-          account: address,
-        });
-
-        console.log('Create batch transaction hash:', createBatchTxHash);
-
-        // Wait for create batch transaction to be mined
-        const createBatchReceipt = await publicClient.waitForTransactionReceipt({
-          hash: createBatchTxHash,
-        });
-
-        if (createBatchReceipt.status === 'success') {
-          try {
-            // Batch will be created from registry contract for all cases
-            const batchId = await createBatchId(
+        if (isTopUp && topUpBatchId) {
+          // Top up existing batch
+          contractWriteParams = {
+            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+            abi: parseAbi(updatedConfig.swarmContractAbi),
+            functionName: 'topUpBatch',
+            args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
+            account: address,
+          };
+        } else {
+          // Create new batch
+          contractWriteParams = {
+            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+            abi: parseAbi(updatedConfig.swarmContractAbi),
+            functionName: 'createBatchRegistry',
+            args: [
+              address,
+              nodeAddress,
+              updatedConfig.swarmBatchInitialBalance,
+              updatedConfig.swarmBatchDepth,
+              updatedConfig.swarmBatchBucketDepth,
               updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-              setPostageBatchId
-            );
-            console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+              updatedConfig.swarmBatchImmutable,
+            ],
+            account: address,
+          };
+        }
+
+        console.log('Creating second transaction with params:', contractWriteParams);
+
+        // Execute the batch creation or top-up
+        const batchTxHash = await walletClient.writeContract(contractWriteParams);
+        console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+
+        // Wait for batch transaction to be mined
+        const batchReceipt = await publicClient.waitForTransactionReceipt({
+          hash: batchTxHash,
+        });
+
+        if (batchReceipt.status === 'success') {
+          if (isTopUp) {
+            // For top-up, we already have the batch ID
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId as string);
 
             setStatusMessage({
               step: 'Complete',
-              message: 'Storage Bought Successfully',
+              message: 'Batch Topped Up Successfully',
               isSuccess: true,
             });
             setUploadStep('ready');
-          } catch (error) {
-            console.error('Failed to create batch ID:', error);
-            throw new Error('Failed to create batch ID');
+          } else {
+            try {
+              // For new batch, create the batch ID
+              const batchId = await createBatchId(
+                updatedConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+                setPostageBatchId
+              );
+              console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Storage Bought Successfully',
+                isSuccess: true,
+              });
+              setUploadStep('ready');
+            } catch (error) {
+              console.error('Failed to create batch ID:', error);
+              throw new Error('Failed to create batch ID');
+            }
           }
         } else {
-          throw new Error('Batch creation failed');
+          throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
         }
       } else {
         throw new Error('Approval failed');
       }
     } catch (error) {
-      console.error('Error in direct BZZ transactions:', error);
+      console.error(`Error in direct BZZ transactions: ${error}`);
       setStatusMessage({
         step: 'Error',
-        message: 'Transactionfailed',
+        message: 'Transaction failed',
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         isError: true,
       });
@@ -857,8 +946,25 @@ const SwapComponent: React.FC = () => {
         message: 'Calculating amounts...',
       });
 
-      const bzzAmount = calculateTotalAmount().toString();
-      console.log('bzzAmount', bzzAmount);
+      // Calculate amount based on whether this is a top-up or new batch
+      let bzzAmount: string;
+
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        bzzAmount = calculateTopUpAmount(originalStampInfo.depth).toString();
+        console.log('Top-up bzzAmount using original depth:', originalStampInfo.depth, bzzAmount);
+      } else {
+        // For new batches, use the selected depth
+        bzzAmount = calculateTotalAmount().toString();
+        console.log('New batch bzzAmount:', bzzAmount);
+      }
+
+      // Add transaction type to the logged info
+      console.log(
+        `Initiating ${isTopUp ? 'top-up' : 'new batch'} transaction for ${
+          isTopUp ? `batch ${topUpBatchId}` : 'new batch'
+        }`
+      );
 
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
@@ -876,6 +982,7 @@ const SwapComponent: React.FC = () => {
         const gnosisSourceToken =
           selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
+        // Pass topUpBatchId to getGnosisQuote when doing a top-up
         const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await getGnosisQuote({
           gnosisSourceToken,
           address,
@@ -883,6 +990,7 @@ const SwapComponent: React.FC = () => {
           nodeAddress,
           swarmConfig: updatedConfig,
           setEstimatedTime,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
         });
 
         // Check are we solving Gnosis chain or other chain Swap
@@ -998,6 +1106,98 @@ const SwapComponent: React.FC = () => {
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
 
+  // Add this to the state variables near the beginning of the component
+  const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+
+  // Add this effect to fetch stamp info when topUpBatchId is set
+  useEffect(() => {
+    // Only fetch if we have a topUpBatchId and we're in top-up mode
+    if (topUpBatchId && isTopUp) {
+      const getStampInfo = async () => {
+        const stampInfo = await fetchStampInfo(topUpBatchId);
+        if (stampInfo) {
+          console.log('Fetched original stamp info:', stampInfo);
+          setOriginalStampInfo(stampInfo);
+
+          // Update the depth to match the original stamp
+          setSelectedDepth(stampInfo.depth);
+
+          // Lock the depth to the original value since we can't change it for top-ups
+          setSwarmConfig(prev => ({
+            ...prev,
+            swarmBatchDepth: stampInfo.depth.toString(),
+          }));
+        }
+      };
+
+      getStampInfo();
+    }
+  }, [topUpBatchId, isTopUp, beeApiUrl]);
+
+  // Modified URL parameter parsing to also check for hash fragments
+  useEffect(() => {
+    // Only run on client-side
+    if (typeof window !== 'undefined') {
+      // First check query parameters
+      const url = new URL(window.location.href);
+      const stampParam = url.searchParams.get('topup');
+
+      // Then check hash fragments (e.g., #topup=batchId)
+      const hash = window.location.hash;
+      const hashMatch = hash.match(/^#topup=([a-fA-F0-9]+)$/);
+
+      if (stampParam) {
+        // Format with 0x prefix for contract call
+        const formattedBatchId = stampParam.startsWith('0x') ? stampParam : `0x${stampParam}`;
+        console.log(`Found stamp ID in URL query: ${formattedBatchId}`);
+        setTopUpBatchId(formattedBatchId);
+        setIsTopUp(true);
+      } else if (hashMatch && hashMatch[1]) {
+        // Format with 0x prefix for contract call
+        const hashBatchId = hashMatch[1];
+        const formattedBatchId = hashBatchId.startsWith('0x') ? hashBatchId : `0x${hashBatchId}`;
+        console.log(`Found stamp ID in URL hash: ${formattedBatchId}`);
+        setTopUpBatchId(formattedBatchId);
+        setIsTopUp(true);
+      }
+    }
+  }, []); // Only run once on mount
+
+  // Function to fetch stamp information for a given batchId
+  const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
+    try {
+      // Make sure the batchId doesn't have 0x prefix for the API call
+      const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+
+      const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`Error fetching stamp info for ${batchId}:`, error);
+      return null;
+    }
+  };
+
+  // Calculate amount for topping up an existing batch
+  const calculateTopUpAmount = (originalDepth: number) => {
+    if (currentPrice === null || !selectedDays) return 0n;
+
+    // We use the original depth from the stamp, not the currently selected depth
+    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+
+    // Calculate for the original batch depth
+    return totalPricePerDuration * BigInt(2 ** originalDepth);
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.betaBadge}>BETA</div>
@@ -1012,7 +1212,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(false);
           }}
         >
-          Buy
+          {isTopUp ? 'Top Up' : 'Buy'}
         </button>
         <button
           className={`${styles.tabButton} ${showStampList ? styles.activeTab : ''}`}
@@ -1125,6 +1325,8 @@ const SwapComponent: React.FC = () => {
               className={styles.select}
               value={selectedDepth}
               onChange={e => handleDepthChange(Number(e.target.value))}
+              disabled={isTopUp}
+              style={isTopUp ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
             >
               {STORAGE_OPTIONS.map(({ depth, size }) => (
                 <option key={depth} value={depth}>
@@ -1132,6 +1334,14 @@ const SwapComponent: React.FC = () => {
                 </option>
               ))}
             </select>
+            {isTopUp && originalStampInfo && (
+              <div className={styles.noteText || ''}>
+                <small>
+                  Cannot change size when topping up existing batch (depth:{' '}
+                  {originalStampInfo.depth})
+                </small>
+              </div>
+            )}
           </div>
 
           <div className={styles.inputGroup}>
@@ -1163,8 +1373,8 @@ const SwapComponent: React.FC = () => {
               {liquidityError
                 ? 'Not enough liquidity for this swap'
                 : insufficientFunds
-                ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
-                : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
+                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
             </p>
           )}
 
@@ -1195,6 +1405,8 @@ const SwapComponent: React.FC = () => {
               "Cannot Swap - Can't Find Route"
             ) : insufficientFunds ? (
               'Insufficient Balance'
+            ) : isTopUp ? (
+              'Top Up Batch'
             ) : (
               'Execute Swap'
             )}
@@ -1350,12 +1562,12 @@ const SwapComponent: React.FC = () => {
                               {statusMessage.step === '404'
                                 ? 'Searching for batch ID...'
                                 : statusMessage.step === '422'
-                                ? 'Waiting for batch to be usable...'
-                                : statusMessage.step === 'Uploading'
-                                ? isDistributing
-                                  ? 'Distributing file chunks...'
-                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                : 'Processing...'}
+                                  ? 'Waiting for batch to be usable...'
+                                  : statusMessage.step === 'Uploading'
+                                    ? isDistributing
+                                      ? 'Distributing file chunks...'
+                                      : `Uploading... ${uploadProgress.toFixed(1)}%`
+                                    : 'Processing...'}
                             </>
                           ) : (
                             'Upload'
