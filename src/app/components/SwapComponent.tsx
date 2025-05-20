@@ -488,7 +488,6 @@ const SwapComponent: React.FC = () => {
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
 
       // Calculate total amount based on whether this is a top-up or new batch
-      let totalAmount: bigint;
       let depthToUse: number;
 
       if (isTopUp && originalStampInfo) {
@@ -499,7 +498,7 @@ const SwapComponent: React.FC = () => {
         depthToUse = selectedDepth;
       }
 
-      totalAmount = totalPricePerDuration * BigInt(2 ** depthToUse);
+      const totalAmount = totalPricePerDuration * BigInt(2 ** depthToUse);
 
       setSwarmConfig(prev => ({
         ...prev,
