@@ -579,7 +579,11 @@ const SwapComponent: React.FC = () => {
       const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
       // Generate specific transaction message based on operation type
-      const operationMsg = isTopUp ? `Topping up batch ${topUpBatchId}...` : 'Buying storage...';
+      const operationMsg = isTopUp
+        ? `Topping up batch ${
+            topUpBatchId?.startsWith('0x') ? topUpBatchId.slice(2, 8) : topUpBatchId?.slice(0, 6)
+          }...${topUpBatchId?.slice(-4)}`
+        : 'Buying storage...';
 
       // First approve the token transfer
       const approveCallData = {
