@@ -5,6 +5,24 @@
   overflow: hidden;
 }
 
+/* Swarm logo styling */
+.swarmLogo {
+  height: 2rem;
+  fill: currentColor;
+}
+
+/* Hide the text part of the Swarm logo on mobile */
+@media (max-width: 480px) {
+  .swarmLogo g {
+    display: none;
+  }
+  
+  /* Make the hexagon icon slightly larger to compensate */
+  .swarmLogo {
+    height: 2.2rem;
+  }
+}
+
 .videoContainer {
   position: absolute;
   top: 0;

@@ -33,8 +33,7 @@ export default function SwapPage() {
             }}
           >
             <svg
-              className="h-8"
-              style={{ height: '2rem', fill: 'currentColor' }}
+              className={styles.swarmLogo}
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 4222.16 1115"
             >

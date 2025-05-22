@@ -23,6 +23,29 @@
   z-index: 10;
 }
 
+/* Add media query for mobile screens */
+@media (max-width: 480px) {
+  .betaBadge {
+    position: absolute;
+    top: -10px;
+    right: 10px; /* Adjusted position */
+  }
+  
+  .container {
+    padding: 25px 15px; /* Slightly reduced padding on small screens */
+    margin-top: 20px; /* Add top margin on mobile as requested */
+  }
+  
+  .tabContainer {
+    margin: 0 -5px; /* Give a bit more breathing room */
+  }
+  
+  .tabButton {
+    padding: 8px 5px; /* Smaller padding on tabs for mobile */
+    font-size: 14px;
+  }
+}
+
 .title {
   text-align: center;
   color: #333;
