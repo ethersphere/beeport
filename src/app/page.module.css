@@ -21,6 +21,16 @@
   .swarmLogo {
     height: 2.2rem;
   }
+  
+  /* Hide background video on mobile to improve performance */
+  .backgroundVideo {
+    display: none;
+  }
+  
+  /* Add a solid background instead of the video */
+  .videoContainer {
+    background-color: #0c0e13;
+  }
 }
 
 .videoContainer {

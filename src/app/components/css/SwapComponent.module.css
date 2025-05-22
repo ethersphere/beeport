@@ -1,6 +1,7 @@
 .container {
   max-width: 500px;
   margin: 0 auto;
+  margin-top: 50px; /* Add 50px top margin for non-mobile screens */
   padding: 25px;
   background-color: #0f131ac7;
   border-radius: 12px;
@@ -33,7 +34,7 @@
   
   .container {
     padding: 25px 15px; /* Slightly reduced padding on small screens */
-    margin-top: 20px; /* Add top margin on mobile as requested */
+    margin-top: 20px; /* Keep 20px for mobile (overriding the 50px) */
   }
   
   .tabContainer {

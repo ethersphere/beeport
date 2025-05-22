@@ -17,6 +17,13 @@
   transform: translateY(0);
 }
 
+/* Hide price tracker on mobile devices */
+@media (max-width: 480px) {
+  .priceTrackerContainer {
+    display: none;
+  }
+}
+
 .priceTrackerContainer:hover {
   opacity: 1;
   background-color: rgba(40, 40, 40, 0.9);
