@@ -1317,42 +1317,34 @@ const SwapComponent: React.FC = () => {
             />
           </div>
 
-          <div className={styles.inputGroup}>
-            <label
-              className={styles.label}
-              data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
-            >
-              Storage stamps
-            </label>
-            <select
-              className={styles.select}
-              value={selectedDepth}
-              onChange={e => handleDepthChange(Number(e.target.value))}
-              disabled={isTopUp}
-              style={isTopUp ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
-            >
-              {STORAGE_OPTIONS.map(({ depth, size }) => (
-                <option key={depth} value={depth}>
-                  {size}
-                </option>
-              ))}
-            </select>
-            {isTopUp && originalStampInfo && (
-              <div className={styles.noteText || ''}>
-                <small>
-                  Cannot change size when topping up existing batch (depth:{' '}
-                  {originalStampInfo.depth})
-                </small>
-              </div>
-            )}
-          </div>
+          {!isTopUp && (
+            <div className={styles.inputGroup}>
+              <label
+                className={styles.label}
+                data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
+              >
+                Storage stamps
+              </label>
+              <select
+                className={styles.select}
+                value={selectedDepth}
+                onChange={e => handleDepthChange(Number(e.target.value))}
+              >
+                {STORAGE_OPTIONS.map(({ depth, size }) => (
+                  <option key={depth} value={depth}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className={styles.inputGroup}>
             <label
               className={styles.label}
               data-tooltip="Duration of storage stamps for which you are paying for"
             >
-              Storage duration
+              {isTopUp ? 'Additional duration' : 'Storage duration'}
             </label>
             <select
               className={styles.select}
