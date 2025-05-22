@@ -129,6 +129,14 @@ const SwapComponent: React.FC = () => {
 
   const [serveUncompressed, setServeUncompressed] = useState(true);
 
+  // Add states to track top-up completion
+  const [topUpCompleted, setTopUpCompleted] = useState(false);
+  const [topUpInfo, setTopUpInfo] = useState<{
+    batchId: string;
+    days: number;
+    cost: string;
+  } | null>(null);
+
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
 
@@ -669,12 +677,20 @@ const SwapComponent: React.FC = () => {
             console.log('Successfully topped up batch ID:', topUpBatchId);
             setPostageBatchId(topUpBatchId as string);
 
+            // Set top-up completion info
+            setTopUpCompleted(true);
+            setTopUpInfo({
+              batchId: topUpBatchId as string,
+              days: selectedDays || 0,
+              cost: totalUsdAmount || '0',
+            });
+
             setStatusMessage({
               step: 'Complete',
               message: 'Batch Topped Up Successfully',
               isSuccess: true,
             });
-            setUploadStep('ready');
+            // Don't set upload step for top-ups
           } else {
             try {
               // For new batch, create the batch ID
@@ -740,23 +756,40 @@ const SwapComponent: React.FC = () => {
           console.log('Created new Batch at trx', txHash);
 
           try {
-            // Batch will be created from registry contract for all cases
-            const batchId = await createBatchId(
-              currentConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-              setPostageBatchId
-            );
-            console.log('Created batch ID:', batchId, currentConfig.swarmBatchNonce);
+            if (isTopUp && topUpBatchId) {
+              console.log('Successfully topped up batch ID:', topUpBatchId);
+              // Set top-up completion info
+              setTopUpCompleted(true);
+              setTopUpInfo({
+                batchId: topUpBatchId,
+                days: selectedDays || 0,
+                cost: totalUsdAmount || '0',
+              });
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Batch Topped Up Successfully',
+                isSuccess: true,
+              });
+            } else {
+              // Batch will be created from registry contract for all cases
+              const batchId = await createBatchId(
+                currentConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+                setPostageBatchId
+              );
+              console.log('Created batch ID:', batchId, currentConfig.swarmBatchNonce);
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Storage Bought Successfully',
+                isSuccess: true,
+              });
+              setUploadStep('ready');
+            }
           } catch (error) {
             console.error('Failed to create batch ID:', error);
           }
-
-          setStatusMessage({
-            step: 'Complete',
-            message: 'Storage Bought Successfully',
-            isSuccess: true,
-          });
-          setUploadStep('ready');
         } else if (status === 'FAILED') {
           // Use the utility function to generate and update the nonce
           generateAndUpdateNonce(currentConfig, setSwarmConfig);
@@ -877,23 +910,40 @@ const SwapComponent: React.FC = () => {
             console.log('Created new Batch at trx', txHash);
 
             try {
-              // Batch will be created from registry contract for all cases
-              const batchId = await createBatchId(
-                updatedConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-                setPostageBatchId
-              );
-              console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+              if (isTopUp && topUpBatchId) {
+                console.log('Successfully topped up batch ID:', topUpBatchId);
+                // Set top-up completion info
+                setTopUpCompleted(true);
+                setTopUpInfo({
+                  batchId: topUpBatchId,
+                  days: selectedDays || 0,
+                  cost: totalUsdAmount || '0',
+                });
+
+                setStatusMessage({
+                  step: 'Complete',
+                  message: 'Batch Topped Up Successfully',
+                  isSuccess: true,
+                });
+              } else {
+                // Batch will be created from registry contract for all cases
+                const batchId = await createBatchId(
+                  updatedConfig.swarmBatchNonce,
+                  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+                  setPostageBatchId
+                );
+                console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+
+                setStatusMessage({
+                  step: 'Complete',
+                  message: 'Storage Bought Successfully',
+                  isSuccess: true,
+                });
+                setUploadStep('ready');
+              }
             } catch (error) {
               console.error('Failed to create batch ID:', error);
             }
-
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Storage Bought Successfully',
-              isSuccess: true,
-            });
-            setUploadStep('ready');
           }
         },
       });
@@ -1720,6 +1770,63 @@ const SwapComponent: React.FC = () => {
                         setIsTarFile(false);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+
+                {topUpCompleted && (
+                  <div className={styles.successMessage}>
+                    <div className={styles.successIcon}>✓</div>
+                    <h3>Batch Topped Up Successfully!</h3>
+                    <div className={styles.referenceBox}>
+                      <p>Batch ID:</p>
+                      <div className={styles.referenceCopyWrapper}>
+                        <code
+                          className={styles.referenceCode}
+                          onClick={() => {
+                            navigator.clipboard.writeText(topUpInfo?.batchId || '');
+                            // Show a temporary "Copied!" message
+                            const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                            if (codeEl) {
+                              codeEl.setAttribute('data-copied', 'true');
+                              setTimeout(() => {
+                                codeEl.setAttribute('data-copied', 'false');
+                              }, 2000);
+                            }
+                          }}
+                          data-copied="false"
+                        >
+                          {topUpInfo?.batchId}
+                        </code>
+                      </div>
+                    </div>
+
+                    <div className={styles.stampInfoBox}>
+                      <h4>Top-Up Details</h4>
+                      <div className={styles.stampDetails}>
+                        <div className={styles.stampDetail}>
+                          <span>Added Duration:</span>
+                          <span>{topUpInfo?.days} days</span>
+                        </div>
+                        <div className={styles.stampDetail}>
+                          <span>Cost:</span>
+                          <span>${Number(topUpInfo?.cost || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      className={styles.closeSuccessButton}
+                      onClick={() => {
+                        setShowOverlay(false);
+                        setTopUpCompleted(false);
+                        setTopUpInfo(null);
+                        setStatusMessage({ step: '', message: '' });
+                        setIsLoading(false);
+                        setExecutionResult(null);
                       }}
                     >
                       Close
