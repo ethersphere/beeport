@@ -39,8 +39,6 @@ const PriceTracker = () => {
           functionName: 'token0',
         })) as `0x${string}`;
 
-        console.log('token0', token0);
-
         const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
 
         // Get token1 address for USDC
@@ -74,8 +72,6 @@ const PriceTracker = () => {
           ],
           functionName: 'liquidity',
         })) as bigint;
-
-        console.log('liquidity', liquidity.toString());
 
         // Get token balances in the pool for better liquidity estimation
         const [bzzBalance, usdcBalance] = await Promise.all([

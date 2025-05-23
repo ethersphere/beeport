@@ -123,6 +123,16 @@ export const performWithRetry = async <T>(
  */
 export const logTokenRoute = (steps: any[], type: string) => {
   console.info(`>> ${type} Token Route:`);
+
+  // Log the tool information if available
+  if (steps.length > 0 && steps[0].toolDetails) {
+    console.info(
+      `   Tool used: ${steps[0].toolDetails.name} (${steps[0].toolDetails.logoURI || 'N/A'})`
+    );
+  } else if (steps.length > 0 && steps[0].tool) {
+    console.info(`   Tool used: ${steps[0].tool}`);
+  }
+
   steps.forEach((step, index) => {
     // Check if this is a contract call step
     if (
@@ -131,6 +141,11 @@ export const logTokenRoute = (steps: any[], type: string) => {
       step.action.toContractCallData?.length > 0
     ) {
       console.info(`   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`);
+      if (step.toolDetails) {
+        console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
+      } else if (step.tool) {
+        console.info(`     Tool: ${step.tool}`);
+      }
       return;
     }
 
@@ -142,6 +157,13 @@ export const logTokenRoute = (steps: any[], type: string) => {
     console.info(
       `   Step ${index + 1}: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
     );
+
+    // Log tool information for each step if available
+    if (step.toolDetails) {
+      console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
+    } else if (step.tool) {
+      console.info(`     Tool: ${step.tool}`);
+    }
   });
 };
 
