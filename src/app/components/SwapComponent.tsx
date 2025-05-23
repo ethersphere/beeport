@@ -294,23 +294,22 @@ const SwapComponent: React.FC = () => {
           STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown'
         );
 
-        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
-          await performWithRetry(
-            () =>
-              getGnosisQuote({
-                gnosisSourceToken,
-                address,
-                bzzAmount,
-                nodeAddress,
-                swarmConfig,
-                setEstimatedTime,
-                topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-              }),
-            'getGnosisQuote-execution',
-            undefined,
-            5, // 5 retries
-            500 // 500ms delay between retries
-          );
+        const { gnosisContactCallsQuoteResponse } = await performWithRetry(
+          () =>
+            getGnosisQuote({
+              gnosisSourceToken,
+              address,
+              bzzAmount,
+              nodeAddress,
+              swarmConfig,
+              setEstimatedTime,
+              topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
+            }),
+          'getGnosisQuote-execution',
+          undefined,
+          5, // 5 retries
+          500 // 500ms delay between retries
+        );
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
