@@ -693,13 +693,8 @@ const SwapComponent: React.FC = () => {
             // Don't set upload step for top-ups
           } else {
             try {
-              // For new batch, create the batch ID
-              const batchId = await createBatchId(
-                updatedConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-                setPostageBatchId
-              );
-              console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+              // Batch ID was already created at the beginning of handleSwap
+              console.log('Batch created successfully with ID:', postageBatchId);
 
               setStatusMessage({
                 step: 'Complete',
@@ -708,8 +703,8 @@ const SwapComponent: React.FC = () => {
               });
               setUploadStep('ready');
             } catch (error) {
-              console.error('Failed to create batch ID:', error);
-              throw new Error('Failed to create batch ID');
+              console.error('Failed to process batch completion:', error);
+              throw new Error('Failed to process batch completion');
             }
           }
         } else {
@@ -772,13 +767,8 @@ const SwapComponent: React.FC = () => {
                 isSuccess: true,
               });
             } else {
-              // Batch will be created from registry contract for all cases
-              const batchId = await createBatchId(
-                currentConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-                setPostageBatchId
-              );
-              console.log('Created batch ID:', batchId, currentConfig.swarmBatchNonce);
+              // Batch ID was already created at the beginning of handleSwap
+              console.log('Batch created successfully with ID:', postageBatchId);
 
               setStatusMessage({
                 step: 'Complete',
@@ -933,13 +923,8 @@ const SwapComponent: React.FC = () => {
                   isSuccess: true,
                 });
               } else {
-                // Batch will be created from registry contract for all cases
-                const batchId = await createBatchId(
-                  updatedConfig.swarmBatchNonce,
-                  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-                  setPostageBatchId
-                );
-                console.log('Created batch ID:', batchId, updatedConfig.swarmBatchNonce);
+                // Batch ID was already created at the beginning of handleSwap
+                console.log('Batch created successfully with ID:', postageBatchId);
 
                 setStatusMessage({
                   step: 'Complete',
@@ -977,6 +962,20 @@ const SwapComponent: React.FC = () => {
 
     // Use the utility function to generate and update the nonce
     const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
+
+    // For new batches (not top-ups), create the batch ID once here
+    if (!isTopUp && address) {
+      try {
+        const batchId = await createBatchId(
+          updatedConfig.swarmBatchNonce,
+          GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+          setPostageBatchId
+        );
+        console.log('Pre-calculated batch ID:', batchId, updatedConfig.swarmBatchNonce);
+      } catch (error) {
+        console.error('Failed to pre-calculate batch ID:', error);
+      }
+    }
 
     setIsLoading(true);
     setShowOverlay(true);
