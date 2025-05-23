@@ -816,14 +816,21 @@ const SwapComponent: React.FC = () => {
       message: 'Getting quote...',
     });
 
-    const { crossChainContractCallsRoute } = await getCrossChainQuote({
-      selectedChainId,
-      fromToken,
-      address: address as string,
-      toAmount,
-      gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-      setEstimatedTime,
-    });
+    const { crossChainContractCallsRoute } = await performWithRetry(
+      () =>
+        getCrossChainQuote({
+          selectedChainId,
+          fromToken,
+          address: address as string,
+          toAmount,
+          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+          setEstimatedTime,
+        }),
+      'getCrossChainQuote-execution',
+      undefined,
+      5, // 5 retries
+      500 // 500ms delay between retries
+    );
 
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
       updateRouteHook: async crossChainContractCallsRoute => {
