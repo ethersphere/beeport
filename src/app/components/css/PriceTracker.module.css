@@ -128,3 +128,19 @@
 .loading {
   animation: pulse 1.5s infinite ease-in-out;
 }
+
+.liquidity {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-left: 4px;
+  color: #42b883; /* Green shade for liquidity */
+  font-weight: normal;
+}
+
+.liquidityDepth {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-left: 4px;
+  color: #17a2b8; /* Blue shade for depth */
+  font-weight: normal;
+}

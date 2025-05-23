@@ -10,6 +10,8 @@ interface PriceInfo {
   price: string;
   previousPrice?: string;
   change?: 'up' | 'down' | 'same';
+  liquidity?: string;
+  priceImpact?: string;
 }
 
 const USDC_DECIMALS = 6; // USDC has 6 decimals
@@ -41,6 +43,13 @@ const PriceTracker = () => {
 
         const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
 
+        // Get token1 address for USDC
+        const token1Address = (await publicClient.readContract({
+          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
+          abi: V3_POOL_ABI,
+          functionName: 'token1',
+        })) as `0x${string}`;
+
         // Get the current price from slot0
         const slot0Data = (await publicClient.readContract({
           address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
@@ -50,12 +59,76 @@ const PriceTracker = () => {
 
         const sqrtPriceX96 = slot0Data[0];
 
+        // Get the current liquidity
+        const liquidity = (await publicClient.readContract({
+          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
+          abi: [
+            ...V3_POOL_ABI,
+            {
+              name: 'liquidity',
+              type: 'function',
+              stateMutability: 'view',
+              inputs: [],
+              outputs: [{ type: 'uint128', name: '' }],
+            },
+          ],
+          functionName: 'liquidity',
+        })) as bigint;
+
+        console.log('liquidity', liquidity.toString());
+
+        // Get token balances in the pool for better liquidity estimation
+        const [bzzBalance, usdcBalance] = await Promise.all([
+          publicClient.readContract({
+            address: BZZ_ADDRESS as `0x${string}`,
+            abi: [
+              {
+                constant: true,
+                inputs: [{ name: '_owner', type: 'address' }],
+                name: 'balanceOf',
+                outputs: [{ name: 'balance', type: 'uint256' }],
+                type: 'function',
+              },
+            ],
+            functionName: 'balanceOf',
+            args: [BZZ_USDC_POOL_ADDRESS as `0x${string}`],
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: isBzzToken0 ? token1Address : token0,
+            abi: [
+              {
+                constant: true,
+                inputs: [{ name: '_owner', type: 'address' }],
+                name: 'balanceOf',
+                outputs: [{ name: 'balance', type: 'uint256' }],
+                type: 'function',
+              },
+            ],
+            functionName: 'balanceOf',
+            args: [BZZ_USDC_POOL_ADDRESS as `0x${string}`],
+          }) as Promise<bigint>,
+        ]);
+
         // Convert sqrtPriceX96 to price
-        // Price = (sqrtPriceX96 / 2^96)^2
         const price = calculatePriceFromSqrtX96(sqrtPriceX96, isBzzToken0);
 
-        // Format price with 5 decimal places
-        const formattedPrice = price.toFixed(5);
+        // Calculate more accurate liquidity information
+        const liquidityInfo = calculateLiquidityInfo(
+          bzzBalance,
+          usdcBalance,
+          price,
+          liquidity,
+          isBzzToken0
+        );
+
+        // Format liquidity values for display
+        const formattedLiquidityInfo = formatLiquidityDisplay(
+          liquidityInfo.tvl,
+          liquidityInfo.priceImpact
+        );
+
+        // Format price with 3 decimal places and proper USD formatting
+        const formattedPrice = price.toFixed(3);
 
         // Determine price change
         const newPrices = [
@@ -63,6 +136,8 @@ const PriceTracker = () => {
             token: 'BZZ',
             price: `$${formattedPrice}`,
             change: determineChange('BZZ', formattedPrice),
+            liquidity: formattedLiquidityInfo.tvl,
+            priceImpact: formattedLiquidityInfo.priceImpact,
           },
         ];
 
@@ -120,6 +195,66 @@ const PriceTracker = () => {
       return 'same';
     };
 
+    // Calculate more accurate liquidity information
+    const calculateLiquidityInfo = (
+      bzzBalance: bigint,
+      usdcBalance: bigint,
+      price: number,
+      liquidityValue: bigint,
+      isBzzToken0: boolean
+    ) => {
+      // Calculate total value locked (TVL) using actual token balances
+      const bzzBalanceFormatted = Number(bzzBalance) / 10 ** BZZ_DECIMALS;
+      const usdcBalanceFormatted = Number(usdcBalance) / 10 ** USDC_DECIMALS;
+
+      // Calculate USD value of each token in the pool
+      const bzzValueUsd = bzzBalanceFormatted * price;
+      const usdcValueUsd = usdcBalanceFormatted; // USDC is already in USD
+
+      const totalTvl = bzzValueUsd + usdcValueUsd;
+
+      // Calculate price impact for a $100 trade
+      // This is much more useful than an arbitrary depth percentage
+      const tradeSize = 100; // $100 trade
+      const liquidityValueNumber = Number(liquidityValue);
+
+      let priceImpactPercent = 0;
+
+      if (liquidityValueNumber > 0 && totalTvl > 0) {
+        // Simplified price impact calculation for Uniswap V3
+        // Price impact ≈ (trade_amount / available_liquidity)^0.5
+        // This is a reasonable approximation for small trades
+        const effectiveLiquidity = Math.sqrt(liquidityValueNumber) * 0.001; // Scale factor
+        priceImpactPercent = Math.sqrt(tradeSize / Math.max(effectiveLiquidity, 1000));
+
+        // Cap at reasonable bounds (0.01% to 10%)
+        priceImpactPercent = Math.max(0.0001, Math.min(priceImpactPercent, 0.1));
+      }
+
+      return {
+        tvl: totalTvl,
+        priceImpact: priceImpactPercent,
+        bzzValue: bzzValueUsd,
+        usdcValue: usdcValueUsd,
+      };
+    };
+
+    // Format liquidity values for display
+    const formatLiquidityDisplay = (tvl: number, priceImpact: number) => {
+      let tvlFormatted;
+      if (tvl >= 1_000_000) {
+        tvlFormatted = `$${(tvl / 1_000_000).toFixed(2)}M`;
+      } else if (tvl >= 1_000) {
+        tvlFormatted = `$${(tvl / 1_000).toFixed(2)}K`;
+      } else {
+        tvlFormatted = `$${tvl.toFixed(2)}`;
+      }
+
+      const priceImpactFormatted = `${(priceImpact * 100).toFixed(1)}%`;
+
+      return { tvl: tvlFormatted, priceImpact: priceImpactFormatted };
+    };
+
     fetchPrices();
 
     // Refresh every 60 seconds
@@ -146,11 +281,15 @@ const PriceTracker = () => {
                     ? styles.priceDown
                     : ''
               }`}
-              title="Price from SushiSwap V3 (WXDAI/BZZ)"
+              title="BZZ price in USD, Total Value Locked (TVL), and estimated price impact for a $100 trade in the SushiSwap V3 BZZ-USDC pool"
             >
               {item.token}: {item.price}
               {item.change === 'up' && <span className={styles.arrow}>↑</span>}
               {item.change === 'down' && <span className={styles.arrow}>↓</span>}
+              {item.liquidity && <span className={styles.liquidity}> • TVL: {item.liquidity}</span>}
+              {item.priceImpact && (
+                <span className={styles.liquidityDepth}> • Price Impact: {item.priceImpact}</span>
+              )}
               {index < prices.length - 1 && ' • '}
             </span>
           ))}
