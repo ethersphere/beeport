@@ -294,22 +294,23 @@ const SwapComponent: React.FC = () => {
           STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown'
         );
 
-        const { gnosisContactCallsQuoteResponse } = await performWithRetry(
-          () =>
-            getGnosisQuote({
-              gnosisSourceToken,
-              address,
-              bzzAmount,
-              nodeAddress,
-              swarmConfig,
-              setEstimatedTime,
-            }),
-          'getGnosisQuote',
-          undefined,
-          5,
-          300,
-          abortSignal
-        );
+        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
+          await performWithRetry(
+            () =>
+              getGnosisQuote({
+                gnosisSourceToken,
+                address,
+                bzzAmount,
+                nodeAddress,
+                swarmConfig,
+                setEstimatedTime,
+                topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
+              }),
+            'getGnosisQuote-execution',
+            undefined,
+            5, // 5 retries
+            500 // 500ms delay between retries
+          );
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
@@ -1036,15 +1037,23 @@ const SwapComponent: React.FC = () => {
           selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
         // Pass topUpBatchId to getGnosisQuote when doing a top-up
-        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await getGnosisQuote({
-          gnosisSourceToken,
-          address,
-          bzzAmount,
-          nodeAddress,
-          swarmConfig: updatedConfig,
-          setEstimatedTime,
-          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-        });
+        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
+          await performWithRetry(
+            () =>
+              getGnosisQuote({
+                gnosisSourceToken,
+                address,
+                bzzAmount,
+                nodeAddress,
+                swarmConfig: updatedConfig,
+                setEstimatedTime,
+                topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
+              }),
+            'getGnosisQuote-execution',
+            undefined,
+            5, // 5 retries
+            500 // 500ms delay between retries
+          );
 
         // Check are we solving Gnosis chain or other chain Swap
         if (selectedChainId === ChainId.DAI) {
