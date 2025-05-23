@@ -3,11 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import styles from './css/PriceTracker.module.css';
 import { getGnosisPublicClient } from './utils';
-import {
-  V3_POOL_ABI,
-  GNOSIS_BZZ_ADDRESS as BZZ_ADDRESS,
-  BZZ_WXDAI_POOL_ADDRESS,
-} from './constants';
+import { V3_POOL_ABI, GNOSIS_BZZ_ADDRESS as BZZ_ADDRESS, BZZ_USDC_POOL_ADDRESS } from './constants';
 
 interface PriceInfo {
   token: string;
@@ -15,6 +11,9 @@ interface PriceInfo {
   previousPrice?: string;
   change?: 'up' | 'down' | 'same';
 }
+
+const USDC_DECIMALS = 6; // USDC has 6 decimals
+const BZZ_DECIMALS = 16; // BZZ has 16 decimals
 
 const PriceTracker = () => {
   const [prices, setPrices] = useState<PriceInfo[]>([]);
@@ -33,7 +32,7 @@ const PriceTracker = () => {
         // First, determine the token order in the pool (token0 vs token1)
         // This is important for calculating the price correctly
         const token0 = (await publicClient.readContract({
-          address: BZZ_WXDAI_POOL_ADDRESS as `0x${string}`,
+          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
           abi: V3_POOL_ABI,
           functionName: 'token0',
         })) as `0x${string}`;
@@ -44,7 +43,7 @@ const PriceTracker = () => {
 
         // Get the current price from slot0
         const slot0Data = (await publicClient.readContract({
-          address: BZZ_WXDAI_POOL_ADDRESS as `0x${string}`,
+          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
           abi: V3_POOL_ABI,
           functionName: 'slot0',
         })) as [bigint, number, number, number, number, number, boolean];
@@ -95,14 +94,17 @@ const PriceTracker = () => {
       const priceX192 = sqrtPriceX96 * sqrtPriceX96;
       const price = Number(priceX192) / Number(Q96 * Q96);
 
-      // If BZZ is token0, price is in WXDAI per BZZ
-      // If BZZ is token1, price is in BZZ per WXDAI, so we need to invert
+      // Account for token decimals: BZZ has 16 decimals, USDC has 6 decimals
       if (isBzzToken0) {
-        // If BZZ is token0, the price is WXDAI/BZZ
-        return price / 100; // Corrected decimal adjustment
+        // If BZZ is token0, price is in USDC/BZZ
+        // Raw price = USDC_units / BZZ_units
+        // To get USDC per BZZ: price * (10^BZZ_DECIMALS) / (10^USDC_DECIMALS)
+        return price * 10 ** (BZZ_DECIMALS - USDC_DECIMALS);
       } else {
-        // If BZZ is token1, the price is BZZ/WXDAI, so invert to get WXDAI/BZZ
-        return 1 / (price * 100); // Corrected decimal adjustment with inversion
+        // If BZZ is token1, price is in BZZ/USDC
+        // Raw price = BZZ_units / USDC_units
+        // To get USDC per BZZ: (1/price) * (10^USDC_DECIMALS) / (10^BZZ_DECIMALS)
+        return (1 / price) * 10 ** (USDC_DECIMALS - BZZ_DECIMALS);
       }
     };
 

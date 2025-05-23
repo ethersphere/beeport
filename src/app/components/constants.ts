@@ -189,8 +189,8 @@ export const V3_POOL_ABI = [
 ] as const;
 
 // Sushiswap V3 Pool address for BZZ/WXDAI on Gnosis
-export const BZZ_WXDAI_POOL_ADDRESS =
-  process.env.NEXT_PUBLIC_BZZ_WXDAI_POOL_ADDRESS || '0x7583b9c573fa4fb5ea21c83454939c4cf6aacbc3';
+export const BZZ_USDC_POOL_ADDRESS =
+  process.env.NEXT_PUBLIC_BZZ_USDC_POOL_ADDRESS || '0x6f30b7cf40cb423c1d23478a9855701ecf43931e';
 
 /**
  * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.
