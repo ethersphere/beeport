@@ -196,7 +196,9 @@ export const generateProperNonce = (): string => {
  */
 export const getGnosisPublicClient = () => {
   // Use global custom RPC URL if set, otherwise fall back to env variable
-  const rpcUrl = globalCustomRpcUrl || process.env.NEXT_PUBLIC_GNOSIS_RPC;
+  // const rpcUrl = globalCustomRpcUrl || process.env.NEXT_PUBLIC_GNOSIS_RPC;
+
+  const rpcUrl = 'https://go.getblock.io/228e95bbea11427d8feb1038bcc04a98';
 
   // We are using public RPC for the Gnosis chain unless a custom RPC is set or env variable is set
   return createPublicClient({
