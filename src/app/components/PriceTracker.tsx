@@ -109,13 +109,7 @@ const PriceTracker = () => {
         const price = calculatePriceFromSqrtX96(sqrtPriceX96, isBzzToken0);
 
         // Calculate more accurate liquidity information
-        const liquidityInfo = calculateLiquidityInfo(
-          bzzBalance,
-          usdcBalance,
-          price,
-          liquidity,
-          isBzzToken0
-        );
+        const liquidityInfo = calculateLiquidityInfo(bzzBalance, usdcBalance, price, liquidity);
 
         // Format liquidity values for display
         const formattedLiquidityInfo = formatLiquidityDisplay(
@@ -196,8 +190,7 @@ const PriceTracker = () => {
       bzzBalance: bigint,
       usdcBalance: bigint,
       price: number,
-      liquidityValue: bigint,
-      isBzzToken0: boolean
+      liquidityValue: bigint
     ) => {
       // Calculate total value locked (TVL) using actual token balances
       const bzzBalanceFormatted = Number(bzzBalance) / 10 ** BZZ_DECIMALS;
