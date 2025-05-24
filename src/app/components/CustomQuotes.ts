@@ -553,3 +553,130 @@ const calculateMinCrossChainFromAmountFromQuote = (quoteResponse: any): string =
 /**
  * Gets a quote for cross chain transactions (ORIGINAL METHOD - KEPT FOR COMPARISON)
  */
+
+/**
+ * Modular function to get quotes for both price estimation and swap execution
+ * Returns both USD amounts (for display) and route objects (for execution)
+ */
+export const getSwapQuotes = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  bzzAmount,
+  nodeAddress,
+  swarmConfig,
+  gnosisDestinationToken,
+  topUpBatchId,
+  setEstimatedTime,
+  isForEstimation = false,
+}: {
+  selectedChainId: number;
+  fromToken: string;
+  address: string;
+  bzzAmount: string;
+  nodeAddress: string;
+  swarmConfig: any;
+  gnosisDestinationToken: string;
+  topUpBatchId?: string;
+  setEstimatedTime?: (time: number) => void;
+  isForEstimation?: boolean;
+}) => {
+  console.log(
+    `🔄 Getting quotes for ${isForEstimation ? 'price estimation' : 'swap execution'}...`
+  );
+
+  const gnosisSourceToken = selectedChainId === ChainId.DAI ? fromToken : gnosisDestinationToken;
+
+  // Step 1: Get Gnosis quote
+  const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await performWithRetry(
+    () =>
+      getGnosisQuote({
+        gnosisSourceToken,
+        address,
+        bzzAmount,
+        nodeAddress,
+        swarmConfig,
+        setEstimatedTime: setEstimatedTime || (() => {}),
+        topUpBatchId,
+      }),
+    `getGnosisQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    undefined,
+    5,
+    500
+  );
+
+  let totalAmountUSD = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
+  let crossChainContractQuoteResponse = null;
+  let crossChainContractCallsRoute = null;
+  let safeQuoteData = null;
+
+  // Step 2: Get cross-chain quote if needed
+  if (selectedChainId !== ChainId.DAI) {
+    console.log(
+      `🔄 ${isForEstimation ? 'Price estimation' : 'Execution'}: Getting safe cross-chain quote...`
+    );
+
+    const safeQuoteResult = await performWithRetry(
+      () =>
+        getSafeCrossChainQuote({
+          selectedChainId,
+          fromToken,
+          address: address as string,
+          toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+          gnosisDestinationToken,
+          setEstimatedTime: isForEstimation ? () => {} : setEstimatedTime || (() => {}),
+        }),
+      `getSafeCrossChainQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+      undefined,
+      isForEstimation ? 3 : 5, // Fewer retries for estimation
+      500
+    );
+
+    crossChainContractQuoteResponse = safeQuoteResult.crossChainContractQuoteResponse;
+    crossChainContractCallsRoute = safeQuoteResult.crossChainContractCallsRoute;
+    safeQuoteData = safeQuoteResult.safeQuoteData;
+
+    console.log(`✅ ${isForEstimation ? 'Price estimation' : 'Execution'}: Safe quote successful`);
+    if (!isForEstimation) {
+      console.log('📊 Safe quote data:', safeQuoteData);
+    }
+
+    // Calculate total USD amount for cross-chain
+    totalAmountUSD = Number(crossChainContractQuoteResponse.estimate.fromAmountUSD || 0);
+
+    // Log bridge fees and gas fees
+    const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
+      ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
+          (total, fee) => total + Number(fee.amountUSD || 0),
+          0
+        )
+      : 0;
+
+    console.log('Bridge fees:', bridgeFees);
+    console.log(
+      'Gas fees:',
+      crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD || '0'
+    );
+    console.log('Cross chain amount:', crossChainContractQuoteResponse.estimate.fromAmountUSD);
+  }
+
+  console.log(
+    `✅ ${isForEstimation ? 'Price estimation' : 'Swap quotes'} complete. Total: $${totalAmountUSD.toFixed(2)}`
+  );
+
+  return {
+    // For price estimation
+    totalAmountUSD,
+
+    // For swap execution
+    gnosisContactCallsQuoteResponse,
+    gnosisContractCallsRoute,
+    crossChainContractQuoteResponse,
+    crossChainContractCallsRoute,
+    safeQuoteData,
+
+    // Metadata
+    isGnosisOnly: selectedChainId === ChainId.DAI,
+    selectedChainId,
+  };
+};
