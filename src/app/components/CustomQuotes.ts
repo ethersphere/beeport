@@ -22,6 +22,9 @@ import {
 
 import { logTokenRoute, performWithRetry, getGnosisPublicClient } from './utils';
 
+// Buffer percentage to apply to bidirectional quotes to compensate for slippage and fees
+const BIDIRECTIONAL_BUFFER_PERCENT = 1; // 1% default buffer
+
 /**
  * Checks if gas forwarding is needed and returns the amount to forward
  */
@@ -396,151 +399,186 @@ export const getBidirectionalCrossChainQuote = async ({
   setEstimatedTime,
 }: GetCrossChainQuoteParams & { setEstimatedTime: (time: number) => void }) => {
   console.log('🔄 Starting bidirectional cross-chain quote...');
-  console.log('Target toAmount:', toAmount);
-  console.log('From chain:', selectedChainId, 'to chain: Gnosis');
+  console.log('Input parameters:', {
+    selectedChainId,
+    fromToken,
+    address,
+    toAmount,
+    gnosisDestinationToken,
+  });
 
-  // Step 1: Get forward quote (Gnosis -> Remote chain) to understand exchange rate
-  // Use a standard amount (equivalent to ~$100) to get the rate
-  const forwardTestAmount = '100000000000000000000'; // 100 tokens (18 decimals)
-
-  console.log('🔄 Step 1: Getting forward quote (Gnosis -> Remote) for rate calculation...');
-  const forwardQuoteParams = {
-    fromChain: ChainId.DAI.toString(),
-    toChain: selectedChainId.toString(),
-    fromToken: gnosisDestinationToken,
-    toToken: fromToken,
-    fromAddress: address as string,
-    fromAmount: forwardTestAmount,
-  };
-
-  let forwardQuote;
-  try {
-    forwardQuote = await getQuote(forwardQuoteParams);
-    console.log('✅ Forward quote successful:', {
-      fromAmount: forwardQuote.estimate.fromAmount,
-      toAmount: forwardQuote.estimate.toAmount,
-      rate: `1 Gnosis token = ${Number(forwardQuote.estimate.toAmount) / Number(forwardQuote.estimate.fromAmount)} remote tokens`,
-    });
-  } catch (error) {
-    console.error('❌ Forward quote failed:', error);
-    throw new Error('Failed to get forward quote for rate calculation');
+  // Validate input toAmount first
+  if (!toAmount || toAmount === '0' || toAmount === '') {
+    console.error('❌ Invalid toAmount input:', toAmount);
+    throw new Error('Invalid toAmount provided to bidirectional quote');
   }
 
-  // Step 2: Calculate estimated required amount using the forward rate
-  const forwardRate =
-    Number(forwardQuote.estimate.toAmount) / Number(forwardQuote.estimate.fromAmount);
+  // Test if toAmount is a valid number
+  const toAmountBigInt = BigInt(toAmount);
+  console.log('Target amount on Gnosis:', toAmount, '(', toAmountBigInt.toString(), ')');
 
-  // Validate the forward rate to prevent invalid calculations
-  if (!forwardRate || forwardRate <= 0 || !isFinite(forwardRate)) {
-    console.error('❌ Invalid forward rate calculated:', forwardRate);
-    throw new Error('Failed to calculate valid exchange rate from forward quote');
-  }
+  // Step 1: Get initial quote Remote -> Gnosis with the actual target amount
+  // This tells us: "How much do we need on the remote chain to get our target amount on Gnosis?"
+  console.log('🔄 Step 1: Getting initial quote (Remote -> Gnosis) for target amount...');
 
-  const estimatedRequiredAmount = Math.ceil(Number(toAmount) / forwardRate);
-
-  // Validate the estimated amount
-  if (
-    !estimatedRequiredAmount ||
-    estimatedRequiredAmount <= 0 ||
-    !isFinite(estimatedRequiredAmount)
-  ) {
-    console.error('❌ Invalid estimated amount calculated:', estimatedRequiredAmount);
-    throw new Error('Failed to calculate valid estimated amount');
-  }
-
-  console.log('🔄 Step 2: Calculated estimated required amount:', estimatedRequiredAmount);
-
-  // Step 3: Get reverse quote (Remote -> Gnosis) with estimated amount
-  console.log('🔄 Step 3: Getting reverse quote (Remote -> Gnosis) for verification...');
-
-  // Add some buffer to account for slippage and fees (10% buffer)
-  const bufferedAmount = Math.ceil(estimatedRequiredAmount * 1.1);
-
-  // Validate buffered amount and ensure it's a valid integer
-  if (!bufferedAmount || bufferedAmount <= 0 || !isFinite(bufferedAmount)) {
-    console.error('❌ Invalid buffered amount calculated:', bufferedAmount);
-    throw new Error('Failed to calculate valid buffered amount');
-  }
-
-  const reverseQuoteParams = {
+  const initialQuoteParams = {
     fromChain: selectedChainId.toString(),
     toChain: ChainId.DAI.toString(),
     fromToken: fromToken,
     toToken: gnosisDestinationToken,
     fromAddress: address as string,
-    fromAmount: bufferedAmount.toString(),
+    toAmount: toAmount, // Use the actual target amount
   };
 
-  let reverseQuote;
+  let initialQuote;
   try {
-    reverseQuote = await getQuote(reverseQuoteParams);
-    console.log('✅ Reverse quote successful:', {
-      fromAmount: reverseQuote.estimate.fromAmount,
-      toAmount: reverseQuote.estimate.toAmount,
-      targetAmount: toAmount,
+    // Use getToAmountQuote to get the required fromAmount for our target toAmount
+    const toAmountQuoteParams = {
+      fromChain: selectedChainId.toString(),
+      toChain: ChainId.DAI.toString(),
+      fromToken: fromToken,
+      toToken: gnosisDestinationToken,
+      fromAddress: address,
+      toAmount: toAmount,
+    };
+
+    initialQuote = await getToAmountQuote(toAmountQuoteParams);
+    console.log('✅ Initial quote successful:', {
+      requiredFromAmount: initialQuote.estimate.fromAmount,
+      targetToAmount: toAmount,
+      ratio: `1 ${fromToken.slice(-4)} = ${Number(toAmount) / Number(initialQuote.estimate.fromAmount)} ${gnosisDestinationToken.slice(-4)}`,
     });
   } catch (error) {
-    console.error('❌ Reverse quote failed:', error);
-    throw new Error('Failed to get reverse quote for verification');
+    console.error('❌ Initial quote failed:', error);
+    throw new Error('Failed to get initial quote for target amount');
   }
 
-  // Step 4: Compare and adjust if needed
-  const actualToAmount = Number(reverseQuote.estimate.toAmount);
-  const targetAmount = Number(toAmount);
-  const discrepancy = ((actualToAmount - targetAmount) / targetAmount) * 100;
+  // Step 2: Verify with reverse quote Remote -> Gnosis
+  // Take the amount we calculated and see how much we actually get on Gnosis
+  console.log('🔄 Step 2: Verifying with forward quote (Remote -> Gnosis)...');
 
-  console.log('🔄 Step 4: Analyzing results:', {
-    targetAmount,
-    actualToAmount,
-    discrepancy: `${discrepancy.toFixed(2)}%`,
+  const requiredFromAmountBigInt = BigInt(initialQuote.estimate.fromAmount);
+  console.log('Required amount on remote chain:', requiredFromAmountBigInt.toString());
+
+  const verificationQuoteParams = {
+    fromChain: selectedChainId.toString(),
+    toChain: ChainId.DAI.toString(),
+    fromToken: fromToken,
+    toToken: gnosisDestinationToken,
+    fromAddress: address as string,
+    fromAmount: requiredFromAmountBigInt.toString(),
+  };
+
+  let verificationQuote;
+  try {
+    verificationQuote = await getQuote(verificationQuoteParams);
+    console.log('✅ Verification quote successful:', {
+      fromAmount: verificationQuote.estimate.fromAmount,
+      actualToAmount: verificationQuote.estimate.toAmount,
+      targetToAmount: toAmount,
+    });
+  } catch (error) {
+    console.error('❌ Verification quote failed:', error);
+    throw new Error('Failed to get verification quote');
+  }
+
+  // Step 3: Compare actual vs target and adjust if needed
+  const actualToAmountBigInt = BigInt(verificationQuote.estimate.toAmount);
+  const targetToAmountBigInt = BigInt(toAmount);
+
+  console.log('🔍 Comparison analysis:', {
+    targetAmount: targetToAmountBigInt.toString(),
+    actualAmount: actualToAmountBigInt.toString(),
+    difference: (actualToAmountBigInt - targetToAmountBigInt).toString(),
+    shortfall: actualToAmountBigInt < targetToAmountBigInt,
   });
 
-  let finalFromAmount = reverseQuote.estimate.fromAmount;
+  let finalFromAmount = verificationQuote.estimate.fromAmount;
+  let finalQuote = verificationQuote;
 
-  // If we're getting significantly more than needed, try to adjust downward
-  if (discrepancy > 5) {
-    console.log('🔄 Adjusting downward - got too much output');
-    const adjustmentRatio = targetAmount / actualToAmount;
-    const adjustedFromAmount = Math.ceil(
-      Number(reverseQuote.estimate.fromAmount) * adjustmentRatio
-    );
+  // If we're getting less than the target, we need to increase the fromAmount
+  if (actualToAmountBigInt < targetToAmountBigInt) {
+    console.log('🔄 Step 3: Adjusting upward - need more input to reach target...');
 
-    // Validate the adjusted amount
-    if (!adjustedFromAmount || adjustedFromAmount <= 0 || !isFinite(adjustedFromAmount)) {
-      console.warn('⚠️ Invalid adjusted amount calculated, using original amount');
-    } else {
-      try {
-        const adjustedQuoteParams = {
-          ...reverseQuoteParams,
-          fromAmount: adjustedFromAmount.toString(),
-        };
+    // Calculate how much more we need
+    // adjustedFromAmount = (requiredFromAmount * targetAmount) / actualAmount
+    const adjustedFromAmountBigInt =
+      (requiredFromAmountBigInt * targetToAmountBigInt) / actualToAmountBigInt;
 
-        const adjustedQuote = await getQuote(adjustedQuoteParams);
-        const adjustedToAmount = Number(adjustedQuote.estimate.toAmount);
+    // Add the configured buffer to account for slippage and fees
+    const bufferAmountBigInt =
+      (adjustedFromAmountBigInt * BigInt(BIDIRECTIONAL_BUFFER_PERCENT)) / 100n;
+    const finalFromAmountBigInt = adjustedFromAmountBigInt + bufferAmountBigInt;
 
-        console.log('✅ Adjusted quote:', {
-          adjustedFromAmount,
-          adjustedToAmount,
-          newDiscrepancy: `${(((adjustedToAmount - targetAmount) / targetAmount) * 100).toFixed(2)}%`,
-        });
+    console.log('🔍 Adjustment calculation:', {
+      originalFromAmount: requiredFromAmountBigInt.toString(),
+      adjustedFromAmount: adjustedFromAmountBigInt.toString(),
+      bufferPercent: `${BIDIRECTIONAL_BUFFER_PERCENT}%`,
+      bufferAmount: bufferAmountBigInt.toString(),
+      finalFromAmount: finalFromAmountBigInt.toString(),
+      calculation: `(${requiredFromAmountBigInt.toString()} * ${targetToAmountBigInt.toString()}) / ${actualToAmountBigInt.toString()} + ${BIDIRECTIONAL_BUFFER_PERCENT}% buffer`,
+    });
 
-        // Use adjusted amount if it's closer to target
-        if (Math.abs(adjustedToAmount - targetAmount) < Math.abs(actualToAmount - targetAmount)) {
-          finalFromAmount = adjustedQuote.estimate.fromAmount;
-          reverseQuote = adjustedQuote;
-          console.log('✅ Using adjusted amount');
-        }
-      } catch (adjustError) {
-        console.warn('⚠️ Adjustment failed, using original amount:', adjustError);
+    try {
+      const adjustedQuoteParams = {
+        ...verificationQuoteParams,
+        fromAmount: finalFromAmountBigInt.toString(),
+      };
+
+      const adjustedQuote = await getQuote(adjustedQuoteParams);
+      const adjustedToAmountBigInt = BigInt(adjustedQuote.estimate.toAmount);
+
+      console.log('✅ Adjusted quote:', {
+        adjustedFromAmount: finalFromAmountBigInt.toString(),
+        adjustedToAmount: adjustedToAmountBigInt.toString(),
+        targetAmount: targetToAmountBigInt.toString(),
+        improvement: adjustedToAmountBigInt >= targetToAmountBigInt ? 'success' : 'still short',
+      });
+
+      // Use adjusted quote if it gets us closer to the target
+      if (adjustedToAmountBigInt > actualToAmountBigInt) {
+        finalFromAmount = adjustedQuote.estimate.fromAmount;
+        finalQuote = adjustedQuote;
+        console.log('✅ Using adjusted amount');
       }
+    } catch (adjustError) {
+      console.warn('⚠️ Adjustment failed, using original amount:', adjustError);
+    }
+  } else {
+    console.log('✅ Initial quote is sufficient, applying standard buffer...');
+
+    // Even if the initial quote is sufficient, apply the standard buffer
+    const bufferAmountBigInt =
+      (requiredFromAmountBigInt * BigInt(BIDIRECTIONAL_BUFFER_PERCENT)) / 100n;
+    const bufferedFromAmountBigInt = requiredFromAmountBigInt + bufferAmountBigInt;
+
+    console.log('🔍 Standard buffer application:', {
+      originalFromAmount: requiredFromAmountBigInt.toString(),
+      bufferPercent: `${BIDIRECTIONAL_BUFFER_PERCENT}%`,
+      bufferAmount: bufferAmountBigInt.toString(),
+      bufferedFromAmount: bufferedFromAmountBigInt.toString(),
+    });
+
+    try {
+      const bufferedQuoteParams = {
+        ...verificationQuoteParams,
+        fromAmount: bufferedFromAmountBigInt.toString(),
+      };
+
+      const bufferedQuote = await getQuote(bufferedQuoteParams);
+      finalFromAmount = bufferedQuote.estimate.fromAmount;
+      finalQuote = bufferedQuote;
+      console.log('✅ Using buffered amount for better reliability');
+    } catch (bufferError) {
+      console.warn('⚠️ Buffer application failed, using original amount:', bufferError);
     }
   }
 
-  // Step 5: Add gas forwarding and minimum bridge amount logic
-  console.log('🔄 Step 5: Adding gas forwarding and minimum bridge amount...');
+  // Step 4: Add gas forwarding and minimum bridge amount logic
+  console.log('🔄 Step 4: Adding gas forwarding and minimum bridge amount...');
 
   const gasForwarding = await checkGasForwarding(address as string, selectedChainId, fromToken);
-  const minCrossChainFromAmount = calculateMinCrossChainFromAmountFromQuote(reverseQuote);
+  const minCrossChainFromAmount = calculateMinCrossChainFromAmountFromQuote(finalQuote);
 
   const requiredAmountBigInt = BigInt(finalFromAmount) + BigInt(gasForwarding.toString());
   const minBridgeAmountBigInt = BigInt(minCrossChainFromAmount);
@@ -548,14 +586,14 @@ export const getBidirectionalCrossChainQuote = async ({
   const finalBridgeAmount =
     requiredAmountBigInt > minBridgeAmountBigInt ? requiredAmountBigInt : minBridgeAmountBigInt;
 
-  console.log(' Final calculations:', {
+  console.log('🔍 Final calculations:', {
     baseAmount: finalFromAmount,
     gasForwarding: gasForwarding.toString(),
     minBridgeAmount: minCrossChainFromAmount,
     finalBridgeAmount: finalBridgeAmount.toString(),
   });
 
-  // Step 6: Get final quote with gas forwarding
+  // Step 5: Get final quote with gas forwarding
   const finalQuoteRequest = {
     fromChain: selectedChainId.toString(),
     fromToken: fromToken,
@@ -568,28 +606,29 @@ export const getBidirectionalCrossChainQuote = async ({
     order: 'FASTEST' as const,
   };
 
-  const finalQuote = await getQuote(finalQuoteRequest);
+  const finalQuoteWithGas = await getQuote(finalQuoteRequest);
 
   console.log('✅ Bidirectional quote complete:', {
-    finalFromAmount: finalQuote.estimate.fromAmount,
-    finalToAmount: finalQuote.estimate.toAmount,
-    executionDuration: finalQuote.estimate?.executionDuration,
+    finalFromAmount: finalQuoteWithGas.estimate.fromAmount,
+    finalToAmount: finalQuoteWithGas.estimate.toAmount,
+    executionDuration: finalQuoteWithGas.estimate?.executionDuration,
   });
 
-  logTokenRoute(finalQuote.includedSteps, 'Bidirectional Cross Chain Quote');
+  logTokenRoute(finalQuoteWithGas.includedSteps, 'Bidirectional Cross Chain Quote');
 
-  if (setEstimatedTime && finalQuote.estimate?.executionDuration) {
-    setEstimatedTime(finalQuote.estimate.executionDuration);
+  if (setEstimatedTime && finalQuoteWithGas.estimate?.executionDuration) {
+    setEstimatedTime(finalQuoteWithGas.estimate.executionDuration);
   }
 
   return {
-    crossChainContractQuoteResponse: finalQuote,
-    crossChainContractCallsRoute: convertQuoteToRoute(finalQuote),
+    crossChainContractQuoteResponse: finalQuoteWithGas,
+    crossChainContractCallsRoute: convertQuoteToRoute(finalQuoteWithGas),
     bidirectionalData: {
-      forwardRate,
-      estimatedRequiredAmount,
-      discrepancy,
-      adjustments: discrepancy > 5 ? 'adjusted' : 'none',
+      initialFromAmount: initialQuote.estimate.fromAmount,
+      verifiedToAmount: actualToAmountBigInt.toString(),
+      targetToAmount: targetToAmountBigInt.toString(),
+      adjustments: actualToAmountBigInt < targetToAmountBigInt ? 'increased' : 'none',
+      finalFromAmount: finalQuoteWithGas.estimate.fromAmount,
     },
   };
 };
