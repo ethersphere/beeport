@@ -43,7 +43,11 @@ import {
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
+import {
+  getGnosisQuote,
+  getCrossChainQuote,
+  getBidirectionalCrossChainQuote,
+} from './CustomQuotes';
 import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
 import { generateAndUpdateNonce } from './utils';
 import { useTokenManagement } from './TokenUtils';
@@ -321,22 +325,107 @@ const SwapComponent: React.FC = () => {
         let totalAmount = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
 
         if (selectedChainId !== ChainId.DAI) {
-          const { crossChainContractQuoteResponse } = await performWithRetry(
-            () =>
-              getCrossChainQuote({
-                selectedChainId,
-                fromToken,
-                address,
-                toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
-                gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-                setEstimatedTime,
-              }),
-            'getCrossChainQuote',
-            undefined,
-            5,
-            300,
-            abortSignal
-          );
+          // Use bidirectional approach for price estimation as well
+          let crossChainContractQuoteResponse;
+
+          try {
+            console.log('🔄 Price estimation: Using bidirectional cross-chain quote...');
+            const bidirectionalResult = await performWithRetry(
+              () =>
+                getBidirectionalCrossChainQuote({
+                  selectedChainId,
+                  fromToken,
+                  address: address as string,
+                  toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+                  gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+                  setEstimatedTime: () => {}, // Don't override estimated time during price estimation
+                }),
+              'getBidirectionalCrossChainQuote-priceEstimation',
+              undefined,
+              3, // Fewer retries for price estimation
+              500,
+              abortSignal
+            );
+
+            crossChainContractQuoteResponse = bidirectionalResult.crossChainContractQuoteResponse;
+            console.log('✅ Price estimation: Bidirectional quote successful');
+            console.log('📊 Bidirectional data:', bidirectionalResult.bidirectionalData);
+
+            // Also get the original method result for comparison
+            try {
+              console.log('📊 Price estimation: Getting original method for comparison...');
+              const originalResult = await performWithRetry(
+                () =>
+                  getCrossChainQuote({
+                    selectedChainId,
+                    fromToken,
+                    address,
+                    toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+                    gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+                    setEstimatedTime: () => {}, // Don't override estimated time
+                  }),
+                'getCrossChainQuote-priceEstimationComparison',
+                undefined,
+                2, // Fewer retries for comparison
+                500,
+                abortSignal
+              );
+
+              console.log('📊 PRICE ESTIMATION COMPARISON:');
+              console.log(
+                '📊 Bidirectional method fromAmountUSD:',
+                crossChainContractQuoteResponse.estimate?.fromAmountUSD
+              );
+              console.log(
+                '📊 Original method fromAmountUSD:',
+                originalResult.crossChainContractQuoteResponse.estimate?.fromAmountUSD
+              );
+
+              // Calculate difference in price estimation
+              if (
+                crossChainContractQuoteResponse.estimate?.fromAmountUSD &&
+                originalResult.crossChainContractQuoteResponse.estimate?.fromAmountUSD
+              ) {
+                const bidirectionalPrice = Number(
+                  crossChainContractQuoteResponse.estimate.fromAmountUSD
+                );
+                const originalPrice = Number(
+                  originalResult.crossChainContractQuoteResponse.estimate.fromAmountUSD
+                );
+                const priceDifference =
+                  ((bidirectionalPrice - originalPrice) / originalPrice) * 100;
+                console.log('📊 Price estimation difference:', `${priceDifference.toFixed(2)}%`);
+              }
+            } catch (comparisonError) {
+              console.warn('⚠️ Price estimation comparison failed:', comparisonError);
+            }
+          } catch (bidirectionalError) {
+            console.warn(
+              '⚠️ Price estimation: Bidirectional quote failed, falling back to original method:',
+              bidirectionalError
+            );
+
+            // Fallback to original method
+            const originalResult = await performWithRetry(
+              () =>
+                getCrossChainQuote({
+                  selectedChainId,
+                  fromToken,
+                  address,
+                  toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+                  gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+                  setEstimatedTime,
+                }),
+              'getCrossChainQuote-priceEstimationFallback',
+              undefined,
+              5,
+              300,
+              abortSignal
+            );
+
+            crossChainContractQuoteResponse = originalResult.crossChainContractQuoteResponse;
+            console.log('✅ Price estimation: Fallback to original method successful');
+          }
 
           // If operation was aborted, don't continue
           if (abortSignal.aborted) {
@@ -817,44 +906,155 @@ const SwapComponent: React.FC = () => {
       message: 'Getting quote...',
     });
 
-    const { crossChainContractCallsRoute } = await performWithRetry(
-      () =>
-        getCrossChainQuote({
-          selectedChainId,
-          fromToken,
-          address: address as string,
-          toAmount,
-          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-          setEstimatedTime,
-        }),
-      'getCrossChainQuote-execution',
-      undefined,
-      5, // 5 retries
-      500 // 500ms delay between retries
-    );
+    try {
+      // Use the new bidirectional approach as primary method
+      console.log('🔄 Using bidirectional cross-chain quote as primary method...');
+      const bidirectionalResult = await performWithRetry(
+        () =>
+          getBidirectionalCrossChainQuote({
+            selectedChainId,
+            fromToken,
+            address: address as string,
+            toAmount,
+            gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+            setEstimatedTime,
+          }),
+        'getBidirectionalCrossChainQuote-execution',
+        undefined,
+        5, // 5 retries
+        500 // 500ms delay between retries
+      );
 
-    const executedRoute = await executeRoute(crossChainContractCallsRoute, {
-      updateRouteHook: async crossChainContractCallsRoute => {
-        console.log('Updated Route 1:', crossChainContractCallsRoute);
-        const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
-        console.log(`Step 1 Status: ${step1Status}`);
+      const { crossChainContractCallsRoute, crossChainContractQuoteResponse, bidirectionalData } =
+        bidirectionalResult;
+      console.log('✅ Bidirectional quote data:', bidirectionalData);
 
-        setStatusMessage({
-          step: 'Route',
-          message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
-        });
+      // Also get the original method result for comparison
+      try {
+        console.log('📊 Getting original method result for comparison...');
+        const originalResult = await performWithRetry(
+          () =>
+            getCrossChainQuote({
+              selectedChainId,
+              fromToken,
+              address: address as string,
+              toAmount,
+              gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+              setEstimatedTime: () => {}, // Don't override the time from bidirectional method
+            }),
+          'getCrossChainQuote-comparison',
+          undefined,
+          3, // Fewer retries for comparison
+          500
+        );
 
-        if (step1Status === 'DONE') {
-          console.log('Route 1 wallet client:', walletClient);
-          await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
-        } else if (step1Status === 'FAILED') {
-          // Add reset if the execution fails
-          resetTimer();
+        console.log('📊 COMPARISON RESULTS:');
+        console.log(
+          '📊 Bidirectional method fromAmount:',
+          crossChainContractQuoteResponse.estimate?.fromAmount
+        );
+        console.log(
+          '📊 Original method fromAmount:',
+          originalResult.crossChainContractQuoteResponse.estimate?.fromAmount
+        );
+        console.log(
+          '📊 Bidirectional method toAmount:',
+          crossChainContractQuoteResponse.estimate?.toAmount
+        );
+        console.log(
+          '📊 Original method toAmount:',
+          originalResult.crossChainContractQuoteResponse.estimate?.toAmount
+        );
+
+        // Calculate difference
+        if (
+          crossChainContractQuoteResponse.estimate?.fromAmount &&
+          originalResult.crossChainContractQuoteResponse.estimate?.fromAmount
+        ) {
+          const bidirectionalAmount = Number(crossChainContractQuoteResponse.estimate.fromAmount);
+          const originalAmount = Number(
+            originalResult.crossChainContractQuoteResponse.estimate.fromAmount
+          );
+          const difference = ((bidirectionalAmount - originalAmount) / originalAmount) * 100;
+          console.log('📊 Difference in fromAmount:', `${difference.toFixed(2)}%`);
         }
-      },
-    });
+      } catch (comparisonError) {
+        console.warn('⚠️ Original method comparison failed:', comparisonError);
+        console.log('✅ Proceeding with bidirectional method only');
+      }
 
-    console.log('First route execution completed:', executedRoute);
+      // Use the bidirectional result for the actual execution
+      const executedRoute = await executeRoute(crossChainContractCallsRoute, {
+        updateRouteHook: async crossChainContractCallsRoute => {
+          console.log('Updated Route 1:', crossChainContractCallsRoute);
+          const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
+          console.log(`Step 1 Status: ${step1Status}`);
+
+          setStatusMessage({
+            step: 'Route',
+            message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
+          });
+
+          if (step1Status === 'DONE') {
+            console.log('Route 1 wallet client:', walletClient);
+            await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
+          } else if (step1Status === 'FAILED') {
+            // Add reset if the execution fails
+            resetTimer();
+          }
+        },
+      });
+
+      console.log('First route execution completed:', executedRoute);
+    } catch (error) {
+      console.error('❌ Bidirectional cross-chain swap failed:', error);
+
+      // Fallback to original method if bidirectional fails
+      console.log('🔄 Falling back to original cross-chain method...');
+
+      setStatusMessage({
+        step: 'Quote',
+        message: 'Retrying with fallback method...',
+      });
+
+      const { crossChainContractCallsRoute } = await performWithRetry(
+        () =>
+          getCrossChainQuote({
+            selectedChainId,
+            fromToken,
+            address: address as string,
+            toAmount,
+            gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+            setEstimatedTime,
+          }),
+        'getCrossChainQuote-fallback',
+        undefined,
+        5, // 5 retries
+        500 // 500ms delay between retries
+      );
+
+      const executedRoute = await executeRoute(crossChainContractCallsRoute, {
+        updateRouteHook: async crossChainContractCallsRoute => {
+          console.log('Updated Route 1 (Fallback):', crossChainContractCallsRoute);
+          const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
+          console.log(`Step 1 Status: ${step1Status}`);
+
+          setStatusMessage({
+            step: 'Route',
+            message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
+          });
+
+          if (step1Status === 'DONE') {
+            console.log('Route 1 wallet client:', walletClient);
+            await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
+          } else if (step1Status === 'FAILED') {
+            resetTimer();
+          }
+        },
+      });
+
+      console.log('Fallback route execution completed:', executedRoute);
+    }
   };
 
   const handleChainSwitch = async (contractCallsRoute: any, updatedConfig: any) => {

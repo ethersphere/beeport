@@ -222,7 +222,7 @@ export const getCrossChainQuote = async ({
     fromAmount: fromAmountToUse,
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
-    fromAmountForGas: gasForwarding, // Cant change to to string because of https://github.com/lifinance/sdk/issues/239
+    fromAmountForGas: gasForwarding as any, // Type assertion to work around SDK issue #239
     slippage: DEFAULT_SLIPPAGE,
     order: 'FASTEST' as const,
   };
@@ -380,3 +380,248 @@ export const getToAmountContractQuote = async (params: ToAmountQuoteParams): Pro
     500 // 500ms delay between retries
   );
 };
+
+/**
+ * Gets a more accurate cross-chain quote using bidirectional approach
+ * 1. Forward quote: Gnosis -> Remote chain to understand exchange rate
+ * 2. Reverse calculation: Use rate to estimate required remote chain amount
+ * 3. Verification quote: Remote chain -> Gnosis to verify and adjust
+ */
+export const getBidirectionalCrossChainQuote = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  toAmount,
+  gnosisDestinationToken,
+  setEstimatedTime,
+}: GetCrossChainQuoteParams & { setEstimatedTime: (time: number) => void }) => {
+  console.log('🔄 Starting bidirectional cross-chain quote...');
+  console.log('Target toAmount:', toAmount);
+  console.log('From chain:', selectedChainId, 'to chain: Gnosis');
+
+  // Step 1: Get forward quote (Gnosis -> Remote chain) to understand exchange rate
+  // Use a standard amount (equivalent to ~$100) to get the rate
+  const forwardTestAmount = '100000000000000000000'; // 100 tokens (18 decimals)
+
+  console.log('🔄 Step 1: Getting forward quote (Gnosis -> Remote) for rate calculation...');
+  const forwardQuoteParams = {
+    fromChain: ChainId.DAI.toString(),
+    toChain: selectedChainId.toString(),
+    fromToken: gnosisDestinationToken,
+    toToken: fromToken,
+    fromAddress: address as string,
+    fromAmount: forwardTestAmount,
+  };
+
+  let forwardQuote;
+  try {
+    forwardQuote = await getQuote(forwardQuoteParams);
+    console.log('✅ Forward quote successful:', {
+      fromAmount: forwardQuote.estimate.fromAmount,
+      toAmount: forwardQuote.estimate.toAmount,
+      rate: `1 Gnosis token = ${Number(forwardQuote.estimate.toAmount) / Number(forwardQuote.estimate.fromAmount)} remote tokens`,
+    });
+  } catch (error) {
+    console.error('❌ Forward quote failed:', error);
+    throw new Error('Failed to get forward quote for rate calculation');
+  }
+
+  // Step 2: Calculate estimated required amount using the forward rate
+  const forwardRate =
+    Number(forwardQuote.estimate.toAmount) / Number(forwardQuote.estimate.fromAmount);
+
+  // Validate the forward rate to prevent invalid calculations
+  if (!forwardRate || forwardRate <= 0 || !isFinite(forwardRate)) {
+    console.error('❌ Invalid forward rate calculated:', forwardRate);
+    throw new Error('Failed to calculate valid exchange rate from forward quote');
+  }
+
+  const estimatedRequiredAmount = Math.ceil(Number(toAmount) / forwardRate);
+
+  // Validate the estimated amount
+  if (
+    !estimatedRequiredAmount ||
+    estimatedRequiredAmount <= 0 ||
+    !isFinite(estimatedRequiredAmount)
+  ) {
+    console.error('❌ Invalid estimated amount calculated:', estimatedRequiredAmount);
+    throw new Error('Failed to calculate valid estimated amount');
+  }
+
+  console.log('🔄 Step 2: Calculated estimated required amount:', estimatedRequiredAmount);
+
+  // Step 3: Get reverse quote (Remote -> Gnosis) with estimated amount
+  console.log('🔄 Step 3: Getting reverse quote (Remote -> Gnosis) for verification...');
+
+  // Add some buffer to account for slippage and fees (10% buffer)
+  const bufferedAmount = Math.ceil(estimatedRequiredAmount * 1.1);
+
+  // Validate buffered amount and ensure it's a valid integer
+  if (!bufferedAmount || bufferedAmount <= 0 || !isFinite(bufferedAmount)) {
+    console.error('❌ Invalid buffered amount calculated:', bufferedAmount);
+    throw new Error('Failed to calculate valid buffered amount');
+  }
+
+  const reverseQuoteParams = {
+    fromChain: selectedChainId.toString(),
+    toChain: ChainId.DAI.toString(),
+    fromToken: fromToken,
+    toToken: gnosisDestinationToken,
+    fromAddress: address as string,
+    fromAmount: bufferedAmount.toString(),
+  };
+
+  let reverseQuote;
+  try {
+    reverseQuote = await getQuote(reverseQuoteParams);
+    console.log('✅ Reverse quote successful:', {
+      fromAmount: reverseQuote.estimate.fromAmount,
+      toAmount: reverseQuote.estimate.toAmount,
+      targetAmount: toAmount,
+    });
+  } catch (error) {
+    console.error('❌ Reverse quote failed:', error);
+    throw new Error('Failed to get reverse quote for verification');
+  }
+
+  // Step 4: Compare and adjust if needed
+  const actualToAmount = Number(reverseQuote.estimate.toAmount);
+  const targetAmount = Number(toAmount);
+  const discrepancy = ((actualToAmount - targetAmount) / targetAmount) * 100;
+
+  console.log('🔄 Step 4: Analyzing results:', {
+    targetAmount,
+    actualToAmount,
+    discrepancy: `${discrepancy.toFixed(2)}%`,
+  });
+
+  let finalFromAmount = reverseQuote.estimate.fromAmount;
+
+  // If we're getting significantly more than needed, try to adjust downward
+  if (discrepancy > 5) {
+    console.log('🔄 Adjusting downward - got too much output');
+    const adjustmentRatio = targetAmount / actualToAmount;
+    const adjustedFromAmount = Math.ceil(
+      Number(reverseQuote.estimate.fromAmount) * adjustmentRatio
+    );
+
+    // Validate the adjusted amount
+    if (!adjustedFromAmount || adjustedFromAmount <= 0 || !isFinite(adjustedFromAmount)) {
+      console.warn('⚠️ Invalid adjusted amount calculated, using original amount');
+    } else {
+      try {
+        const adjustedQuoteParams = {
+          ...reverseQuoteParams,
+          fromAmount: adjustedFromAmount.toString(),
+        };
+
+        const adjustedQuote = await getQuote(adjustedQuoteParams);
+        const adjustedToAmount = Number(adjustedQuote.estimate.toAmount);
+
+        console.log('✅ Adjusted quote:', {
+          adjustedFromAmount,
+          adjustedToAmount,
+          newDiscrepancy: `${(((adjustedToAmount - targetAmount) / targetAmount) * 100).toFixed(2)}%`,
+        });
+
+        // Use adjusted amount if it's closer to target
+        if (Math.abs(adjustedToAmount - targetAmount) < Math.abs(actualToAmount - targetAmount)) {
+          finalFromAmount = adjustedQuote.estimate.fromAmount;
+          reverseQuote = adjustedQuote;
+          console.log('✅ Using adjusted amount');
+        }
+      } catch (adjustError) {
+        console.warn('⚠️ Adjustment failed, using original amount:', adjustError);
+      }
+    }
+  }
+
+  // Step 5: Add gas forwarding and minimum bridge amount logic
+  console.log('🔄 Step 5: Adding gas forwarding and minimum bridge amount...');
+
+  const gasForwarding = await checkGasForwarding(address as string, selectedChainId, fromToken);
+  const minCrossChainFromAmount = calculateMinCrossChainFromAmountFromQuote(reverseQuote);
+
+  const requiredAmountBigInt = BigInt(finalFromAmount) + BigInt(gasForwarding.toString());
+  const minBridgeAmountBigInt = BigInt(minCrossChainFromAmount);
+
+  const finalBridgeAmount =
+    requiredAmountBigInt > minBridgeAmountBigInt ? requiredAmountBigInt : minBridgeAmountBigInt;
+
+  console.log(' Final calculations:', {
+    baseAmount: finalFromAmount,
+    gasForwarding: gasForwarding.toString(),
+    minBridgeAmount: minCrossChainFromAmount,
+    finalBridgeAmount: finalBridgeAmount.toString(),
+  });
+
+  // Step 6: Get final quote with gas forwarding
+  const finalQuoteRequest = {
+    fromChain: selectedChainId.toString(),
+    fromToken: fromToken,
+    fromAddress: address.toString(),
+    fromAmount: finalBridgeAmount.toString(),
+    toChain: ChainId.DAI.toString(),
+    toToken: gnosisDestinationToken,
+    fromAmountForGas: gasForwarding as any, // Type assertion to work around SDK issue #239
+    slippage: DEFAULT_SLIPPAGE,
+    order: 'FASTEST' as const,
+  };
+
+  const finalQuote = await getQuote(finalQuoteRequest);
+
+  console.log('✅ Bidirectional quote complete:', {
+    finalFromAmount: finalQuote.estimate.fromAmount,
+    finalToAmount: finalQuote.estimate.toAmount,
+    executionDuration: finalQuote.estimate?.executionDuration,
+  });
+
+  logTokenRoute(finalQuote.includedSteps, 'Bidirectional Cross Chain Quote');
+
+  if (setEstimatedTime && finalQuote.estimate?.executionDuration) {
+    setEstimatedTime(finalQuote.estimate.executionDuration);
+  }
+
+  return {
+    crossChainContractQuoteResponse: finalQuote,
+    crossChainContractCallsRoute: convertQuoteToRoute(finalQuote),
+    bidirectionalData: {
+      forwardRate,
+      estimatedRequiredAmount,
+      discrepancy,
+      adjustments: discrepancy > 5 ? 'adjusted' : 'none',
+    },
+  };
+};
+
+/**
+ * Helper function to calculate minimum bridge amount from a quote response
+ */
+const calculateMinCrossChainFromAmountFromQuote = (quoteResponse: any): string => {
+  if (!quoteResponse.estimate?.fromAmountUSD || !quoteResponse.estimate?.fromAmount) {
+    return '1000000';
+  }
+
+  try {
+    const fromAmountUsd = parseFloat(quoteResponse.estimate.fromAmountUSD);
+    const fromAmount = quoteResponse.estimate.fromAmount;
+
+    if (fromAmountUsd <= 0 || fromAmountUsd >= MIN_BRIDGE_USD_VALUE) {
+      return fromAmount;
+    }
+
+    const PRECISION = 1000000;
+    const scaledRatio = Math.ceil((MIN_BRIDGE_USD_VALUE / fromAmountUsd) * PRECISION);
+    const fromAmountBigInt = BigInt(fromAmount);
+    const minTokenAmount = (fromAmountBigInt * BigInt(scaledRatio)) / BigInt(PRECISION);
+
+    return minTokenAmount.toString();
+  } catch (error) {
+    console.error('Error calculating min amount:', error);
+    return '1000000';
+  }
+};
+
+/**
+ * Gets a quote for cross chain transactions (ORIGINAL METHOD - KEPT FOR COMPARISON)
+ */
