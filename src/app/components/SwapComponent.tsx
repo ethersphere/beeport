@@ -35,6 +35,7 @@ import SearchableTokenDropdown from './SearchableTokenDropdown';
 import {
   formatErrorMessage,
   createBatchId,
+  readBatchId,
   performWithRetry,
   toChecksumAddress,
   getGnosisPublicClient,
@@ -693,8 +694,13 @@ const SwapComponent: React.FC = () => {
             // Don't set upload step for top-ups
           } else {
             try {
-              // Batch ID was already created at the beginning of handleSwap
-              console.log('Batch created successfully with ID:', postageBatchId);
+              // Calculate the batch ID for logging
+              const calculatedBatchId = readBatchId(
+                updatedConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS
+              );
+
+              console.log('Batch created successfully with ID:', calculatedBatchId);
 
               setStatusMessage({
                 step: 'Complete',
@@ -767,8 +773,13 @@ const SwapComponent: React.FC = () => {
                 isSuccess: true,
               });
             } else {
-              // Batch ID was already created at the beginning of handleSwap
-              console.log('Batch created successfully with ID:', postageBatchId);
+              // Calculate the batch ID for logging
+              const calculatedBatchId = readBatchId(
+                currentConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS
+              );
+
+              console.log('Batch created successfully with ID:', calculatedBatchId);
 
               setStatusMessage({
                 step: 'Complete',
@@ -925,8 +936,12 @@ const SwapComponent: React.FC = () => {
                   isSuccess: true,
                 });
               } else {
-                // Batch ID was already created at the beginning of handleSwap
-                console.log('Batch created successfully with ID:', postageBatchId);
+                // Calculate the batch ID for logging
+                const calculatedBatchId = readBatchId(
+                  updatedConfig.swarmBatchNonce,
+                  GNOSIS_CUSTOM_REGISTRY_ADDRESS
+                );
+                console.log('Batch created successfully with ID:', calculatedBatchId);
 
                 setStatusMessage({
                   step: 'Complete',
@@ -968,12 +983,27 @@ const SwapComponent: React.FC = () => {
     // For new batches (not top-ups), create the batch ID once here
     if (!isTopUp && address) {
       try {
-        const batchId = await createBatchId(
+        // Calculate and log the batch ID for this transaction
+        const calculatedBatchId = readBatchId(
+          updatedConfig.swarmBatchNonce,
+          GNOSIS_CUSTOM_REGISTRY_ADDRESS
+        );
+        console.log('🔍 HandleSwap: Calculated batch ID:', calculatedBatchId);
+
+        // Also call createBatchId to set the state (fire and forget)
+        createBatchId(
           updatedConfig.swarmBatchNonce,
           GNOSIS_CUSTOM_REGISTRY_ADDRESS,
           setPostageBatchId
-        );
-        console.log('Pre-calculated batch ID:', batchId, updatedConfig.swarmBatchNonce);
+        )
+          .then(stateBasedBatchId => {
+            console.log('🔍 State-based batch ID from createBatchId:', stateBasedBatchId);
+          })
+          .catch(error => {
+            console.error('Error in createBatchId for state:', error);
+          });
+
+        console.log('Pre-calculated batch ID:', calculatedBatchId, updatedConfig.swarmBatchNonce);
       } catch (error) {
         console.error('Failed to pre-calculate batch ID:', error);
       }

@@ -36,20 +36,58 @@ export const formatErrorMessage = (error: unknown): string => {
   return requestArgsIndex > -1 ? errorMessage.slice(0, requestArgsIndex).trim() : errorMessage;
 };
 
+/**
+ * Calculates batch ID from nonce and sender address (pure function)
+ * @param nonce The batch nonce as hex string
+ * @param sender The sender address
+ * @returns The calculated batch ID (without 0x prefix)
+ */
+export const readBatchId = (nonce: string, sender: string): string => {
+  try {
+    console.log('🔍 readBatchId called with nonce:', nonce, 'sender:', sender);
+
+    const encodedData = encodeAbiParameters(parseAbiParameters(['address', 'bytes32']), [
+      sender as `0x${string}`,
+      nonce as `0x${string}`,
+    ]);
+    console.log('🔍 readBatchId encoded data:', encodedData);
+
+    const calculatedBatchId = keccak256(encodedData);
+    console.log('🔍 readBatchId calculated hash:', calculatedBatchId);
+
+    const batchIdWithoutPrefix = calculatedBatchId.slice(2);
+    console.log('🔍 readBatchId final result:', batchIdWithoutPrefix);
+
+    return batchIdWithoutPrefix;
+  } catch (error) {
+    console.error('Error in readBatchId:', error);
+    throw error;
+  }
+};
+
+/**
+ * Creates batch ID and sets it in state
+ * @param nonce The batch nonce as hex string
+ * @param sender The sender address
+ * @param setPostageBatchId State setter function
+ * @returns The calculated batch ID (without 0x prefix)
+ */
 export const createBatchId = async (
   nonce: string,
   sender: string,
   setPostageBatchId: (batchId: string) => void
 ): Promise<string> => {
   try {
-    const encodedData = encodeAbiParameters(parseAbiParameters(['address', 'bytes32']), [
-      sender as `0x${string}`,
-      nonce as `0x${string}`,
-    ]);
+    console.log('🔍 createBatchId called - using readBatchId internally');
 
-    const calculatedBatchId = keccak256(encodedData);
-    setPostageBatchId(calculatedBatchId.slice(2));
-    return calculatedBatchId.slice(2);
+    // Use the pure function to calculate the batch ID
+    const batchId = readBatchId(nonce, sender);
+
+    console.log('🔍 createBatchId setting state with:', batchId);
+    setPostageBatchId(batchId);
+    console.log('🔍 createBatchId state set successfully');
+
+    return batchId;
   } catch (error) {
     console.error('Error creating batch ID:', error);
     throw error;
