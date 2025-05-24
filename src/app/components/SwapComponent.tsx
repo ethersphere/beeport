@@ -903,7 +903,9 @@ const SwapComponent: React.FC = () => {
           });
 
           if (step2Status === 'DONE') {
-            const txHash = contractCallsRoute.steps[0]?.execution?.process[1]?.txHash;
+            const txHash =
+              contractCallsRoute.steps[0]?.execution?.process[1]?.txHash ||
+              contractCallsRoute.steps[0]?.execution?.process[0]?.txHash;
             console.log('Created new Batch at trx', txHash);
 
             try {
