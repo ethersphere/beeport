@@ -43,7 +43,7 @@ import {
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getBidirectionalCrossChainQuote } from './CustomQuotes';
+import { getGnosisQuote, getSafeCrossChainQuote } from './CustomQuotes';
 import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
 import { generateAndUpdateNonce } from './utils';
 import { useTokenManagement } from './TokenUtils';
@@ -321,14 +321,14 @@ const SwapComponent: React.FC = () => {
         let totalAmount = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
 
         if (selectedChainId !== ChainId.DAI) {
-          // Use bidirectional approach for price estimation
+          // Use the safe cross-chain quote approach for execution
+          console.log('🔄 Using safe cross-chain quote for execution...');
           let crossChainContractQuoteResponse;
 
           try {
-            console.log('🔄 Price estimation: Using bidirectional cross-chain quote...');
             const bidirectionalResult = await performWithRetry(
               () =>
-                getBidirectionalCrossChainQuote({
+                getSafeCrossChainQuote({
                   selectedChainId,
                   fromToken,
                   address: address as string,
@@ -336,7 +336,7 @@ const SwapComponent: React.FC = () => {
                   gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
                   setEstimatedTime: () => {}, // Don't override estimated time during price estimation
                 }),
-              'getBidirectionalCrossChainQuote-priceEstimation',
+              'getSafeCrossChainQuote-priceEstimation',
               undefined,
               3, // Fewer retries for price estimation
               500,
@@ -344,11 +344,11 @@ const SwapComponent: React.FC = () => {
             );
 
             crossChainContractQuoteResponse = bidirectionalResult.crossChainContractQuoteResponse;
-            console.log('✅ Price estimation: Bidirectional quote successful');
-            console.log('📊 Bidirectional data:', bidirectionalResult.bidirectionalData);
+            console.log('✅ Price estimation: Safe quote successful');
+            console.log('📊 Safe quote data:', bidirectionalResult.safeQuoteData);
           } catch (bidirectionalError) {
-            console.error('❌ Price estimation: Bidirectional quote failed:', bidirectionalError);
-            throw new Error('Failed to get bidirectional quote for price estimation');
+            console.error('❌ Price estimation: Safe quote failed:', bidirectionalError);
+            throw new Error('Failed to get safe quote for price estimation');
           }
 
           // If operation was aborted, don't continue
@@ -831,11 +831,11 @@ const SwapComponent: React.FC = () => {
     });
 
     try {
-      // Use the bidirectional approach for cross-chain swap execution
-      console.log('🔄 Using bidirectional cross-chain quote for execution...');
+      // Use the safe cross-chain quote approach for execution
+      console.log('🔄 Using safe cross-chain quote for execution...');
       const bidirectionalResult = await performWithRetry(
         () =>
-          getBidirectionalCrossChainQuote({
+          getSafeCrossChainQuote({
             selectedChainId,
             fromToken,
             address: address as string,
@@ -843,15 +843,15 @@ const SwapComponent: React.FC = () => {
             gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
             setEstimatedTime,
           }),
-        'getBidirectionalCrossChainQuote-execution',
+        'getSafeCrossChainQuote-execution',
         undefined,
         5, // 5 retries
         500 // 500ms delay between retries
       );
 
-      const { crossChainContractCallsRoute, crossChainContractQuoteResponse, bidirectionalData } =
+      const { crossChainContractCallsRoute, crossChainContractQuoteResponse, safeQuoteData } =
         bidirectionalResult;
-      console.log('✅ Bidirectional quote data:', bidirectionalData);
+      console.log('✅ Safe quote data:', safeQuoteData);
 
       // Execute the route
       const executedRoute = await executeRoute(crossChainContractCallsRoute, {
@@ -877,7 +877,7 @@ const SwapComponent: React.FC = () => {
 
       console.log('Cross-chain route execution completed:', executedRoute);
     } catch (error) {
-      console.error('❌ Bidirectional cross-chain swap failed:', error);
+      console.error('❌ Safe cross-chain swap failed:', error);
       throw error; // Re-throw to be handled by the calling function
     }
   };

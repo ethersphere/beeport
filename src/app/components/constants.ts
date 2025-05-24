@@ -41,9 +41,12 @@ export const GNOSIS_WXDAI_ADDRESS =
 export const MIN_TOKEN_BALANCE_USD = 0.5;
 
 // Minimum USD value for bridging to avoid dust amounts
-export const MIN_BRIDGE_USD_VALUE = 0.1;
+export const MIN_BRIDGE_USD_VALUE = 20;
 
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
+
+// Cross-chain safety buffer percentage to account for slippage and price movements
+export const CROSS_CHAIN_SAFETY_BUFFER_PERCENT = 5; // 5% buffer for cross-chain quotes
 
 // Check if we're running on the production domain
 const isProduction =
