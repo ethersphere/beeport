@@ -222,7 +222,7 @@ export const getCrossChainQuote = async ({
     fromAmount: fromAmountToUse,
     toChain: ChainId.DAI.toString(),
     toToken: gnosisDestinationToken,
-    fromAmountForGas: gasForwarding, // Cant change to to string because of https://github.com/lifinance/sdk/issues/239
+    fromAmountForGas: gasForwarding as any, // Cant change to to string because of https://github.com/lifinance/sdk/issues/239
     slippage: DEFAULT_SLIPPAGE,
     order: 'FASTEST' as const,
   };
