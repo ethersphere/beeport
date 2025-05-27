@@ -7,7 +7,8 @@
 .title {
   margin-bottom: 20px;
   font-size: 20px;
-  text-align: center;
+  text-align: left;
+  padding-left: 18px;
   color: #ffffff;
 }
 
