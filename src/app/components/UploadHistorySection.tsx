@@ -70,9 +70,72 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return `${BEE_GATEWAY_URL}${record.reference}/`;
   };
 
+  const downloadCSV = () => {
+    if (history.length === 0) return;
+
+    // CSV headers
+    const headers = [
+      'Reference',
+      'Stamp ID',
+      'Date Created',
+      'Expiry (Days)',
+      'Filename',
+      'Full Link',
+    ];
+
+    // Convert history data to CSV rows
+    const csvRows = history.map(record => [
+      record.reference,
+      record.stampId,
+      formatDate(record.timestamp),
+      formatExpiryDays(record.expiryDate),
+      record.filename || 'Unnamed upload',
+      getReferenceUrl(record),
+    ]);
+
+    // Combine headers and data
+    const csvContent = [headers, ...csvRows]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+
+    // Create and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute(
+      'download',
+      `upload-history-${address?.slice(0, 8)}-${new Date().toISOString().split('T')[0]}.csv`
+    );
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className={styles.container}>
-      <h2 className={styles.title}>Upload History</h2>
+      <div className={styles.titleContainer}>
+        <h2 className={styles.title}>Upload History</h2>
+        {history.length > 0 && (
+          <button className={styles.downloadButton} onClick={downloadCSV} title="Download CSV">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7,10 12,15 17,10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        )}
+      </div>
 
       {history.length === 0 ? (
         <div className={styles.emptyState}>No uploads found for this address</div>
