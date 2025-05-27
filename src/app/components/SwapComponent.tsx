@@ -544,7 +544,7 @@ const SwapComponent: React.FC = () => {
     }));
   };
 
-  const handleDirectBzzTransactions = async () => {
+  const handleDirectBzzTransactions = async (updatedConfig: any) => {
     // Ensure we have all needed objects and data
     if (!address || !publicClient || !walletClient) {
       console.error('Missing required objects for direct BZZ transaction');
@@ -563,11 +563,6 @@ const SwapComponent: React.FC = () => {
       if (isTopUp && originalStampInfo) {
         // For top-ups, use the original depth from the stamp
         totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-        console.log(
-          'Top-up totalAmount using original depth:',
-          originalStampInfo.depth,
-          totalAmount.toString()
-        );
 
         // Update swarmBatchInitialBalance for top-up (price per chunk)
         if (currentPrice !== null && selectedDays) {
@@ -579,13 +574,9 @@ const SwapComponent: React.FC = () => {
           }));
         }
       } else {
-        // For new batches, use the selected depth
-        totalAmount = calculateTotalAmount();
-        console.log('New batch totalAmount:', totalAmount.toString());
+        // For new batches, use the total from updatedConfig
+        totalAmount = BigInt(updatedConfig.swarmBatchTotal);
       }
-
-      // Get updated nonce for this transaction
-      const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
       // Generate specific transaction message based on operation type
       const operationMsg = isTopUp
@@ -980,6 +971,30 @@ const SwapComponent: React.FC = () => {
     // Use the utility function to generate and update the nonce
     const updatedConfig = generateAndUpdateNonce(swarmConfig, setSwarmConfig);
 
+    // IMPORTANT: Ensure the updatedConfig has the latest calculated values
+    // This fixes the BZZ amount mismatch between price estimation and execution
+    if (currentPrice !== null && selectedDays) {
+      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+      const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+
+      // Calculate total amount based on whether this is a top-up or new batch
+      let depthToUse: number;
+      if (isTopUp && originalStampInfo) {
+        // For top-ups, use the original depth from the stamp
+        depthToUse = originalStampInfo.depth;
+      } else {
+        // For new batches, use the selected depth
+        depthToUse = selectedDepth;
+      }
+
+      const totalAmount = totalPricePerDuration * BigInt(2 ** depthToUse);
+
+      // Update the config with the latest calculated values
+      updatedConfig.swarmBatchInitialBalance = totalPricePerDuration.toString();
+      updatedConfig.swarmBatchTotal = totalAmount.toString();
+      updatedConfig.swarmBatchDepth = depthToUse.toString();
+    }
+
     // For new batches (not top-ups), create the batch ID once here
     if (!isTopUp && address) {
       try {
@@ -988,7 +1003,6 @@ const SwapComponent: React.FC = () => {
           updatedConfig.swarmBatchNonce,
           GNOSIS_CUSTOM_REGISTRY_ADDRESS
         );
-        console.log('🔍 HandleSwap: Calculated batch ID:', calculatedBatchId);
 
         // Also call createBatchId to set the state (fire and forget)
         createBatchId(
@@ -997,13 +1011,11 @@ const SwapComponent: React.FC = () => {
           setPostageBatchId
         )
           .then(stateBasedBatchId => {
-            console.log('🔍 State-based batch ID from createBatchId:', stateBasedBatchId);
+            console.log('State-based batch ID from createBatchId:', stateBasedBatchId);
           })
           .catch(error => {
             console.error('Error in createBatchId for state:', error);
           });
-
-        console.log('Pre-calculated batch ID:', calculatedBatchId, updatedConfig.swarmBatchNonce);
       } catch (error) {
         console.error('Failed to pre-calculate batch ID:', error);
       }
@@ -1037,33 +1049,13 @@ const SwapComponent: React.FC = () => {
         message: 'Calculating amounts...',
       });
 
-      // Calculate amount based on whether this is a top-up or new batch
-      let bzzAmount: string;
-
-      if (isTopUp && originalStampInfo) {
-        // For top-ups, use the original depth from the stamp
-        bzzAmount = calculateTopUpAmount(originalStampInfo.depth).toString();
-        console.log('Top-up bzzAmount using original depth:', originalStampInfo.depth, bzzAmount);
-      } else {
-        // For new batches, use the selected depth
-        bzzAmount = calculateTotalAmount().toString();
-        console.log('New batch bzzAmount:', bzzAmount);
-      }
-
-      // Add transaction type to the logged info
-      console.log(
-        `Initiating ${isTopUp ? 'top-up' : 'new batch'} transaction for ${
-          isTopUp ? `batch ${topUpBatchId}` : 'new batch'
-        }`
-      );
-
       // Deciding if we are buying stamps directly or swaping/bridging
       if (
         selectedChainId !== null &&
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
-        await handleDirectBzzTransactions();
+        await handleDirectBzzTransactions(updatedConfig);
       } else {
         setStatusMessage({
           step: 'Quoting',
@@ -1080,7 +1072,7 @@ const SwapComponent: React.FC = () => {
               getGnosisQuote({
                 gnosisSourceToken,
                 address,
-                bzzAmount,
+                bzzAmount: updatedConfig.swarmBatchTotal,
                 nodeAddress,
                 swarmConfig: updatedConfig,
                 setEstimatedTime,
