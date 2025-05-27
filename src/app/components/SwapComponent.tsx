@@ -24,6 +24,8 @@ import {
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
+  DISABLE_MESSAGE_SIGNING,
+  ACCEPT_EXCHANGE_RATE_UPDATES,
 } from './constants';
 
 import HelpSection from './HelpSection';
@@ -40,6 +42,7 @@ import {
   toChecksumAddress,
   getGnosisPublicClient,
   setGnosisRpcUrl,
+  handleExchangeRateUpdate,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -730,6 +733,9 @@ const SwapComponent: React.FC = () => {
     });
 
     const executedRoute = await executeRoute(contractCallsRoute, {
+      disableMessageSigning: DISABLE_MESSAGE_SIGNING,
+      acceptExchangeRateUpdateHook: params =>
+        handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
       updateRouteHook: async updatedRoute => {
         console.log('Updated Route:', updatedRoute);
         const status = updatedRoute.steps[0]?.execution?.status;
@@ -825,6 +831,9 @@ const SwapComponent: React.FC = () => {
     );
 
     const executedRoute = await executeRoute(crossChainContractCallsRoute, {
+      disableMessageSigning: DISABLE_MESSAGE_SIGNING,
+      acceptExchangeRateUpdateHook: params =>
+        handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
       updateRouteHook: async crossChainContractCallsRoute => {
         console.log('Updated Route 1:', crossChainContractCallsRoute);
         const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
@@ -894,6 +903,9 @@ const SwapComponent: React.FC = () => {
 
     try {
       const executedRoute2 = await executeRoute(contractCallsRoute, {
+        disableMessageSigning: DISABLE_MESSAGE_SIGNING,
+        acceptExchangeRateUpdateHook: params =>
+          handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
         updateRouteHook: async contractCallsRoute => {
           console.log('Updated Route 2:', contractCallsRoute);
           const step2Status = contractCallsRoute.steps[0]?.execution?.status;

@@ -251,6 +251,45 @@ export const generateProperNonce = (): string => {
 };
 
 /**
+ * Handles exchange rate updates for Li.Fi SDK executeRoute calls
+ * @param params Exchange rate update parameters from Li.Fi SDK
+ * @param setStatusMessage Function to update status message
+ * @param acceptExchangeRateUpdates Boolean flag to control acceptance
+ * @returns Promise<boolean> indicating whether to accept the rate update
+ */
+export const handleExchangeRateUpdate = async (
+  params: {
+    toToken: any;
+    oldToAmount: string;
+    newToAmount: string;
+  },
+  setStatusMessage: (status: any) => void,
+  acceptExchangeRateUpdates: boolean
+): Promise<boolean> => {
+  const { toToken, oldToAmount, newToAmount } = params;
+
+  console.log('Exchange rate update detected:');
+  console.log(`Token: ${toToken.symbol}`);
+  console.log(`Old amount: ${oldToAmount}`);
+  console.log(`New amount: ${newToAmount}`);
+
+  // Calculate percentage change
+  const oldAmount = parseFloat(oldToAmount);
+  const newAmount = parseFloat(newToAmount);
+  const percentageChange = ((newAmount - oldAmount) / oldAmount) * 100;
+
+  console.log(`Exchange rate change: ${percentageChange.toFixed(2)}%`);
+
+  // Update status message to inform user about the rate change
+  setStatusMessage((prev: any) => ({
+    ...prev,
+    message: `${prev.message} (Rate updated: ${percentageChange > 0 ? '+' : ''}${percentageChange.toFixed(2)}%)`,
+  }));
+
+  return acceptExchangeRateUpdates;
+};
+
+/**
  * Creates and returns a public client for the Gnosis chain
  * @returns A public client configured for the Gnosis chain
  */

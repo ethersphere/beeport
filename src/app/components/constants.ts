@@ -45,6 +45,12 @@ export const MIN_BRIDGE_USD_VALUE = 0.1;
 
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
+// Disable message signing for executeRoute calls
+export const DISABLE_MESSAGE_SIGNING = true;
+
+// Accept exchange rate updates automatically for executeRoute calls
+export const ACCEPT_EXCHANGE_RATE_UPDATES = true;
+
 // Check if we're running on the production domain
 const isProduction =
   typeof window !== 'undefined' && window.location.hostname === 'app.ethswarm.org';
