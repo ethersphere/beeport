@@ -19,7 +19,15 @@
   margin: 0;
 }
 
-.downloadButton {
+.buttonGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.downloadButton,
+.clearButton,
+.uploadButton {
   background-color: transparent;
   border: 1px solid #30363d;
   border-radius: 6px;
@@ -32,10 +40,22 @@
   justify-content: center;
 }
 
-.downloadButton:hover {
+.downloadButton:hover,
+.clearButton:hover,
+.uploadButton:hover {
   background-color: rgba(48, 54, 61, 0.5);
   border-color: #424a53;
   color: #ffffff;
+}
+
+.clearButton:hover {
+  background-color: rgba(220, 53, 69, 0.2);
+  border-color: #dc3545;
+  color: #dc3545;
+}
+
+.hiddenInput {
+  display: none;
 }
 
 .emptyState {
