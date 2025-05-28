@@ -71,7 +71,10 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     const fetchStamps = async () => {
-      if (!address) return;
+      if (!address) {
+        setIsLoading(false);
+        return;
+      }
 
       try {
         // Create a client with the registry ABI
@@ -142,7 +145,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           <h2>Your Stamps</h2>
         </div>
 
-        {isLoading ? (
+        {!address ? (
+          <div className={styles.stampListLoading}>Connect wallet to check stamps</div>
+        ) : isLoading ? (
           <div className={styles.stampListLoading}>Loading stamps...</div>
         ) : stamps.length === 0 ? (
           <div className={styles.stampListEmpty}>No stamps found</div>

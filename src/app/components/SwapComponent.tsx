@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
+import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
 import { createConfig, EVM, executeRoute, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
@@ -74,6 +75,7 @@ const SwapComponent: React.FC = () => {
   const { switchChain } = useSwitchChain();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const { openConnectModal } = useConnectModal();
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
@@ -189,11 +191,11 @@ const SwapComponent: React.FC = () => {
 
   // Separate useEffect to fetch tokens after selectedChainId is updated
   useEffect(() => {
-    if (isConnected && address && selectedChainId && isInitialized) {
+    if (selectedChainId && isInitialized) {
       console.log('Fetching tokens with chain ID:', selectedChainId);
       fetchTokensAndBalances(selectedChainId);
     }
-  }, [isConnected, address, selectedChainId, isInitialized]);
+  }, [selectedChainId, isInitialized, isConnected, address]);
 
   useEffect(() => {
     if (chainId && isInitialized) {
@@ -1116,6 +1118,12 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  const handleGetStarted = () => {
+    if (openConnectModal) {
+      openConnectModal();
+    }
+  };
+
   const saveUploadReference = (
     reference: string,
     postageBatchId: string,
@@ -1395,6 +1403,7 @@ const SwapComponent: React.FC = () => {
               isConnected={isConnected}
               tokenBalances={tokenBalances}
               selectedTokenInfo={selectedTokenInfo}
+              availableTokens={availableTokens}
               onTokenSelect={(address, token) => {
                 console.log('Token manually selected:', address, token?.symbol);
 
@@ -1475,21 +1484,26 @@ const SwapComponent: React.FC = () => {
 
           <button
             className={`${styles.button} ${
-              !selectedDays || !fromToken || liquidityError || insufficientFunds
-                ? styles.buttonDisabled
-                : ''
+              !isConnected
+                ? ''
+                : !selectedDays || !fromToken || liquidityError || insufficientFunds
+                  ? styles.buttonDisabled
+                  : ''
             } ${isPriceEstimating ? styles.calculatingButton : ''}`}
             disabled={
-              !selectedDays ||
-              !fromToken ||
-              liquidityError ||
-              insufficientFunds ||
-              isPriceEstimating
+              isConnected &&
+              (!selectedDays ||
+                !fromToken ||
+                liquidityError ||
+                insufficientFunds ||
+                isPriceEstimating)
             }
-            onClick={handleSwap}
+            onClick={!isConnected ? handleGetStarted : handleSwap}
           >
             {isLoading ? (
               <div>Loading...</div>
+            ) : !isConnected ? (
+              'Get Started'
             ) : !selectedDays ? (
               'Choose Timespan'
             ) : !fromToken ? (
