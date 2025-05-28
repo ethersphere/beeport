@@ -3,6 +3,20 @@ import { useState } from 'react';
 import { formatUnits } from 'viem';
 import { performWithRetry, toChecksumAddress } from './utils';
 
+// List of popular tokens to prioritize when wallet is not connected
+const POPULAR_TOKENS = [
+  'ETH',
+  'USDC',
+  'USDT',
+  'WETH',
+  'DAI',
+  'WBTC',
+  'LINK',
+  'UNI',
+  'AAVE',
+  'MATIC',
+];
+
 /**
  * Interface for token information
  */
@@ -34,7 +48,7 @@ export interface TokenManagementResult {
 
 /**
  * Custom hook for token management
- * 
+ *
  * @param address User wallet address
  * @param isConnected Connection status
  * @returns TokenManagementResult object with token state and methods
@@ -61,11 +75,11 @@ export const useTokenManagement = (
 
   /**
    * Fetch tokens and balances for a specific chain
-   * 
+   *
    * @param currentChainId The chain ID to fetch tokens for
    */
   const fetchTokensAndBalances = async (currentChainId: number): Promise<void> => {
-    if (!address || !isConnected || !currentChainId) {
+    if (!currentChainId) {
       resetTokens();
       return;
     }
@@ -86,41 +100,92 @@ export const useTokenManagement = (
       console.log('Available tokens:', tokens);
       setAvailableTokens(tokens);
 
-      // Then get balances for these tokens with retry
-      const tokensByChain = {
-        [currentChainId]: tokens.tokens[currentChainId],
-      };
+      // Only fetch balances if wallet is connected
+      if (address && isConnected) {
+        // Then get balances for these tokens with retry
+        const tokensByChain = {
+          [currentChainId]: tokens.tokens[currentChainId],
+        };
 
-      const balances = await performWithRetry(
-        () => getTokenBalancesByChain(address, tokensByChain),
-        'getTokenBalances',
-        result => {
-          // Validate that we have a non-empty balance result for the selected chain
-          const chainBalances = result?.[currentChainId];
-          return Boolean(chainBalances && chainBalances.length > 0);
+        const balances = await performWithRetry(
+          () => getTokenBalancesByChain(address, tokensByChain),
+          'getTokenBalances',
+          result => {
+            // Validate that we have a non-empty balance result for the selected chain
+            const chainBalances = result?.[currentChainId];
+            return Boolean(chainBalances && chainBalances.length > 0);
+          }
+        );
+        console.log('Token balances:', balances);
+        setTokenBalances(balances);
+
+        // Find tokens with balance
+        if (balances?.[currentChainId]) {
+          const tokensWithBalance = balances[currentChainId]
+            .filter(t => (t?.amount ?? 0n) > 0n)
+            .sort((a, b) => {
+              const aUsdValue =
+                Number(formatUnits(a.amount || 0n, a.decimals)) * Number(a.priceUSD);
+              const bUsdValue =
+                Number(formatUnits(b.amount || 0n, b.decimals)) * Number(b.priceUSD);
+              return bUsdValue - aUsdValue;
+            });
+
+          // Deduplicate tokens by symbol, preferring those with logoURI
+          const uniqueTokensWithBalance = tokensWithBalance.reduce((acc: any[], token: any) => {
+            const existingToken = acc.find(t => t.symbol === token.symbol);
+            if (!existingToken) {
+              acc.push(token);
+            } else if (token.logoURI && !existingToken.logoURI) {
+              // Replace with token that has logoURI
+              const index = acc.indexOf(existingToken);
+              acc[index] = token;
+            }
+            return acc;
+          }, []);
+
+          console.log('Tokens with balance (deduplicated):', uniqueTokensWithBalance);
+
+          // Set initial token if we have any with balance
+          if (uniqueTokensWithBalance.length > 0) {
+            const checksumAddress = toChecksumAddress(uniqueTokensWithBalance[0].address);
+            if (checksumAddress) {
+              setFromToken(checksumAddress);
+              setSelectedTokenInfo(uniqueTokensWithBalance[0]);
+            }
+          }
         }
-      );
-      console.log('Token balances:', balances);
-      setTokenBalances(balances);
+      } else {
+        // When wallet is not connected, prefer popular tokens as default
+        if (tokens.tokens[currentChainId] && tokens.tokens[currentChainId].length > 0) {
+          // Deduplicate tokens by symbol, preferring those with logoURI
+          const uniqueTokens = tokens.tokens[currentChainId].reduce((acc: any[], token: any) => {
+            const existingToken = acc.find(t => t.symbol === token.symbol);
+            if (!existingToken) {
+              acc.push(token);
+            } else if (token.logoURI && !existingToken.logoURI) {
+              // Replace with token that has logoURI
+              const index = acc.indexOf(existingToken);
+              acc[index] = token;
+            }
+            return acc;
+          }, []);
 
-      // Find tokens with balance
-      if (balances?.[currentChainId]) {
-        const tokensWithBalance = balances[currentChainId]
-          .filter(t => (t?.amount ?? 0n) > 0n)
-          .sort((a, b) => {
-            const aUsdValue = Number(formatUnits(a.amount || 0n, a.decimals)) * Number(a.priceUSD);
-            const bUsdValue = Number(formatUnits(b.amount || 0n, b.decimals)) * Number(b.priceUSD);
-            return bUsdValue - aUsdValue;
-          });
+          // First try to find a popular token from deduplicated list
+          const popularToken = uniqueTokens.find((token: any) =>
+            POPULAR_TOKENS.includes(token.symbol)
+          );
 
-        console.log('Tokens with balance:', tokensWithBalance);
+          // Use popular token if found, otherwise use first token from deduplicated list
+          const defaultToken = popularToken || uniqueTokens[0];
+          const checksumAddress = toChecksumAddress(defaultToken.address);
 
-        // Set initial token if we have any with balance
-        if (tokensWithBalance.length > 0) {
-          const checksumAddress = toChecksumAddress(tokensWithBalance[0].address);
           if (checksumAddress) {
             setFromToken(checksumAddress);
-            setSelectedTokenInfo(tokensWithBalance[0]);
+            setSelectedTokenInfo({
+              ...defaultToken,
+              amount: 0n, // No balance when not connected
+            });
           }
         }
       }
