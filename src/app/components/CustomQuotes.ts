@@ -19,6 +19,10 @@ import {
   DEFAULT_SLIPPAGE,
   MIN_BRIDGE_USD_VALUE,
   CROSS_CHAIN_SAFETY_BUFFER_PERCENT,
+  SWARM_BATCH_SWAPPER_ADDRESS,
+  SWARM_BATCH_SWAPPER_ABI,
+  SUSHISWAP_ROUTER_ADDRESS,
+  GNOSIS_USDC_ADDRESS,
 } from './constants';
 
 import { logTokenRoute, performWithRetry, getGnosisPublicClient } from './utils';
@@ -679,4 +683,202 @@ export const getSwapQuotes = async ({
     isGnosisOnly: selectedChainId === ChainId.DAI,
     selectedChainId,
   };
+};
+
+/**
+ * Gets a quote using the SwarmBatchSwapper smart contract approach
+ * This eliminates the need for separate swap and batch creation transactions
+ */
+export const getSmartContractQuote = async ({
+  inputToken,
+  address,
+  bzzAmount,
+  nodeAddress,
+  swarmConfig,
+  topUpBatchId,
+  setEstimatedTime,
+}: {
+  inputToken: string;
+  address: string;
+  bzzAmount: string;
+  nodeAddress: string;
+  swarmConfig: any;
+  topUpBatchId?: string;
+  setEstimatedTime: (time: number) => void;
+}) => {
+  console.log('🔄 Getting smart contract quote...');
+
+  // Get Gnosis public client to read from SushiSwap router
+  const gnosisProvider = getGnosisPublicClient();
+
+  // If input token is BZZ, no swap needed
+  if (inputToken.toLowerCase() === swarmConfig.swarmToken.toLowerCase()) {
+    console.log('Input token is BZZ, no swap needed');
+
+    // Prepare contract call data for direct BZZ usage
+    let contractCallData;
+    let functionName;
+    let args;
+
+    if (topUpBatchId) {
+      functionName = 'swapAndTopUpBatch';
+      args = [
+        inputToken, // inputToken (BZZ)
+        bzzAmount, // inputAmount (exact BZZ needed)
+        bzzAmount, // exactBzzNeeded (same as input)
+        bzzAmount, // minBzzReceived (same as input, no slippage)
+        topUpBatchId, // batchId
+        swarmConfig.swarmBatchInitialBalance, // topupAmountPerChunk
+      ];
+    } else {
+      functionName = 'swapAndCreateBatch';
+      args = [
+        inputToken, // inputToken (BZZ)
+        bzzAmount, // inputAmount (exact BZZ needed)
+        bzzAmount, // exactBzzNeeded (same as input)
+        bzzAmount, // minBzzReceived (same as input, no slippage)
+        address, // owner
+        nodeAddress, // nodeAddress
+        swarmConfig.swarmBatchInitialBalance, // initialPaymentPerChunk
+        parseInt(swarmConfig.swarmBatchDepth), // depth
+        parseInt(swarmConfig.swarmBatchBucketDepth), // bucketDepth
+        swarmConfig.swarmBatchNonce, // nonce
+        swarmConfig.swarmBatchImmutable, // immutableFlag
+      ];
+    }
+
+    contractCallData = encodeFunctionData({
+      abi: SWARM_BATCH_SWAPPER_ABI,
+      functionName,
+      args,
+    });
+
+    // Create a simple quote response
+    return {
+      estimate: {
+        fromAmount: bzzAmount,
+        fromAmountUSD: '0', // Will be calculated by caller
+        toAmount: bzzAmount,
+        executionDuration: 30, // Estimate for smart contract call
+      },
+      contractCallData,
+      contractAddress: SWARM_BATCH_SWAPPER_ADDRESS,
+      isSmartContract: true,
+      functionName,
+      args,
+    };
+  }
+
+  // For other tokens, we need to calculate required input amount via SushiSwap
+  try {
+    console.log('Calculating required input amount via SushiSwap...');
+
+    // Read from SushiSwap router to get required input amount
+    const path = [inputToken, swarmConfig.swarmToken]; // e.g., [USDC, BZZ]
+
+    // First, let's estimate how much input token we need for the required BZZ
+    // We'll use a rough estimation and then add buffer for slippage
+    const estimatedInputAmount = await gnosisProvider.readContract({
+      address: SUSHISWAP_ROUTER_ADDRESS as `0x${string}`,
+      abi: [
+        {
+          inputs: [
+            { internalType: 'uint', name: 'amountOut', type: 'uint256' },
+            { internalType: 'address[]', name: 'path', type: 'address[]' },
+          ],
+          name: 'getAmountsIn',
+          outputs: [{ internalType: 'uint[]', name: 'amounts', type: 'uint256[]' }],
+          stateMutability: 'view',
+          type: 'function',
+        },
+      ],
+      functionName: 'getAmountsIn',
+      args: [BigInt(bzzAmount), path],
+    });
+
+    const requiredInputAmount = (estimatedInputAmount as bigint[])[0];
+
+    // Add safety buffer for slippage (5%)
+    const bufferedInputAmount = (requiredInputAmount * 105n) / 100n;
+
+    // Calculate minimum BZZ we should receive (allow for 2% slippage)
+    const minBzzReceived = (BigInt(bzzAmount) * 98n) / 100n;
+
+    console.log('Smart contract quote calculation:', {
+      requiredInputAmount: requiredInputAmount.toString(),
+      bufferedInputAmount: bufferedInputAmount.toString(),
+      exactBzzNeeded: bzzAmount,
+      minBzzReceived: minBzzReceived.toString(),
+    });
+
+    // Prepare contract call data
+    let contractCallData;
+    let functionName;
+    let args;
+
+    if (topUpBatchId) {
+      functionName = 'swapAndTopUpBatch';
+      args = [
+        inputToken, // inputToken
+        bufferedInputAmount.toString(), // inputAmount (with buffer)
+        bzzAmount, // exactBzzNeeded
+        minBzzReceived.toString(), // minBzzReceived (with slippage protection)
+        topUpBatchId, // batchId
+        swarmConfig.swarmBatchInitialBalance, // topupAmountPerChunk
+      ];
+    } else {
+      functionName = 'swapAndCreateBatch';
+      args = [
+        inputToken, // inputToken
+        bufferedInputAmount.toString(), // inputAmount (with buffer)
+        bzzAmount, // exactBzzNeeded
+        minBzzReceived.toString(), // minBzzReceived (with slippage protection)
+        address, // owner
+        nodeAddress, // nodeAddress
+        swarmConfig.swarmBatchInitialBalance, // initialPaymentPerChunk
+        parseInt(swarmConfig.swarmBatchDepth), // depth
+        parseInt(swarmConfig.swarmBatchBucketDepth), // bucketDepth
+        swarmConfig.swarmBatchNonce, // nonce
+        swarmConfig.swarmBatchImmutable, // immutableFlag
+      ];
+    }
+
+    contractCallData = encodeFunctionData({
+      abi: SWARM_BATCH_SWAPPER_ABI,
+      functionName,
+      args,
+    });
+
+    console.log('✅ Smart contract quote prepared:', {
+      requiredInput: bufferedInputAmount.toString(),
+      functionName,
+      contractAddress: SWARM_BATCH_SWAPPER_ADDRESS,
+    });
+
+    // Set estimated time for smart contract execution
+    setEstimatedTime(60); // Single transaction should be faster
+
+    return {
+      estimate: {
+        fromAmount: bufferedInputAmount.toString(),
+        fromAmountUSD: '0', // Will be calculated by caller using token price
+        toAmount: bzzAmount,
+        executionDuration: 60,
+      },
+      contractCallData,
+      contractAddress: SWARM_BATCH_SWAPPER_ADDRESS,
+      isSmartContract: true,
+      functionName,
+      args,
+      smartContractData: {
+        requiredInputAmount: requiredInputAmount.toString(),
+        bufferedInputAmount: bufferedInputAmount.toString(),
+        exactBzzNeeded: bzzAmount,
+        minBzzReceived: minBzzReceived.toString(),
+      },
+    };
+  } catch (error) {
+    console.error('Error calculating smart contract quote:', error);
+    throw new Error('Failed to calculate required input amount for smart contract');
+  }
 };

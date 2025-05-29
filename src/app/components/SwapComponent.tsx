@@ -33,6 +33,8 @@ import {
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
+  SWARM_BATCH_SWAPPER_ADDRESS,
+  SWARM_BATCH_SWAPPER_ABI,
 } from './constants';
 
 import HelpSection from './HelpSection';
@@ -52,7 +54,12 @@ import {
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getSafeCrossChainQuote, getSwapQuotes } from './CustomQuotes';
+import {
+  getGnosisQuote,
+  getSafeCrossChainQuote,
+  getSwapQuotes,
+  getSmartContractQuote,
+} from './CustomQuotes';
 import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
 import { generateAndUpdateNonce } from './utils';
 import { useTokenManagement } from './TokenUtils';
@@ -1016,6 +1023,34 @@ const SwapComponent: React.FC = () => {
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
         await handleDirectBzzTransactions();
+      } else if (
+        selectedChainId === ChainId.DAI &&
+        SWARM_BATCH_SWAPPER_ADDRESS !== '0x0000000000000000000000000000000000000000'
+      ) {
+        // Use smart contract approach for Gnosis chain when enabled
+        console.log('🤖 Using smart contract approach...');
+
+        setStatusMessage({
+          step: 'Smart Contract',
+          message: 'Calculating smart contract parameters...',
+        });
+
+        const smartContractQuote = await getSmartContractQuote({
+          inputToken: fromToken,
+          address,
+          bzzAmount,
+          nodeAddress,
+          swarmConfig: updatedConfig,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+          setEstimatedTime,
+        });
+
+        console.log('✅ Smart contract quote ready:', {
+          requiredInput: smartContractQuote.estimate.fromAmount,
+          functionName: smartContractQuote.functionName,
+        });
+
+        await handleSmartContractExecution(smartContractQuote, updatedConfig);
       } else {
         setStatusMessage({
           step: 'Quoting',
@@ -1251,6 +1286,141 @@ const SwapComponent: React.FC = () => {
 
     // Calculate for the original batch depth
     return totalPricePerDuration * BigInt(2 ** originalDepth);
+  };
+
+  const handleSmartContractExecution = async (smartContractQuote: any, updatedConfig: any) => {
+    if (!address || !publicClient || !walletClient) {
+      console.error('Missing required objects for smart contract execution');
+      return;
+    }
+
+    try {
+      setStatusMessage({
+        step: 'Approval',
+        message: 'Approving tokens for smart contract...',
+      });
+
+      const inputToken = smartContractQuote.args[0]; // First argument is input token
+      const inputAmount = smartContractQuote.args[1]; // Second argument is input amount
+
+      console.log('🚀 Executing smart contract transaction:', {
+        contract: SWARM_BATCH_SWAPPER_ADDRESS,
+        function: smartContractQuote.functionName,
+        inputToken,
+        inputAmount,
+      });
+
+      // First approve the input token for the smart contract
+      const approveCallData = {
+        address: inputToken as `0x${string}`,
+        abi: [
+          {
+            constant: false,
+            inputs: [
+              { name: '_spender', type: 'address' },
+              { name: '_value', type: 'uint256' },
+            ],
+            name: 'approve',
+            outputs: [{ name: 'success', type: 'bool' }],
+            type: 'function',
+          },
+        ],
+        functionName: 'approve',
+        args: [SWARM_BATCH_SWAPPER_ADDRESS, inputAmount],
+        account: address,
+      };
+
+      console.log('Approving tokens for smart contract:', approveCallData);
+
+      const approveTxHash = await walletClient.writeContract(approveCallData);
+      console.log('Approval transaction hash:', approveTxHash);
+
+      // Wait for approval transaction to be mined
+      const approveReceipt = await publicClient.waitForTransactionReceipt({
+        hash: approveTxHash,
+      });
+
+      if (approveReceipt.status === 'success') {
+        setStatusMessage({
+          step: 'Execute',
+          message: isTopUp
+            ? 'Swapping tokens and topping up batch...'
+            : 'Swapping tokens and creating batch...',
+        });
+
+        // Execute the smart contract function
+        const contractWriteParams = {
+          address: SWARM_BATCH_SWAPPER_ADDRESS as `0x${string}`,
+          abi: SWARM_BATCH_SWAPPER_ABI,
+          functionName: smartContractQuote.functionName,
+          args: smartContractQuote.args,
+          account: address,
+        };
+
+        console.log('Executing smart contract with params:', contractWriteParams);
+
+        const executeTxHash = await walletClient.writeContract(contractWriteParams);
+        console.log('Smart contract execution transaction hash:', executeTxHash);
+
+        // Wait for execution transaction to be mined
+        const executeReceipt = await publicClient.waitForTransactionReceipt({
+          hash: executeTxHash,
+        });
+
+        if (executeReceipt.status === 'success') {
+          if (isTopUp) {
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId as string);
+
+            // Set top-up completion info
+            setTopUpCompleted(true);
+            setTopUpInfo({
+              batchId: topUpBatchId as string,
+              days: selectedDays || 0,
+              cost: totalUsdAmount || '0',
+            });
+
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Batch Topped Up Successfully',
+              isSuccess: true,
+            });
+          } else {
+            try {
+              // Calculate the batch ID for logging
+              const calculatedBatchId = readBatchId(
+                updatedConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS
+              );
+
+              console.log('Batch created successfully with ID:', calculatedBatchId);
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Storage Bought Successfully',
+                isSuccess: true,
+              });
+              setUploadStep('ready');
+            } catch (error) {
+              console.error('Failed to process batch completion:', error);
+              throw new Error('Failed to process batch completion');
+            }
+          }
+        } else {
+          throw new Error('Smart contract execution failed');
+        }
+      } else {
+        throw new Error('Token approval failed');
+      }
+    } catch (error) {
+      console.error(`Error in smart contract execution: ${error}`);
+      setStatusMessage({
+        step: 'Error',
+        message: 'Smart contract execution failed',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        isError: true,
+      });
+    }
   };
 
   return (

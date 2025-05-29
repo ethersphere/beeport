@@ -228,3 +228,108 @@ export const REGISTRY_ABI = [
     type: 'function',
   },
 ] as const;
+
+// Swarm Batch Swapper Contract (combines swap + batch operations)
+export const SWARM_BATCH_SWAPPER_ADDRESS = '0x0000000000000000000000000000000000000000'; // TODO: Deploy and update
+
+export const SWARM_BATCH_SWAPPER_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: '_sushiRouter', type: 'address' },
+      { internalType: 'address', name: '_batchRegistry', type: 'address' },
+      { internalType: 'address', name: '_bzzToken', type: 'address' },
+      { internalType: 'address', name: '_defaultInputToken', type: 'address' },
+      { internalType: 'address', name: '_defaultPool', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+    type: 'constructor',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'inputToken', type: 'address' },
+      { internalType: 'uint256', name: 'inputAmount', type: 'uint256' },
+      { internalType: 'uint256', name: 'exactBzzNeeded', type: 'uint256' },
+      { internalType: 'uint256', name: 'minBzzReceived', type: 'uint256' },
+      { internalType: 'address', name: 'owner', type: 'address' },
+      { internalType: 'address', name: 'nodeAddress', type: 'address' },
+      { internalType: 'uint256', name: 'initialPaymentPerChunk', type: 'uint256' },
+      { internalType: 'uint8', name: 'depth', type: 'uint8' },
+      { internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
+      { internalType: 'bytes32', name: 'nonce', type: 'bytes32' },
+      { internalType: 'bool', name: 'immutableFlag', type: 'bool' },
+    ],
+    name: 'swapAndCreateBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'inputToken', type: 'address' },
+      { internalType: 'uint256', name: 'inputAmount', type: 'uint256' },
+      { internalType: 'uint256', name: 'exactBzzNeeded', type: 'uint256' },
+      { internalType: 'uint256', name: 'minBzzReceived', type: 'uint256' },
+      { internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+      { internalType: 'uint256', name: 'topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'swapAndTopUpBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'inputToken', type: 'address' },
+      { internalType: 'uint256', name: 'inputAmount', type: 'uint256' },
+    ],
+    name: 'getExpectedBzzOutput',
+    outputs: [{ internalType: 'uint256', name: 'expectedBzz', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: '_sushiRouter', type: 'address' },
+      { internalType: 'address', name: '_batchRegistry', type: 'address' },
+      { internalType: 'address', name: '_bzzToken', type: 'address' },
+      { internalType: 'address', name: '_defaultInputToken', type: 'address' },
+      { internalType: 'address', name: '_defaultPool', type: 'address' },
+    ],
+    name: 'updateConfig',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: 'address', name: 'user', type: 'address' },
+      { indexed: false, internalType: 'address', name: 'inputToken', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'inputAmount', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzReceived', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzUsed', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzReturned', type: 'uint256' },
+      { indexed: true, internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+    ],
+    name: 'SwapAndCreateBatch',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: 'address', name: 'user', type: 'address' },
+      { indexed: false, internalType: 'address', name: 'inputToken', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'inputAmount', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzReceived', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzUsed', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'bzzReturned', type: 'uint256' },
+      { indexed: true, internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+    ],
+    name: 'SwapAndTopUpBatch',
+    type: 'event',
+  },
+];
+
+// SushiSwap addresses on Gnosis
+export const SUSHISWAP_ROUTER_ADDRESS = '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506';
+export const GNOSIS_USDC_ADDRESS = '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83';

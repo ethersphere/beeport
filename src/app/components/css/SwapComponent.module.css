@@ -1200,3 +1200,7 @@
   font-size: 14px;
 }
 
+.linkButtonsContainer .referenceLink {
+  margin: 0 5px;
+}
+
