@@ -1023,11 +1023,8 @@ const SwapComponent: React.FC = () => {
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
         await handleDirectBzzTransactions();
-      } else if (
-        selectedChainId === ChainId.DAI &&
-        SWARM_BATCH_SWAPPER_ADDRESS !== '0x0000000000000000000000000000000000000000'
-      ) {
-        // Use smart contract approach for Gnosis chain when enabled
+      } else if (selectedChainId === ChainId.DAI) {
+        // Use smart contract approach for Gnosis chain
         console.log('🤖 Using smart contract approach...');
 
         setStatusMessage({
@@ -1295,122 +1292,133 @@ const SwapComponent: React.FC = () => {
     }
 
     try {
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Approving tokens for smart contract...',
-      });
-
       const inputToken = smartContractQuote.args[0]; // First argument is input token
       const inputAmount = smartContractQuote.args[1]; // Second argument is input amount
+      const isNativeXDAI = smartContractQuote.isNativeXDAI || false;
 
       console.log('🚀 Executing smart contract transaction:', {
         contract: SWARM_BATCH_SWAPPER_ADDRESS,
         function: smartContractQuote.functionName,
         inputToken,
         inputAmount,
+        isNativeXDAI,
       });
 
-      // First approve the input token for the smart contract
-      const approveCallData = {
-        address: inputToken as `0x${string}`,
-        abi: [
-          {
-            constant: false,
-            inputs: [
-              { name: '_spender', type: 'address' },
-              { name: '_value', type: 'uint256' },
-            ],
-            name: 'approve',
-            outputs: [{ name: 'success', type: 'bool' }],
-            type: 'function',
-          },
-        ],
-        functionName: 'approve',
-        args: [SWARM_BATCH_SWAPPER_ADDRESS, inputAmount],
-        account: address,
-      };
-
-      console.log('Approving tokens for smart contract:', approveCallData);
-
-      const approveTxHash = await walletClient.writeContract(approveCallData);
-      console.log('Approval transaction hash:', approveTxHash);
-
-      // Wait for approval transaction to be mined
-      const approveReceipt = await publicClient.waitForTransactionReceipt({
-        hash: approveTxHash,
-      });
-
-      if (approveReceipt.status === 'success') {
+      // Skip approval for native xDAI, approve for ERC20 tokens
+      if (!isNativeXDAI) {
         setStatusMessage({
-          step: 'Execute',
-          message: isTopUp
-            ? 'Swapping tokens and topping up batch...'
-            : 'Swapping tokens and creating batch...',
+          step: 'Approval',
+          message: 'Approving tokens for smart contract...',
         });
 
-        // Execute the smart contract function
-        const contractWriteParams = {
-          address: SWARM_BATCH_SWAPPER_ADDRESS as `0x${string}`,
-          abi: SWARM_BATCH_SWAPPER_ABI,
-          functionName: smartContractQuote.functionName,
-          args: smartContractQuote.args,
+        // First approve the input token for the smart contract
+        const approveCallData = {
+          address: inputToken as `0x${string}`,
+          abi: [
+            {
+              constant: false,
+              inputs: [
+                { name: '_spender', type: 'address' },
+                { name: '_value', type: 'uint256' },
+              ],
+              name: 'approve',
+              outputs: [{ name: 'success', type: 'bool' }],
+              type: 'function',
+            },
+          ],
+          functionName: 'approve',
+          args: [SWARM_BATCH_SWAPPER_ADDRESS, inputAmount],
           account: address,
         };
 
-        console.log('Executing smart contract with params:', contractWriteParams);
+        console.log('Approving tokens for smart contract:', approveCallData);
 
-        const executeTxHash = await walletClient.writeContract(contractWriteParams);
-        console.log('Smart contract execution transaction hash:', executeTxHash);
+        const approveTxHash = await walletClient.writeContract(approveCallData);
+        console.log('Approval transaction hash:', approveTxHash);
 
-        // Wait for execution transaction to be mined
-        const executeReceipt = await publicClient.waitForTransactionReceipt({
-          hash: executeTxHash,
+        // Wait for approval transaction to be mined
+        const approveReceipt = await publicClient.waitForTransactionReceipt({
+          hash: approveTxHash,
         });
 
-        if (executeReceipt.status === 'success') {
-          if (isTopUp) {
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId as string);
+        if (approveReceipt.status !== 'success') {
+          throw new Error('Token approval failed');
+        }
+      }
 
-            // Set top-up completion info
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId as string,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
+      setStatusMessage({
+        step: 'Execute',
+        message: isTopUp
+          ? 'Swapping tokens and topping up batch...'
+          : 'Swapping tokens and creating batch...',
+      });
+
+      // Execute the smart contract function
+      const contractWriteParams: any = {
+        address: SWARM_BATCH_SWAPPER_ADDRESS as `0x${string}`,
+        abi: SWARM_BATCH_SWAPPER_ABI,
+        functionName: smartContractQuote.functionName,
+        args: smartContractQuote.args,
+        account: address,
+      };
+
+      // Add value for native xDAI transactions
+      if (isNativeXDAI) {
+        contractWriteParams.value = BigInt(inputAmount);
+        console.log('Adding value for native xDAI transaction:', inputAmount);
+      }
+
+      console.log('Executing smart contract with params:', contractWriteParams);
+
+      const executeTxHash = await walletClient.writeContract(contractWriteParams);
+      console.log('Smart contract execution transaction hash:', executeTxHash);
+
+      // Wait for execution transaction to be mined
+      const executeReceipt = await publicClient.waitForTransactionReceipt({
+        hash: executeTxHash,
+      });
+
+      if (executeReceipt.status === 'success') {
+        if (isTopUp) {
+          console.log('Successfully topped up batch ID:', topUpBatchId);
+          setPostageBatchId(topUpBatchId as string);
+
+          // Set top-up completion info
+          setTopUpCompleted(true);
+          setTopUpInfo({
+            batchId: topUpBatchId as string,
+            days: selectedDays || 0,
+            cost: totalUsdAmount || '0',
+          });
+
+          setStatusMessage({
+            step: 'Complete',
+            message: 'Batch Topped Up Successfully',
+            isSuccess: true,
+          });
+        } else {
+          try {
+            // Calculate the batch ID for logging
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+
+            console.log('Batch created successfully with ID:', calculatedBatchId);
 
             setStatusMessage({
               step: 'Complete',
-              message: 'Batch Topped Up Successfully',
+              message: 'Storage Bought Successfully',
               isSuccess: true,
             });
-          } else {
-            try {
-              // Calculate the batch ID for logging
-              const calculatedBatchId = readBatchId(
-                updatedConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS
-              );
-
-              console.log('Batch created successfully with ID:', calculatedBatchId);
-
-              setStatusMessage({
-                step: 'Complete',
-                message: 'Storage Bought Successfully',
-                isSuccess: true,
-              });
-              setUploadStep('ready');
-            } catch (error) {
-              console.error('Failed to process batch completion:', error);
-              throw new Error('Failed to process batch completion');
-            }
+            setUploadStep('ready');
+          } catch (error) {
+            console.error('Failed to process batch completion:', error);
+            throw new Error('Failed to process batch completion');
           }
-        } else {
-          throw new Error('Smart contract execution failed');
         }
       } else {
-        throw new Error('Token approval failed');
+        throw new Error('Smart contract execution failed');
       }
     } catch (error) {
       console.error(`Error in smart contract execution: ${error}`);

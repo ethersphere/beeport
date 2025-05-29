@@ -33,6 +33,14 @@ interface IBatchRegistry {
     function topUpBatch(bytes32 batchId, uint256 topupAmountPerChunk) external;
 }
 
+interface IWXDAI {
+    function deposit() external payable;
+    function withdraw(uint256 wad) external;
+    function transfer(address to, uint256 value) external returns (bool);
+    function approve(address spender, uint256 value) external returns (bool);
+    function balanceOf(address owner) external view returns (uint256);
+}
+
 contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     
@@ -42,6 +50,10 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
     address public bzzToken;
     address public defaultInputToken; // USDC by default
     address public defaultPool;
+    address public wxdaiToken; // WXDAI token address
+    
+    // Zero address constant for native xDAI
+    address private constant NATIVE_TOKEN = address(0);
     
     // Events
     event SwapAndCreateBatch(
@@ -69,7 +81,8 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         address batchRegistry,
         address bzzToken,
         address defaultInputToken,
-        address defaultPool
+        address defaultPool,
+        address wxdaiToken
     );
     
     constructor(
@@ -77,13 +90,15 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         address _batchRegistry,
         address _bzzToken,
         address _defaultInputToken,
-        address _defaultPool
+        address _defaultPool,
+        address _wxdaiToken
     ) Ownable(msg.sender) {
         sushiRouter = ISushiSwapV2Router(_sushiRouter);
         batchRegistry = IBatchRegistry(_batchRegistry);
         bzzToken = _bzzToken;
         defaultInputToken = _defaultInputToken;
         defaultPool = _defaultPool;
+        wxdaiToken = _wxdaiToken;
     }
     
     /**
@@ -101,15 +116,34 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         uint8 bucketDepth,
         bytes32 nonce,
         bool immutableFlag
-    ) external nonReentrant {
-        require(inputAmount > 0, "Input amount must be greater than 0");
+    ) external payable nonReentrant {
         require(exactBzzNeeded > 0, "BZZ needed must be greater than 0");
         
-        // Transfer input tokens from user
-        IERC20(inputToken).safeTransferFrom(msg.sender, address(this), inputAmount);
+        uint256 actualInputAmount;
+        address actualInputToken;
+        
+        if (inputToken == NATIVE_TOKEN) {
+            // Handle native xDAI
+            require(msg.value > 0, "Must send xDAI");
+            require(inputAmount == msg.value, "Input amount must match msg.value");
+            
+            // Wrap xDAI to WXDAI
+            IWXDAI(wxdaiToken).deposit{value: msg.value}();
+            actualInputAmount = msg.value;
+            actualInputToken = wxdaiToken;
+        } else {
+            // Handle ERC20 tokens
+            require(inputAmount > 0, "Input amount must be greater than 0");
+            require(msg.value == 0, "Should not send xDAI for ERC20 tokens");
+            
+            // Transfer input tokens from user
+            IERC20(inputToken).safeTransferFrom(msg.sender, address(this), inputAmount);
+            actualInputAmount = inputAmount;
+            actualInputToken = inputToken;
+        }
         
         // Perform swap
-        uint256 bzzReceived = _performSwap(inputToken, inputAmount, minBzzReceived);
+        uint256 bzzReceived = _performSwap(actualInputToken, actualInputAmount, minBzzReceived);
         require(bzzReceived >= exactBzzNeeded, "Insufficient BZZ received from swap");
         
         // Approve BZZ for batch registry
@@ -137,7 +171,7 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         
         emit SwapAndCreateBatch(
             msg.sender,
-            inputToken,
+            inputToken, // Emit original input token (could be zero address)
             inputAmount,
             bzzReceived,
             exactBzzNeeded,
@@ -156,16 +190,35 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         uint256 minBzzReceived,
         bytes32 batchId,
         uint256 topupAmountPerChunk
-    ) external nonReentrant {
-        require(inputAmount > 0, "Input amount must be greater than 0");
+    ) external payable nonReentrant {
         require(exactBzzNeeded > 0, "BZZ needed must be greater than 0");
         require(batchId != bytes32(0), "Invalid batch ID");
         
-        // Transfer input tokens from user
-        IERC20(inputToken).safeTransferFrom(msg.sender, address(this), inputAmount);
+        uint256 actualInputAmount;
+        address actualInputToken;
+        
+        if (inputToken == NATIVE_TOKEN) {
+            // Handle native xDAI
+            require(msg.value > 0, "Must send xDAI");
+            require(inputAmount == msg.value, "Input amount must match msg.value");
+            
+            // Wrap xDAI to WXDAI
+            IWXDAI(wxdaiToken).deposit{value: msg.value}();
+            actualInputAmount = msg.value;
+            actualInputToken = wxdaiToken;
+        } else {
+            // Handle ERC20 tokens
+            require(inputAmount > 0, "Input amount must be greater than 0");
+            require(msg.value == 0, "Should not send xDAI for ERC20 tokens");
+            
+            // Transfer input tokens from user
+            IERC20(inputToken).safeTransferFrom(msg.sender, address(this), inputAmount);
+            actualInputAmount = inputAmount;
+            actualInputToken = inputToken;
+        }
         
         // Perform swap
-        uint256 bzzReceived = _performSwap(inputToken, inputAmount, minBzzReceived);
+        uint256 bzzReceived = _performSwap(actualInputToken, actualInputAmount, minBzzReceived);
         require(bzzReceived >= exactBzzNeeded, "Insufficient BZZ received from swap");
         
         // Approve BZZ for batch registry
@@ -182,7 +235,7 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         
         emit SwapAndTopUpBatch(
             msg.sender,
-            inputToken,
+            inputToken, // Emit original input token (could be zero address)
             inputAmount,
             bzzReceived,
             exactBzzNeeded,
@@ -196,11 +249,14 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
      */
     function getExpectedBzzOutput(address inputToken, uint256 inputAmount) 
         external view returns (uint256 expectedBzz) {
-        if (inputToken == bzzToken) {
+        // Handle native xDAI by treating it as WXDAI
+        address actualInputToken = (inputToken == NATIVE_TOKEN) ? wxdaiToken : inputToken;
+        
+        if (actualInputToken == bzzToken) {
             return inputAmount;
         }
         
-        address[] memory path = _getSwapPath(inputToken);
+        address[] memory path = _getSwapPath(actualInputToken);
         uint[] memory amounts = sushiRouter.getAmountsOut(inputAmount, path);
         return amounts[amounts.length - 1];
     }
@@ -253,15 +309,17 @@ contract SwarmBatchSwapper is Ownable, ReentrancyGuard {
         address _batchRegistry,
         address _bzzToken,
         address _defaultInputToken,
-        address _defaultPool
+        address _defaultPool,
+        address _wxdaiToken
     ) external onlyOwner {
         sushiRouter = ISushiSwapV2Router(_sushiRouter);
         batchRegistry = IBatchRegistry(_batchRegistry);
         bzzToken = _bzzToken;
         defaultInputToken = _defaultInputToken;
         defaultPool = _defaultPool;
+        wxdaiToken = _wxdaiToken;
         
-        emit ConfigUpdated(_sushiRouter, _batchRegistry, _bzzToken, _defaultInputToken, _defaultPool);
+        emit ConfigUpdated(_sushiRouter, _batchRegistry, _bzzToken, _defaultInputToken, _defaultPool, _wxdaiToken);
     }
     
     /**

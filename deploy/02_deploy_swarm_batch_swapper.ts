@@ -37,6 +37,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       bzzTokenAddress,
       defaultInputTokenAddress,
       defaultPoolAddress,
+      '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d', // WXDAI Token
     ],
     log: true,
     // If we're on a local network, we don't need to wait for confirmations
@@ -63,6 +64,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
           bzzTokenAddress,
           defaultInputTokenAddress,
           defaultPoolAddress,
+          '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d', // WXDAI Token
         ],
         contract: 'contracts/SwarmBatchSwapper.sol:SwarmBatchSwapper',
       });

@@ -230,7 +230,7 @@ export const REGISTRY_ABI = [
 ] as const;
 
 // Swarm Batch Swapper Contract (combines swap + batch operations)
-export const SWARM_BATCH_SWAPPER_ADDRESS = '0x0000000000000000000000000000000000000000'; // TODO: Deploy and update
+export const SWARM_BATCH_SWAPPER_ADDRESS = '0x267260bC01d35D4E7bbeb5630E3eB9900884be7c';
 
 export const SWARM_BATCH_SWAPPER_ABI = [
   {
@@ -240,6 +240,7 @@ export const SWARM_BATCH_SWAPPER_ABI = [
       { internalType: 'address', name: '_bzzToken', type: 'address' },
       { internalType: 'address', name: '_defaultInputToken', type: 'address' },
       { internalType: 'address', name: '_defaultPool', type: 'address' },
+      { internalType: 'address', name: '_wxdaiToken', type: 'address' },
     ],
     stateMutability: 'nonpayable',
     type: 'constructor',
@@ -260,7 +261,7 @@ export const SWARM_BATCH_SWAPPER_ABI = [
     ],
     name: 'swapAndCreateBatch',
     outputs: [],
-    stateMutability: 'nonpayable',
+    stateMutability: 'payable',
     type: 'function',
   },
   {
@@ -274,7 +275,7 @@ export const SWARM_BATCH_SWAPPER_ABI = [
     ],
     name: 'swapAndTopUpBatch',
     outputs: [],
-    stateMutability: 'nonpayable',
+    stateMutability: 'payable',
     type: 'function',
   },
   {
@@ -333,3 +334,49 @@ export const SWARM_BATCH_SWAPPER_ABI = [
 // SushiSwap addresses on Gnosis
 export const SUSHISWAP_ROUTER_ADDRESS = '0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506';
 export const GNOSIS_USDC_ADDRESS = '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83';
+
+// WXDAI ABI for wrapping/unwrapping native xDAI
+export const WXDAI_ABI = [
+  {
+    constant: false,
+    inputs: [],
+    name: 'deposit',
+    outputs: [],
+    payable: true,
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    constant: false,
+    inputs: [{ name: 'wad', type: 'uint256' }],
+    name: 'withdraw',
+    outputs: [],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    constant: false,
+    inputs: [
+      { name: 'dst', type: 'address' },
+      { name: 'wad', type: 'uint256' },
+    ],
+    name: 'transfer',
+    outputs: [{ name: '', type: 'bool' }],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    constant: false,
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'value', type: 'uint256' },
+    ],
+    name: 'approve',
+    outputs: [{ name: '', type: 'bool' }],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;

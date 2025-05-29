@@ -34,7 +34,7 @@ export interface TokenManagementResult {
 
 /**
  * Custom hook for token management
- * 
+ *
  * @param address User wallet address
  * @param isConnected Connection status
  * @returns TokenManagementResult object with token state and methods
@@ -61,7 +61,7 @@ export const useTokenManagement = (
 
   /**
    * Fetch tokens and balances for a specific chain
-   * 
+   *
    * @param currentChainId The chain ID to fetch tokens for
    */
   const fetchTokensAndBalances = async (currentChainId: number): Promise<void> => {

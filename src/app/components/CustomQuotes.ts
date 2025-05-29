@@ -23,6 +23,7 @@ import {
   SWARM_BATCH_SWAPPER_ABI,
   SUSHISWAP_ROUTER_ADDRESS,
   GNOSIS_USDC_ADDRESS,
+  GNOSIS_WXDAI_ADDRESS,
 } from './constants';
 
 import { logTokenRoute, performWithRetry, getGnosisPublicClient } from './utils';
@@ -708,11 +709,22 @@ export const getSmartContractQuote = async ({
 }) => {
   console.log('🔄 Getting smart contract quote...');
 
+  // Validate input token address - allow zero address for native xDAI
+  if (!inputToken || inputToken === '') {
+    throw new Error('Please select a token to swap from');
+  }
+
   // Get Gnosis public client to read from SushiSwap router
   const gnosisProvider = getGnosisPublicClient();
 
+  // Check if input token is native xDAI (zero address)
+  const isNativeXDAI = inputToken === '0x0000000000000000000000000000000000000000';
+
+  // For price calculations, use WXDAI if input is native xDAI
+  const tokenForPriceCalculation = isNativeXDAI ? GNOSIS_WXDAI_ADDRESS : inputToken;
+
   // If input token is BZZ, no swap needed
-  if (inputToken.toLowerCase() === swarmConfig.swarmToken.toLowerCase()) {
+  if (tokenForPriceCalculation.toLowerCase() === swarmConfig.swarmToken.toLowerCase()) {
     console.log('Input token is BZZ, no swap needed');
 
     // Prepare contract call data for direct BZZ usage
@@ -723,7 +735,7 @@ export const getSmartContractQuote = async ({
     if (topUpBatchId) {
       functionName = 'swapAndTopUpBatch';
       args = [
-        inputToken, // inputToken (BZZ)
+        inputToken, // inputToken (original, could be zero address)
         bzzAmount, // inputAmount (exact BZZ needed)
         bzzAmount, // exactBzzNeeded (same as input)
         bzzAmount, // minBzzReceived (same as input, no slippage)
@@ -733,7 +745,7 @@ export const getSmartContractQuote = async ({
     } else {
       functionName = 'swapAndCreateBatch';
       args = [
-        inputToken, // inputToken (BZZ)
+        inputToken, // inputToken (original, could be zero address)
         bzzAmount, // inputAmount (exact BZZ needed)
         bzzAmount, // exactBzzNeeded (same as input)
         bzzAmount, // minBzzReceived (same as input, no slippage)
@@ -766,6 +778,7 @@ export const getSmartContractQuote = async ({
       isSmartContract: true,
       functionName,
       args,
+      isNativeXDAI,
     };
   }
 
@@ -774,7 +787,7 @@ export const getSmartContractQuote = async ({
     console.log('Calculating required input amount via SushiSwap...');
 
     // Read from SushiSwap router to get required input amount
-    const path = [inputToken, swarmConfig.swarmToken]; // e.g., [USDC, BZZ]
+    const path = [tokenForPriceCalculation, swarmConfig.swarmToken]; // e.g., [WXDAI, BZZ] for native xDAI
 
     // First, let's estimate how much input token we need for the required BZZ
     // We'll use a rough estimation and then add buffer for slippage
@@ -809,6 +822,7 @@ export const getSmartContractQuote = async ({
       bufferedInputAmount: bufferedInputAmount.toString(),
       exactBzzNeeded: bzzAmount,
       minBzzReceived: minBzzReceived.toString(),
+      isNativeXDAI,
     });
 
     // Prepare contract call data
@@ -819,7 +833,7 @@ export const getSmartContractQuote = async ({
     if (topUpBatchId) {
       functionName = 'swapAndTopUpBatch';
       args = [
-        inputToken, // inputToken
+        inputToken, // inputToken (original, could be zero address)
         bufferedInputAmount.toString(), // inputAmount (with buffer)
         bzzAmount, // exactBzzNeeded
         minBzzReceived.toString(), // minBzzReceived (with slippage protection)
@@ -829,7 +843,7 @@ export const getSmartContractQuote = async ({
     } else {
       functionName = 'swapAndCreateBatch';
       args = [
-        inputToken, // inputToken
+        inputToken, // inputToken (original, could be zero address)
         bufferedInputAmount.toString(), // inputAmount (with buffer)
         bzzAmount, // exactBzzNeeded
         minBzzReceived.toString(), // minBzzReceived (with slippage protection)
@@ -853,6 +867,7 @@ export const getSmartContractQuote = async ({
       requiredInput: bufferedInputAmount.toString(),
       functionName,
       contractAddress: SWARM_BATCH_SWAPPER_ADDRESS,
+      isNativeXDAI,
     });
 
     // Set estimated time for smart contract execution
@@ -870,6 +885,7 @@ export const getSmartContractQuote = async ({
       isSmartContract: true,
       functionName,
       args,
+      isNativeXDAI,
       smartContractData: {
         requiredInputAmount: requiredInputAmount.toString(),
         bufferedInputAmount: bufferedInputAmount.toString(),
