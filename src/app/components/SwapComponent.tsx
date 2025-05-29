@@ -77,6 +77,8 @@ const SwapComponent: React.FC = () => {
   const { data: walletClient } = useWalletClient();
   const { openConnectModal } = useConnectModal();
 
+  // Add state to track if component has mounted to prevent hydration mismatches
+  const [hasMounted, setHasMounted] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [executionResult, setExecutionResult] = useState<any | null>(null);
@@ -1309,6 +1311,11 @@ const SwapComponent: React.FC = () => {
     return totalPricePerDuration * BigInt(2 ** originalDepth);
   };
 
+  // Add useEffect to set hasMounted after component mounts
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
   return (
     <div className={styles.container}>
       <div className={styles.betaBadge}>BETA</div>
@@ -1498,11 +1505,11 @@ const SwapComponent: React.FC = () => {
                 insufficientFunds ||
                 isPriceEstimating)
             }
-            onClick={!isConnected ? handleGetStarted : handleSwap}
+            onClick={!hasMounted || !isConnected ? handleGetStarted : handleSwap}
           >
             {isLoading ? (
               <div>Loading...</div>
-            ) : !isConnected ? (
+            ) : !hasMounted || !isConnected ? (
               'Get Started'
             ) : !selectedDays ? (
               'Choose Timespan'
