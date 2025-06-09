@@ -158,7 +158,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
   };
 
   /**
-   * Upload a large file with progress monitoring
+   * Upload a large file with progress monitoring and dynamic timeout handling
    */
   const uploadLargeFile = async (
     file: File,
@@ -166,29 +166,67 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     baseUrl: string
   ): Promise<XHRResponse> => {
     console.log('Starting file upload...');
+    console.log(`File size: ${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`);
 
     // Add the filename as a query parameter
     const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
     console.log('Upload URL with filename:', url);
 
+    // Calculate dynamic timeout based on file size
+    // Assume minimum 1 Mbps upload speed, add 50% buffer, minimum 10 minutes, maximum 12 hours
+    const fileSizeGB = file.size / (1024 * 1024 * 1024);
+    const estimatedTimeMinutes = Math.max(10, Math.min(720, fileSizeGB * 8 * 60 * 1.5)); // Convert GB to minutes with buffer
+    const timeoutMs = estimatedTimeMinutes * 60 * 1000;
+
+    console.log(`Estimated upload time: ${estimatedTimeMinutes.toFixed(1)} minutes`);
+    console.log(`Setting timeout to: ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes`);
+
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      let lastProgressTime = Date.now();
+      let progressStalled = false;
 
       xhr.open('POST', url);
-      xhr.timeout = 3600000; // 1 hour timeout
+      xhr.timeout = timeoutMs;
 
       Object.entries(headers).forEach(([key, value]) => {
         xhr.setRequestHeader(key, value);
       });
 
+      // Enhanced progress tracking with stall detection
       xhr.upload.onprogress = event => {
         if (event.lengthComputable) {
           const percent = (event.loaded / event.total) * 100;
-          setUploadProgress(Math.min(99, percent));
-          console.log('Upload progress:', percent);
-          console.log(`Upload progress: ${percent.toFixed(1)}%`);
+          const currentTime = Date.now();
 
-          if (percent === 100) {
+          // Check for progress stall (no progress for 5 minutes)
+          if (percent > 0) {
+            lastProgressTime = currentTime;
+            progressStalled = false;
+          } else if (currentTime - lastProgressTime > 300000) {
+            // 5 minutes
+            progressStalled = true;
+            console.warn('Upload progress appears to be stalled');
+          }
+
+          setUploadProgress(Math.min(99, percent));
+
+          // More detailed logging for large files
+          if (fileSizeGB > 0.5) {
+            // Log more details for files > 500MB
+            const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+            const totalMB = (event.total / (1024 * 1024)).toFixed(1);
+            const speed = event.loaded / ((currentTime - lastProgressTime + 1) / 1000); // bytes per second
+            const speedMBps = (speed / (1024 * 1024)).toFixed(2);
+
+            console.log(
+              `Upload progress: ${percent.toFixed(1)}% (${uploadedMB}/${totalMB} MB) at ${speedMBps} MB/s`
+            );
+          } else {
+            console.log(`Upload progress: ${percent.toFixed(1)}%`);
+          }
+
+          if (percent >= 99) {
             setIsDistributing(true);
           }
         }
@@ -197,8 +235,10 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadProgress(100);
+          console.log('Upload completed successfully');
+        } else {
+          console.error(`Upload failed with status: ${xhr.status}`);
         }
-        console.log(`Upload completed with status: ${xhr.status}`);
         resolve({
           ok: xhr.status >= 200 && xhr.status < 300,
           status: xhr.status,
@@ -208,16 +248,55 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
       xhr.onerror = e => {
         console.error('XHR Error:', e);
-        reject(new Error('Network request failed'));
+        if (progressStalled) {
+          reject(
+            new Error(
+              'Upload failed: Connection appears to be stalled. Please check your internet connection and try again.'
+            )
+          );
+        } else {
+          reject(
+            new Error(
+              'Upload failed: Network request failed. Please check your internet connection and try again.'
+            )
+          );
+        }
       };
 
       xhr.ontimeout = () => {
-        console.error('Upload timed out');
-        reject(new Error('Upload timed out'));
+        console.error(`Upload timed out after ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes`);
+        reject(
+          new Error(
+            `Upload timed out after ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes. Large files may require a stable internet connection. Please try again.`
+          )
+        );
       };
 
-      console.log('Sending file:', file.name, file.size);
-      xhr.send(file);
+      // Additional event handlers for better error reporting
+      xhr.onabort = () => {
+        console.error('Upload was aborted');
+        reject(new Error('Upload was cancelled'));
+      };
+
+      console.log(`Sending file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
+
+      // For very large files, show additional warnings
+      if (fileSizeGB > 2) {
+        console.warn(
+          `Large file detected (${fileSizeGB.toFixed(2)} GB). Upload may take ${estimatedTimeMinutes.toFixed(1)} minutes or more.`
+        );
+        setStatusMessage({
+          step: 'Uploading',
+          message: `Uploading large file (${fileSizeGB.toFixed(1)} GB). This may take ${estimatedTimeMinutes.toFixed(0)} minutes or more. Please keep this tab open.`,
+        });
+      }
+
+      try {
+        xhr.send(file);
+      } catch (error) {
+        console.error('Failed to start upload:', error);
+        reject(new Error('Failed to start upload. The file may be too large or corrupted.'));
+      }
     });
   };
 
@@ -480,8 +559,11 @@ export const handleMultiFileUpload = async (
   const uploadSingleFile = async (
     file: File,
     fileIndex: number,
-    totalFiles: number
+    totalFiles: number,
+    retryCount: number = 0
   ): Promise<MultiFileResult> => {
+    const maxRetries = 2; // Allow up to 2 retries for each file
+
     try {
       // Process archive files if needed
       let processedFile = file;
@@ -519,21 +601,84 @@ export const handleMultiFileUpload = async (
         baseHeaders['x-message-content'] = messageToSign;
       }
 
-      // Upload the file
+      // Upload the file using the enhanced upload function
       console.log(`Starting upload for file ${fileIndex + 1}/${totalFiles}: ${processedFile.name}`);
 
-      const url = `${beeApiUrl}/bzz?name=${encodeURIComponent(processedFile.name)}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: baseHeaders,
-        body: processedFile,
+      // Create a simplified upload function for individual files in multi-upload
+      const uploadResponse = await new Promise<XHRResponse>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const fileSizeGB = processedFile.size / (1024 * 1024 * 1024);
+
+        // Calculate dynamic timeout (same logic as single file upload)
+        const estimatedTimeMinutes = Math.max(10, Math.min(720, fileSizeGB * 8 * 60 * 1.5));
+        const timeoutMs = estimatedTimeMinutes * 60 * 1000;
+
+        const url = `${beeApiUrl}/bzz?name=${encodeURIComponent(processedFile.name)}`;
+
+        xhr.open('POST', url);
+        xhr.timeout = timeoutMs;
+
+        Object.entries(baseHeaders).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
+
+        let lastProgressTime = Date.now();
+
+        xhr.upload.onprogress = event => {
+          if (event.lengthComputable) {
+            // For multi-file uploads, we update the overall progress differently
+            const fileProgress = (event.loaded / event.total) * 100;
+            const overallProgress = ((fileIndex + fileProgress / 100) / totalFiles) * 100;
+            setUploadProgress(Math.min(99, overallProgress));
+
+            const currentTime = Date.now();
+            if (fileSizeGB > 0.5) {
+              const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+              const totalMB = (event.total / (1024 * 1024)).toFixed(1);
+              console.log(
+                `File ${fileIndex + 1}/${totalFiles} progress: ${fileProgress.toFixed(1)}% (${uploadedMB}/${totalMB} MB)`
+              );
+            }
+            lastProgressTime = currentTime;
+          }
+        };
+
+        xhr.onload = () => {
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            text: () => Promise.resolve(xhr.responseText),
+          });
+        };
+
+        xhr.onerror = () => {
+          reject(new Error(`Network error uploading ${processedFile.name}`));
+        };
+
+        xhr.ontimeout = () => {
+          reject(
+            new Error(
+              `Upload timeout for ${processedFile.name} after ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes`
+            )
+          );
+        };
+
+        console.log(
+          `Uploading file ${fileIndex + 1}/${totalFiles}: ${processedFile.name} (${(processedFile.size / (1024 * 1024)).toFixed(1)} MB)`
+        );
+
+        if (fileSizeGB > 1) {
+          console.warn(`Large file in batch: ${processedFile.name} (${fileSizeGB.toFixed(2)} GB)`);
+        }
+
+        xhr.send(processedFile);
       });
 
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed with status ${uploadResponse.status}`);
       }
 
-      const referenceData = await response.text();
+      const referenceData = await uploadResponse.text();
       const parsedReference = JSON.parse(referenceData);
 
       console.log(`Upload successful for ${processedFile.name}, reference:`, parsedReference);
@@ -544,7 +689,29 @@ export const handleMultiFileUpload = async (
         success: true,
       };
     } catch (error) {
-      console.error(`Upload error for ${file.name}:`, error);
+      console.error(`Upload error for ${file.name} (attempt ${retryCount + 1}):`, error);
+
+      // Retry logic for failed uploads
+      if (retryCount < maxRetries && error instanceof Error) {
+        const isRetryableError =
+          error.message.includes('Network error') ||
+          error.message.includes('timeout') ||
+          error.message.includes('stalled');
+
+        if (isRetryableError) {
+          console.log(`Retrying upload for ${file.name} (${retryCount + 1}/${maxRetries})`);
+          setStatusMessage({
+            step: 'Uploading',
+            message: `Retrying ${file.name} (attempt ${retryCount + 2}/${maxRetries + 1})...`,
+          });
+
+          // Wait a bit before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+
+          return uploadSingleFile(file, fileIndex, totalFiles, retryCount + 1);
+        }
+      }
+
       return {
         filename: file.name,
         reference: '',

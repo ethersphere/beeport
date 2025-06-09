@@ -1158,6 +1158,33 @@ const SwapComponent: React.FC = () => {
     localStorage.setItem('uploadHistory', JSON.stringify(history));
   };
 
+  // Helper function to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Helper function to get total size of selected files
+  const getTotalFileSize = (): number => {
+    if (isMultipleFiles) {
+      return selectedFiles.reduce((total, file) => total + file.size, 0);
+    } else {
+      return selectedFile?.size || 0;
+    }
+  };
+
+  // Helper function to check if files are very large
+  const hasVeryLargeFiles = (): boolean => {
+    if (isMultipleFiles) {
+      return selectedFiles.some(file => file.size > 2 * 1024 * 1024 * 1024); // > 2GB
+    } else {
+      return (selectedFile?.size || 0) > 2 * 1024 * 1024 * 1024; // > 2GB
+    }
+  };
+
   const handleFileUpload = async () => {
     if (isMultipleFiles && selectedFiles.length > 0) {
       return handleMultipleFileUpload();
@@ -1733,10 +1760,31 @@ const SwapComponent: React.FC = () => {
                             <ul>
                               {selectedFiles.map((file, index) => (
                                 <li key={index} className={styles.fileName}>
-                                  {file.name}
+                                  {file.name} ({formatFileSize(file.size)})
                                 </li>
                               ))}
                             </ul>
+                          </div>
+                        )}
+
+                        {/* File size warnings */}
+                        {(selectedFile || selectedFiles.length > 0) && (
+                          <div className={styles.fileSizeInfo}>
+                            <div className={styles.fileSizeTotal}>
+                              Total size: {formatFileSize(getTotalFileSize())}
+                            </div>
+                            {hasVeryLargeFiles() && (
+                              <div className={styles.largeFileWarning}>
+                                ⚠️ Large files detected ({'>'}2GB). Upload may take several hours.
+                                Please ensure stable internet connection and keep this tab open.
+                              </div>
+                            )}
+                            {getTotalFileSize() > 10 * 1024 * 1024 * 1024 && (
+                              <div className={styles.veryLargeFileWarning}>
+                                🚨 Very large total size ({'>'}10GB). Consider uploading in smaller
+                                batches to reduce timeout risk.
+                              </div>
+                            )}
                           </div>
                         )}
 
