@@ -27,6 +27,9 @@ import {
   LIFI_API_KEY,
   DISABLE_MESSAGE_SIGNING,
   ACCEPT_EXCHANGE_RATE_UPDATES,
+  UPLOAD_RETRY_CONFIG,
+  FILE_SIZE_CONFIG,
+  UPLOAD_TIMEOUT_CONFIG,
 } from './constants';
 
 import HelpSection from './HelpSection';
@@ -1178,10 +1181,11 @@ const SwapComponent: React.FC = () => {
 
   // Helper function to check if files are very large
   const hasVeryLargeFiles = (): boolean => {
+    const threshold = FILE_SIZE_CONFIG.largeFileThresholdGB * 1024 * 1024 * 1024;
     if (isMultipleFiles) {
-      return selectedFiles.some(file => file.size > 2 * 1024 * 1024 * 1024); // > 2GB
+      return selectedFiles.some(file => file.size > threshold);
     } else {
-      return (selectedFile?.size || 0) > 2 * 1024 * 1024 * 1024; // > 2GB
+      return (selectedFile?.size || 0) > threshold;
     }
   };
 
@@ -1203,38 +1207,66 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
 
-    try {
-      await uploadFile({
-        selectedFile,
-        postageBatchId,
-        walletClient,
-        publicClient,
-        address,
-        beeApiUrl,
-        serveUncompressed,
-        isTarFile,
-        isWebpageUpload,
-        setUploadProgress,
-        setStatusMessage,
-        setIsDistributing,
-        setUploadStep,
-        setSelectedDays,
-        setShowOverlay,
-        setIsLoading,
-        setUploadStampInfo,
-        saveUploadReference,
-      });
-    } catch (error) {
-      console.error('Upload error:', error);
-      setStatusMessage({
-        step: 'Error',
-        message: 'Upload failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        isError: true,
-      });
-      setUploadStep('idle');
-      setUploadProgress(0);
-      setIsDistributing(false);
+    const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
+
+    // Retry wrapper for single file upload
+    for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+      try {
+        await uploadFile({
+          selectedFile,
+          postageBatchId,
+          walletClient,
+          publicClient,
+          address,
+          beeApiUrl,
+          serveUncompressed,
+          isTarFile,
+          isWebpageUpload,
+          setUploadProgress,
+          setStatusMessage,
+          setIsDistributing,
+          setUploadStep,
+          setSelectedDays,
+          setShowOverlay,
+          setIsLoading,
+          setUploadStampInfo,
+          saveUploadReference,
+        });
+        return; // Success, exit the function
+      } catch (error) {
+        console.error(`Upload attempt ${retryCount + 1} failed:`, error);
+
+        if (retryCount < maxRetries && error instanceof Error) {
+          const isRetryableError = UPLOAD_RETRY_CONFIG.retryableErrors.some(errorType =>
+            error.message.includes(errorType)
+          );
+
+          if (isRetryableError) {
+            console.log(`Retrying single file upload (${retryCount + 1}/${maxRetries})`);
+            setStatusMessage({
+              step: 'Uploading',
+              message: `Retrying upload (attempt ${retryCount + 2}/${maxRetries + 1})...`,
+            });
+
+            // Wait before retrying (configurable delay)
+            await new Promise(resolve => setTimeout(resolve, UPLOAD_RETRY_CONFIG.retryDelayMs));
+            continue; // Try again
+          }
+        }
+
+        // If not retryable or max retries reached, show error
+        console.error('Upload error:', error);
+        setStatusMessage({
+          step: 'Error',
+          message: 'Upload failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          isError: true,
+        });
+        setUploadStep('idle');
+        setUploadProgress(0);
+        setIsDistributing(false);
+        return;
+      }
     }
   };
 

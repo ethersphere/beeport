@@ -2,7 +2,12 @@ import { type PublicClient } from 'viem';
 import { ExecutionStatus, UploadStep } from './types';
 import { processArchiveFile } from './ArchiveProcessor';
 import { StampInfo } from './types';
-import { STORAGE_OPTIONS } from './constants';
+import {
+  STORAGE_OPTIONS,
+  UPLOAD_RETRY_CONFIG,
+  FILE_SIZE_CONFIG,
+  UPLOAD_TIMEOUT_CONFIG,
+} from './constants';
 
 /**
  * Interface for parameters needed for file upload function
@@ -172,10 +177,18 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
     console.log('Upload URL with filename:', url);
 
-    // Calculate dynamic timeout based on file size
-    // Assume minimum 1 Mbps upload speed, add 50% buffer, minimum 10 minutes, maximum 12 hours
+    // Calculate dynamic timeout based on file size using configurable settings
     const fileSizeGB = file.size / (1024 * 1024 * 1024);
-    const estimatedTimeMinutes = Math.max(10, Math.min(720, fileSizeGB * 8 * 60 * 1.5)); // Convert GB to minutes with buffer
+    const estimatedTimeMinutes = Math.max(
+      UPLOAD_TIMEOUT_CONFIG.minTimeoutMinutes,
+      Math.min(
+        UPLOAD_TIMEOUT_CONFIG.maxTimeoutMinutes,
+        fileSizeGB *
+          (8 / UPLOAD_TIMEOUT_CONFIG.assumedUploadSpeedMbps) *
+          60 *
+          UPLOAD_TIMEOUT_CONFIG.timeoutBufferMultiplier
+      )
+    );
     const timeoutMs = estimatedTimeMinutes * 60 * 1000;
 
     console.log(`Estimated upload time: ${estimatedTimeMinutes.toFixed(1)} minutes`);
@@ -212,7 +225,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           setUploadProgress(Math.min(99, percent));
 
           // More detailed logging for large files
-          if (fileSizeGB > 0.5) {
+          if (fileSizeGB > FILE_SIZE_CONFIG.enhancedLoggingThresholdGB) {
             // Log more details for files > 500MB
             const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
             const totalMB = (event.total / (1024 * 1024)).toFixed(1);
@@ -281,7 +294,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       console.log(`Sending file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
 
       // For very large files, show additional warnings
-      if (fileSizeGB > 2) {
+      if (fileSizeGB > FILE_SIZE_CONFIG.largeFileThresholdGB) {
         console.warn(
           `Large file detected (${fileSizeGB.toFixed(2)} GB). Upload may take ${estimatedTimeMinutes.toFixed(1)} minutes or more.`
         );
@@ -562,7 +575,7 @@ export const handleMultiFileUpload = async (
     totalFiles: number,
     retryCount: number = 0
   ): Promise<MultiFileResult> => {
-    const maxRetries = 2; // Allow up to 2 retries for each file
+    const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
     try {
       // Process archive files if needed
@@ -609,8 +622,17 @@ export const handleMultiFileUpload = async (
         const xhr = new XMLHttpRequest();
         const fileSizeGB = processedFile.size / (1024 * 1024 * 1024);
 
-        // Calculate dynamic timeout (same logic as single file upload)
-        const estimatedTimeMinutes = Math.max(10, Math.min(720, fileSizeGB * 8 * 60 * 1.5));
+        // Calculate dynamic timeout using configurable settings
+        const estimatedTimeMinutes = Math.max(
+          UPLOAD_TIMEOUT_CONFIG.minTimeoutMinutes,
+          Math.min(
+            UPLOAD_TIMEOUT_CONFIG.maxTimeoutMinutes,
+            fileSizeGB *
+              (8 / UPLOAD_TIMEOUT_CONFIG.assumedUploadSpeedMbps) *
+              60 *
+              UPLOAD_TIMEOUT_CONFIG.timeoutBufferMultiplier
+          )
+        );
         const timeoutMs = estimatedTimeMinutes * 60 * 1000;
 
         const url = `${beeApiUrl}/bzz?name=${encodeURIComponent(processedFile.name)}`;
@@ -632,7 +654,7 @@ export const handleMultiFileUpload = async (
             setUploadProgress(Math.min(99, overallProgress));
 
             const currentTime = Date.now();
-            if (fileSizeGB > 0.5) {
+            if (fileSizeGB > FILE_SIZE_CONFIG.enhancedLoggingThresholdGB) {
               const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
               const totalMB = (event.total / (1024 * 1024)).toFixed(1);
               console.log(
@@ -667,7 +689,7 @@ export const handleMultiFileUpload = async (
           `Uploading file ${fileIndex + 1}/${totalFiles}: ${processedFile.name} (${(processedFile.size / (1024 * 1024)).toFixed(1)} MB)`
         );
 
-        if (fileSizeGB > 1) {
+        if (fileSizeGB > FILE_SIZE_CONFIG.largeFileThresholdGB / 2) {
           console.warn(`Large file in batch: ${processedFile.name} (${fileSizeGB.toFixed(2)} GB)`);
         }
 
@@ -693,10 +715,9 @@ export const handleMultiFileUpload = async (
 
       // Retry logic for failed uploads
       if (retryCount < maxRetries && error instanceof Error) {
-        const isRetryableError =
-          error.message.includes('Network error') ||
-          error.message.includes('timeout') ||
-          error.message.includes('stalled');
+        const isRetryableError = UPLOAD_RETRY_CONFIG.retryableErrors.some(errorType =>
+          error.message.includes(errorType)
+        );
 
         if (isRetryableError) {
           console.log(`Retrying upload for ${file.name} (${retryCount + 1}/${maxRetries})`);
@@ -705,8 +726,8 @@ export const handleMultiFileUpload = async (
             message: `Retrying ${file.name} (attempt ${retryCount + 2}/${maxRetries + 1})...`,
           });
 
-          // Wait a bit before retrying (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+          // Wait before retrying (configurable delay)
+          await new Promise(resolve => setTimeout(resolve, UPLOAD_RETRY_CONFIG.retryDelayMs));
 
           return uploadSingleFile(file, fileIndex, totalFiles, retryCount + 1);
         }

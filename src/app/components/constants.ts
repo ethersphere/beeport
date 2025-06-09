@@ -51,6 +51,35 @@ export const DISABLE_MESSAGE_SIGNING = true;
 // Accept exchange rate updates automatically for executeRoute calls
 export const ACCEPT_EXCHANGE_RATE_UPDATES = true;
 
+// Upload retry and timeout configuration
+export const UPLOAD_RETRY_CONFIG = {
+  maxRetries: 2, // Maximum number of retry attempts (total tries = maxRetries + 1)
+  retryDelayMs: 5000, // Wait time between retries in milliseconds (5 seconds)
+  retryableErrors: [
+    'Network request failed',
+    'timeout',
+    'stalled',
+    'Upload failed',
+    'Network error',
+  ], // Error message substrings that trigger retries
+} as const;
+
+// Upload timeout configuration
+export const UPLOAD_TIMEOUT_CONFIG = {
+  minTimeoutMinutes: 10, // Minimum timeout duration in minutes
+  maxTimeoutMinutes: 12 * 60, // Maximum timeout duration in minutes (12 hours)
+  assumedUploadSpeedMbps: 1, // Assumed minimum upload speed in Mbps for timeout calculations
+  timeoutBufferMultiplier: 1.5, // Buffer multiplier for timeout calculations (50% buffer)
+} as const;
+
+// File size thresholds for warnings and enhanced logging
+export const FILE_SIZE_CONFIG = {
+  largeFileThresholdGB: 2, // Files larger than this show warnings
+  veryLargeFileTotalGB: 10, // Total batch size that triggers batch size warnings
+  enhancedLoggingThresholdMB: 500, // Files larger than this get detailed progress logging
+  enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
+} as const;
+
 // Check if we're running on the production domain
 const isProduction =
   typeof window !== 'undefined' && window.location.hostname === 'app.ethswarm.org';
