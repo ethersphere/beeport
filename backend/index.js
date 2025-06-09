@@ -4,12 +4,28 @@ const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { createPublicClient, http } = require('viem');
 const { gnosis } = require('viem/chains');
+const crypto = require('crypto');
 
 // Add this near the top with other environment variables
 const PORT = process.env.PORT || 3333;
 const PROXY_TARGET = process.env.PROXY_TARGET || 'http://localhost:1633';
 const REGISTRY_ADDRESS =
   process.env.REGISTRY_ADDRESS || '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
+
+// Session management for multi-file uploads
+const uploadSessions = new Map();
+const SESSION_DURATION = 15 * 60 * 1000; // 15 minutes
+const SESSION_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+// Clean up expired sessions periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, session] of uploadSessions.entries()) {
+    if (now - session.createdAt > SESSION_DURATION) {
+      uploadSessions.delete(sessionId);
+    }
+  }
+}, SESSION_CLEANUP_INTERVAL);
 
 const BATCH_REGISTRY_ABI = [
   {
@@ -28,6 +44,35 @@ const gnosisPublicClient = createPublicClient({
   transport: http(),
 });
 
+// Generate a secure session token
+const generateSessionToken = (uploaderAddress, batchId) => {
+  const data = `${uploaderAddress}:${batchId}:${Date.now()}:${crypto.randomBytes(16).toString('hex')}`;
+  return crypto.createHash('sha256').update(data).digest('hex');
+};
+
+// Check if there's a valid session for this upload
+const checkExistingSession = (uploaderAddress, batchId, sessionToken) => {
+  if (!sessionToken) return null;
+
+  const session = uploadSessions.get(sessionToken);
+  if (!session) return null;
+
+  const now = Date.now();
+  if (now - session.createdAt > SESSION_DURATION) {
+    uploadSessions.delete(sessionToken);
+    return null;
+  }
+
+  if (
+    session.uploaderAddress.toLowerCase() !== uploaderAddress.toLowerCase() ||
+    session.batchId !== batchId
+  ) {
+    return null;
+  }
+
+  return session;
+};
+
 const verifySignature = async (req, res, next) => {
   console.log('Processing request at path:', req.path);
 
@@ -39,6 +84,8 @@ const verifySignature = async (req, res, next) => {
     const fileName = req.headers['x-file-name'];
     const batchId = req.headers['swarm-postage-batch-id'];
     const messageContent = req.headers['x-message-content'];
+    const sessionToken = req.headers['x-upload-session-token']; // New header for session token
+    const isMultiFileUpload = req.headers['x-multi-file-upload'] === 'true'; // New header to indicate multi-file upload
 
     console.log('Headers received:', {
       signedMessage: signedMessage ? 'exists' : 'missing',
@@ -46,8 +93,29 @@ const verifySignature = async (req, res, next) => {
       fileName,
       batchId,
       messageContent,
+      sessionToken: sessionToken ? 'exists' : 'missing',
+      isMultiFileUpload,
     });
 
+    // Check for existing session first (for multi-file uploads)
+    if (sessionToken && uploaderAddress && batchId) {
+      const existingSession = checkExistingSession(uploaderAddress, batchId, sessionToken);
+      if (existingSession) {
+        console.log('Valid session found, skipping detailed verification');
+        // Update session last used time
+        existingSession.lastUsed = Date.now();
+        existingSession.fileCount += 1;
+
+        // Add session info to response headers for client
+        res.setHeader('x-session-token', sessionToken);
+        res.setHeader('x-session-valid', 'true');
+        return next();
+      } else {
+        console.log('Invalid or expired session token provided');
+      }
+    }
+
+    // Full verification required (first file or no valid session)
     if (!signedMessage || !uploaderAddress || !fileName || !batchId) {
       return res.status(401).json({
         error: 'Missing required headers',
@@ -118,6 +186,27 @@ const verifySignature = async (req, res, next) => {
       }
 
       console.log('Verification successful');
+
+      // Create session token for multi-file uploads
+      if (isMultiFileUpload) {
+        const newSessionToken = generateSessionToken(uploaderAddress, batchId);
+        uploadSessions.set(newSessionToken, {
+          uploaderAddress,
+          batchId,
+          createdAt: Date.now(),
+          lastUsed: Date.now(),
+          fileCount: 1,
+        });
+
+        console.log(
+          `Created new session token for multi-file upload: ${newSessionToken.substring(0, 8)}...`
+        );
+
+        // Add session token to response headers
+        res.setHeader('x-session-token', newSessionToken);
+        res.setHeader('x-session-created', 'true');
+      }
+
       next();
     } catch (error) {
       console.error('Verification Error:', error);

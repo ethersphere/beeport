@@ -27,6 +27,9 @@ import {
   LIFI_API_KEY,
   DISABLE_MESSAGE_SIGNING,
   ACCEPT_EXCHANGE_RATE_UPDATES,
+  UPLOAD_RETRY_CONFIG,
+  FILE_SIZE_CONFIG,
+  UPLOAD_TIMEOUT_CONFIG,
 } from './constants';
 
 import HelpSection from './HelpSection';
@@ -48,7 +51,12 @@ import {
 import { useTimer } from './TimerUtils';
 
 import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
-import { handleFileUpload as uploadFile, isArchiveFile } from './FileUploadUtils';
+import {
+  handleFileUpload as uploadFile,
+  handleMultiFileUpload,
+  isArchiveFile,
+  MultiFileResult,
+} from './FileUploadUtils';
 import { generateAndUpdateNonce } from './utils';
 import { useTokenManagement } from './TokenUtils';
 
@@ -104,6 +112,9 @@ const SwapComponent: React.FC = () => {
   const [showOverlay, setShowOverlay] = useState(false);
   const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isMultipleFiles, setIsMultipleFiles] = useState(false);
+  const [multiFileResults, setMultiFileResults] = useState<MultiFileResult[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
@@ -1150,7 +1161,39 @@ const SwapComponent: React.FC = () => {
     localStorage.setItem('uploadHistory', JSON.stringify(history));
   };
 
+  // Helper function to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Helper function to get total size of selected files
+  const getTotalFileSize = (): number => {
+    if (isMultipleFiles) {
+      return selectedFiles.reduce((total, file) => total + file.size, 0);
+    } else {
+      return selectedFile?.size || 0;
+    }
+  };
+
+  // Helper function to check if files are very large
+  const hasVeryLargeFiles = (): boolean => {
+    const threshold = FILE_SIZE_CONFIG.largeFileThresholdGB * 1024 * 1024 * 1024;
+    if (isMultipleFiles) {
+      return selectedFiles.some(file => file.size > threshold);
+    } else {
+      return (selectedFile?.size || 0) > threshold;
+    }
+  };
+
   const handleFileUpload = async () => {
+    if (isMultipleFiles && selectedFiles.length > 0) {
+      return handleMultipleFileUpload();
+    }
+
     if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
       console.error('Missing file, postage batch ID, or wallet');
       console.log('selectedFile', selectedFile);
@@ -1164,17 +1207,89 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
 
+    const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
+
+    // Retry wrapper for single file upload
+    for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+      try {
+        await uploadFile({
+          selectedFile,
+          postageBatchId,
+          walletClient,
+          publicClient,
+          address,
+          beeApiUrl,
+          serveUncompressed,
+          isTarFile,
+          isWebpageUpload,
+          setUploadProgress,
+          setStatusMessage,
+          setIsDistributing,
+          setUploadStep,
+          setSelectedDays,
+          setShowOverlay,
+          setIsLoading,
+          setUploadStampInfo,
+          saveUploadReference,
+        });
+        return; // Success, exit the function
+      } catch (error) {
+        console.error(`Upload attempt ${retryCount + 1} failed:`, error);
+
+        if (retryCount < maxRetries && error instanceof Error) {
+          const isRetryableError = UPLOAD_RETRY_CONFIG.retryableErrors.some(errorType =>
+            error.message.includes(errorType)
+          );
+
+          if (isRetryableError) {
+            console.log(`Retrying single file upload (${retryCount + 1}/${maxRetries})`);
+            setStatusMessage({
+              step: 'Uploading',
+              message: `Retrying upload (attempt ${retryCount + 2}/${maxRetries + 1})...`,
+            });
+
+            // Wait before retrying (configurable delay)
+            await new Promise(resolve => setTimeout(resolve, UPLOAD_RETRY_CONFIG.retryDelayMs));
+            continue; // Try again
+          }
+        }
+
+        // If not retryable or max retries reached, show error
+        console.error('Upload error:', error);
+        setStatusMessage({
+          step: 'Error',
+          message: 'Upload failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          isError: true,
+        });
+        setUploadStep('idle');
+        setUploadProgress(0);
+        setIsDistributing(false);
+        return;
+      }
+    }
+  };
+
+  const handleMultipleFileUpload = async () => {
+    if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
+      console.error('Missing files, postage batch ID, or wallet');
+      return;
+    }
+
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
+    setMultiFileResults([]);
+
     try {
-      await uploadFile({
-        selectedFile,
+      await handleMultiFileUpload({
+        selectedFiles,
         postageBatchId,
         walletClient,
         publicClient,
         address,
         beeApiUrl,
         serveUncompressed,
-        isTarFile,
-        isWebpageUpload,
         setUploadProgress,
         setStatusMessage,
         setIsDistributing,
@@ -1184,12 +1299,13 @@ const SwapComponent: React.FC = () => {
         setIsLoading,
         setUploadStampInfo,
         saveUploadReference,
+        setMultiFileResults,
       });
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('Multi-file upload error:', error);
       setStatusMessage({
         step: 'Error',
-        message: 'Upload failed',
+        message: 'Multi-file upload failed',
         error: error instanceof Error ? error.message : 'Unknown error',
         isError: true,
       });
@@ -1547,6 +1663,9 @@ const SwapComponent: React.FC = () => {
                     setIsLoading(false);
                     setExecutionResult(null);
                     setSelectedFile(null);
+                    setSelectedFiles([]);
+                    setIsMultipleFiles(false);
+                    setMultiFileResults([]);
                     setIsWebpageUpload(false);
                     setIsTarFile(false);
                     setIsDistributing(false);
@@ -1612,46 +1731,114 @@ const SwapComponent: React.FC = () => {
                       </div>
                     ) : (
                       <div className={styles.uploadForm}>
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="multiple-files"
+                            checked={isMultipleFiles}
+                            onChange={e => {
+                              setIsMultipleFiles(e.target.checked);
+                              // Reset selections when switching modes
+                              setSelectedFile(null);
+                              setSelectedFiles([]);
+                            }}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label htmlFor="multiple-files" className={styles.checkboxLabel}>
+                            Upload multiple files
+                          </label>
+                        </div>
+
                         <div className={styles.fileInputWrapper}>
                           <input
                             type="file"
+                            multiple={isMultipleFiles}
                             onChange={e => {
-                              const file = e.target.files?.[0] || null;
-                              setSelectedFile(file);
-                              setIsTarFile(
-                                file?.name.toLowerCase().endsWith('.tar') ||
-                                  file?.name.toLowerCase().endsWith('.zip') ||
-                                  file?.name.toLowerCase().endsWith('.gz') ||
-                                  false
-                              );
+                              if (isMultipleFiles) {
+                                const files = Array.from(e.target.files || []);
+                                setSelectedFiles(files);
+                                setSelectedFile(null);
+                              } else {
+                                const file = e.target.files?.[0] || null;
+                                setSelectedFile(file);
+                                setSelectedFiles([]);
+                                setIsTarFile(
+                                  (file?.name.toLowerCase().endsWith('.tar') ||
+                                    file?.name.toLowerCase().endsWith('.zip') ||
+                                    file?.name.toLowerCase().endsWith('.gz')) ??
+                                    false
+                                );
+                              }
                             }}
                             className={styles.fileInput}
                             disabled={uploadStep === 'uploading'}
                             id="file-upload"
                           />
                           <label htmlFor="file-upload" className={styles.fileInputLabel}>
-                            {selectedFile ? selectedFile.name : 'Choose file'}
+                            {isMultipleFiles
+                              ? selectedFiles.length > 0
+                                ? `${selectedFiles.length} files selected`
+                                : 'Choose files'
+                              : selectedFile
+                                ? selectedFile.name
+                                : 'Choose file'}
                           </label>
                         </div>
 
-                        {(selectedFile?.name.toLowerCase().endsWith('.zip') ||
-                          selectedFile?.name.toLowerCase().endsWith('.gz')) && (
-                          <div className={styles.checkboxWrapper}>
-                            <input
-                              type="checkbox"
-                              id="serve-uncompressed"
-                              checked={serveUncompressed}
-                              onChange={e => setServeUncompressed(e.target.checked)}
-                              className={styles.checkbox}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                            <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
-                              Serve uncompressed
-                            </label>
+                        {isMultipleFiles && selectedFiles.length > 0 && (
+                          <div className={styles.fileList}>
+                            <h4>Selected files:</h4>
+                            <ul>
+                              {selectedFiles.map((file, index) => (
+                                <li key={index} className={styles.fileName}>
+                                  {file.name} ({formatFileSize(file.size)})
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         )}
 
-                        {isTarFile && (
+                        {/* File size warnings */}
+                        {(selectedFile || selectedFiles.length > 0) && (
+                          <div className={styles.fileSizeInfo}>
+                            <div className={styles.fileSizeTotal}>
+                              Total size: {formatFileSize(getTotalFileSize())}
+                            </div>
+                            {hasVeryLargeFiles() && (
+                              <div className={styles.largeFileWarning}>
+                                ⚠️ Large files detected ({'>'}2GB). Upload may take several hours.
+                                Please ensure stable internet connection and keep this tab open.
+                              </div>
+                            )}
+                            {getTotalFileSize() > 10 * 1024 * 1024 * 1024 && (
+                              <div className={styles.veryLargeFileWarning}>
+                                🚨 Very large total size ({'>'}10GB). Consider uploading in smaller
+                                batches to reduce timeout risk.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {!isMultipleFiles &&
+                          (selectedFile?.name.toLowerCase().endsWith('.zip') ||
+                            selectedFile?.name.toLowerCase().endsWith('.gz')) && (
+                            <div className={styles.checkboxWrapper}>
+                              <input
+                                type="checkbox"
+                                id="serve-uncompressed"
+                                checked={serveUncompressed}
+                                onChange={e => setServeUncompressed(e.target.checked)}
+                                className={styles.checkbox}
+                                disabled={uploadStep === 'uploading'}
+                              />
+                              <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
+                                Serve uncompressed
+                              </label>
+                            </div>
+                          )}
+
+                        {!isMultipleFiles && isTarFile && (
                           <div className={styles.checkboxWrapper}>
                             <input
                               type="checkbox"
@@ -1669,7 +1856,10 @@ const SwapComponent: React.FC = () => {
 
                         <button
                           onClick={handleFileUpload}
-                          disabled={!selectedFile || uploadStep === 'uploading'}
+                          disabled={
+                            (isMultipleFiles ? selectedFiles.length === 0 : !selectedFile) ||
+                            uploadStep === 'uploading'
+                          }
                           className={styles.uploadButton}
                         >
                           {uploadStep === 'uploading' ? (
@@ -1685,6 +1875,8 @@ const SwapComponent: React.FC = () => {
                                       : `Uploading... ${uploadProgress.toFixed(1)}%`
                                     : 'Processing...'}
                             </>
+                          ) : isMultipleFiles ? (
+                            `Upload ${selectedFiles.length} files`
                           ) : (
                             'Upload'
                           )}
@@ -1736,65 +1928,101 @@ const SwapComponent: React.FC = () => {
                 {uploadStep === 'complete' && (
                   <div className={styles.successMessage}>
                     <div className={styles.successIcon}>✓</div>
-                    <h3>Upload Successful!</h3>
-                    <div className={styles.referenceBox}>
-                      <p>Reference:</p>
-                      <div className={styles.referenceCopyWrapper}>
-                        <code
-                          className={styles.referenceCode}
-                          onClick={() => {
-                            navigator.clipboard.writeText(statusMessage.reference || '');
-                            // Show a temporary "Copied!" message by using a data attribute
-                            const codeEl = document.querySelector(`.${styles.referenceCode}`);
-                            if (codeEl) {
-                              codeEl.setAttribute('data-copied', 'true');
-                              setTimeout(() => {
-                                codeEl.setAttribute('data-copied', 'false');
-                              }, 2000);
-                            }
-                          }}
-                          data-copied="false"
-                        >
-                          {statusMessage.reference}
-                        </code>
+                    <h3>{isMultipleFiles ? `Upload Complete!` : 'Upload Successful!'}</h3>
+
+                    {isMultipleFiles && multiFileResults.length > 0 ? (
+                      <div className={styles.multiFileResults}>
+                        {multiFileResults.map((result, index) => (
+                          <div
+                            key={index}
+                            className={`${styles.fileResult} ${result.success ? styles.success : styles.error}`}
+                          >
+                            <div className={styles.fileResultHeader}>
+                              <span className={styles.fileResultName}>{result.filename}</span>
+                              <span
+                                className={`${styles.fileResultStatus} ${result.success ? styles.success : styles.error}`}
+                              >
+                                {result.success ? 'Success' : 'Failed'}
+                              </span>
+                            </div>
+                            {result.success && result.reference && (
+                              <div
+                                className={styles.fileResultReference}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(result.reference);
+                                }}
+                                title="Click to copy reference"
+                              >
+                                {result.reference}
+                              </div>
+                            )}
+                            {!result.success && result.error && (
+                              <div className={styles.fileResultError}>{result.error}</div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <div className={styles.linkButtonsContainer}>
-                        <button
-                          className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                          onClick={() => {
-                            const url =
+                    ) : (
+                      // Single file upload success
+                      <div className={styles.referenceBox}>
+                        <p>Reference:</p>
+                        <div className={styles.referenceCopyWrapper}>
+                          <code
+                            className={styles.referenceCode}
+                            onClick={() => {
+                              navigator.clipboard.writeText(statusMessage.reference || '');
+                              // Show a temporary "Copied!" message by using a data attribute
+                              const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                              if (codeEl) {
+                                codeEl.setAttribute('data-copied', 'true');
+                                setTimeout(() => {
+                                  codeEl.setAttribute('data-copied', 'false');
+                                }, 2000);
+                              }
+                            }}
+                            data-copied="false"
+                          >
+                            {statusMessage.reference}
+                          </code>
+                        </div>
+                        <div className={styles.linkButtonsContainer}>
+                          <button
+                            className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                            onClick={() => {
+                              const url =
+                                statusMessage.filename && !isArchiveFile(statusMessage.filename)
+                                  ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
+                                  : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
+                              navigator.clipboard.writeText(url);
+
+                              // Show a temporary message using a more specific selector
+                              const button = document.querySelector(`.${styles.copyLinkButton}`);
+                              if (button) {
+                                const originalText = button.textContent;
+                                button.textContent = 'Link copied!';
+                                setTimeout(() => {
+                                  button.textContent = originalText;
+                                }, 2000);
+                              }
+                            }}
+                          >
+                            Copy link
+                          </button>
+                          <a
+                            href={
                               statusMessage.filename && !isArchiveFile(statusMessage.filename)
                                 ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                                : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
-                            navigator.clipboard.writeText(url);
-
-                            // Show a temporary message using a more specific selector
-                            const button = document.querySelector(`.${styles.copyLinkButton}`);
-                            if (button) {
-                              const originalText = button.textContent;
-                              button.textContent = 'Link copied!';
-                              setTimeout(() => {
-                                button.textContent = originalText;
-                              }, 2000);
+                                : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
                             }
-                          }}
-                        >
-                          Copy link
-                        </button>
-                        <a
-                          href={
-                            statusMessage.filename && !isArchiveFile(statusMessage.filename)
-                              ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                              : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={styles.referenceLink}
-                        >
-                          Open link
-                        </a>
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.referenceLink}
+                          >
+                            Open link
+                          </a>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
@@ -1837,6 +2065,9 @@ const SwapComponent: React.FC = () => {
                         setIsLoading(false);
                         setExecutionResult(null);
                         setSelectedFile(null);
+                        setSelectedFiles([]);
+                        setIsMultipleFiles(false);
+                        setMultiFileResults([]);
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
                         setIsDistributing(false);
