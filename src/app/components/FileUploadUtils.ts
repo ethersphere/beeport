@@ -516,6 +516,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 export const handleMultiFileUpload = async (
   params: MultiFileUploadParams
 ): Promise<MultiFileResult[]> => {
+  let sessionToken: string | null = null; // Track session token for subsequent uploads
   const {
     selectedFiles,
     postageBatchId,
@@ -536,39 +537,16 @@ export const handleMultiFileUpload = async (
     setMultiFileResults,
   } = params;
 
-  if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
-    console.error('Missing files, postage batch ID, or wallet');
-    return [];
-  }
-
   const isLocalhost = beeApiUrl.includes('localhost') || beeApiUrl.includes('127.0.0.1');
-  const results: MultiFileResult[] = [];
 
-  setUploadStep('uploading');
-  setUploadProgress(0);
-
-  // Initialize results array
-  const initialResults = selectedFiles.map(file => ({
-    filename: file.name,
-    reference: '',
-    success: false,
-  }));
-  setMultiFileResults(initialResults);
-
-  /**
-   * Check the status of a postage stamp
-   */
   const checkStampStatus = async (batchId: string): Promise<StampResponse> => {
-    console.log(`Checking stamps status for batch ${batchId}`);
     const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
-    const data = await response.json();
-    console.log('Stamp status response:', data);
-    return data;
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
   };
 
-  /**
-   * Upload a single file within the multi-file batch
-   */
   const uploadSingleFile = async (
     file: File,
     fileIndex: number,
@@ -578,7 +556,7 @@ export const handleMultiFileUpload = async (
     const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
     try {
-      // Process archive files if needed
+      // Check if it's an archive file that needs processing
       let processedFile = file;
       const isArchive =
         file.type === 'application/zip' ||
@@ -586,18 +564,23 @@ export const handleMultiFileUpload = async (
         file.type === 'application/gzip' ||
         file.name.toLowerCase().endsWith('.gz');
 
+      // Only process if it's an archive AND serveUncompressed is checked
       if (isArchive && serveUncompressed) {
-        console.log(`Processing archive file ${file.name} before upload`);
+        console.log('Processing archive file before upload');
         processedFile = await processArchiveFile(file);
         console.log('Archive processed, starting upload...');
       }
 
       const messageToSign = `${processedFile.name}:${postageBatchId}`;
-      console.log(`Message to sign for ${processedFile.name}:`, messageToSign);
+      console.log('Message to sign:', messageToSign);
 
-      const signedMessage = await walletClient.signMessage({
-        message: messageToSign,
-      });
+      // Only sign message for first file or if no session token exists
+      let signedMessage = '';
+      if (fileIndex === 0 || !sessionToken) {
+        signedMessage = await walletClient.signMessage({
+          message: messageToSign,
+        });
+      }
 
       const baseHeaders: Record<string, string> = {
         'Content-Type': serveUncompressed && isArchive ? 'application/x-tar' : processedFile.type,
@@ -608,10 +591,19 @@ export const handleMultiFileUpload = async (
       };
 
       if (!isLocalhost) {
-        baseHeaders['x-upload-signed-message'] = signedMessage;
+        // For multi-file uploads, add session-related headers
+        baseHeaders['x-multi-file-upload'] = 'true';
         baseHeaders['x-uploader-address'] = address as string;
         baseHeaders['x-file-name'] = processedFile.name;
         baseHeaders['x-message-content'] = messageToSign;
+
+        // Add session token if we have one (for subsequent files)
+        if (sessionToken) {
+          baseHeaders['x-upload-session-token'] = sessionToken;
+        } else {
+          // First file needs signature
+          baseHeaders['x-upload-signed-message'] = signedMessage;
+        }
       }
 
       // Upload the file using the enhanced upload function
@@ -666,6 +658,18 @@ export const handleMultiFileUpload = async (
         };
 
         xhr.onload = () => {
+          // Check for session token in response headers (for first file)
+          if (fileIndex === 0) {
+            const newSessionToken = xhr.getResponseHeader('x-session-token');
+            const sessionCreated = xhr.getResponseHeader('x-session-created');
+            if (newSessionToken && sessionCreated === 'true') {
+              sessionToken = newSessionToken;
+              console.log(
+                `Session token received for multi-file upload: ${sessionToken.substring(0, 8)}...`
+              );
+            }
+          }
+
           resolve({
             ok: xhr.status >= 200 && xhr.status < 300,
             status: xhr.status,
@@ -798,6 +802,23 @@ export const handleMultiFileUpload = async (
       throw new Error('Maximum retry attempts reached');
     };
 
+    // Validate inputs
+    if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
+      console.error('Missing files, postage batch ID, or wallet');
+      return [];
+    }
+
+    setUploadStep('uploading');
+    setUploadProgress(0);
+
+    // Initialize results array
+    const initialResults = selectedFiles.map(file => ({
+      filename: file.name,
+      reference: '',
+      success: false,
+    }));
+    setMultiFileResults(initialResults);
+
     // Wait for batch to be ready
     await waitForBatch();
 
@@ -809,9 +830,10 @@ export const handleMultiFileUpload = async (
     });
 
     // Upload files sequentially to avoid overwhelming the API
+    const results: MultiFileResult[] = [];
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const fileProgress = ((i + 1) / selectedFiles.length) * 100;
+      console.log(`Processing file ${i + 1}/${selectedFiles.length}: ${file.name}`);
 
       setStatusMessage({
         step: 'Uploading',
@@ -821,84 +843,105 @@ export const handleMultiFileUpload = async (
       const result = await uploadSingleFile(file, i, selectedFiles.length);
       results.push(result);
 
-      // Update results
+      // Update results in real-time
       setMultiFileResults([...results]);
-
-      // Update progress
-      setUploadProgress(Math.min(99, fileProgress));
 
       // Save successful uploads to history immediately
       if (result.success && result.reference) {
+        // Calculate expiry date using stamp info
         try {
-          const stamp = await checkStampStatus(postageBatchId);
-          saveUploadReference(result.reference, postageBatchId, stamp.batchTTL, result.filename);
-        } catch (error) {
-          console.error('Failed to save upload reference:', error);
+          const stampStatus = await checkStampStatus(postageBatchId);
+          if (stampStatus.exists) {
+            // Calculate size info
+            const getSizeForDepth = (depth: number): string => {
+              const sizes = [
+                '8MB',
+                '16MB',
+                '32MB',
+                '68MB',
+                '137MB',
+                '274MB',
+                '549MB',
+                '1.1GB',
+                '2.2GB',
+                '4.4GB',
+                '8.8GB',
+                '17.6GB',
+                '35.1GB',
+                '70.3GB',
+                '140.6GB',
+                '281.1GB',
+                '562.3GB',
+              ];
+              return sizes[depth - 17] || `${Math.pow(2, depth - 17)} chunks`;
+            };
+
+            const totalSize = getSizeForDepth(stampStatus.depth);
+            const usedSizeBytes = (stampStatus.utilization / 100) * Math.pow(2, stampStatus.depth);
+            const usedSize =
+              usedSizeBytes < 1024
+                ? `${usedSizeBytes} bytes`
+                : `${(usedSizeBytes / 1024).toFixed(1)} KB`;
+
+            const expiryDate = Date.now() + stampStatus.batchTTL * 1000;
+
+            console.log(`Saving reference for ${result.filename}: ${result.reference}`);
+            saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename);
+
+            setUploadStampInfo({
+              batchID: stampStatus.batchID,
+              utilization: stampStatus.utilization,
+              usable: stampStatus.usable,
+              depth: stampStatus.depth,
+              amount: stampStatus.amount,
+              bucketDepth: stampStatus.bucketDepth,
+              exists: stampStatus.exists,
+              batchTTL: stampStatus.batchTTL,
+              totalSize,
+              usedSize,
+              remainingSize: `${(((100 - stampStatus.utilization) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
+              utilizationPercent: stampStatus.utilization,
+            });
+          }
+        } catch (stampError) {
+          console.error('Error getting stamp info for history:', stampError);
+          // Still save the reference even if we can't get stamp info
+          const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // Default 30 days
+          saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename);
         }
       }
+
+      console.log(`File ${i + 1}/${selectedFiles.length} completed:`, result);
     }
 
+    // Final progress and status updates
     setUploadProgress(100);
     setIsDistributing(false);
 
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.length - successCount;
 
-    // Update stamp info
-    try {
-      const stamp = await checkStampStatus(postageBatchId);
-
-      const getSizeForDepth = (depth: number): string => {
-        const option = STORAGE_OPTIONS.find(option => option.depth === depth);
-        return option ? option.size : `${depth} (unknown size)`;
-      };
-
-      const totalSizeString = getSizeForDepth(stamp.depth);
-      const utilizationPercent = stamp.utilization;
-
-      setUploadStampInfo({
-        ...stamp,
-        totalSize: totalSizeString,
-        usedSize: `${utilizationPercent.toFixed(1)}%`,
-        remainingSize: `${(100 - utilizationPercent).toFixed(1)}%`,
-        utilizationPercent: utilizationPercent,
-      });
-    } catch (error) {
-      console.error('Failed to get stamp details:', error);
-    }
-
-    // Set final status message
     if (failureCount === 0) {
       setStatusMessage({
         step: 'Complete',
-        message: `All ${successCount} files uploaded successfully!`,
-        isSuccess: true,
+        message: `All ${results.length} files uploaded successfully!`,
       });
+      setUploadStep('complete');
     } else if (successCount === 0) {
       setStatusMessage({
         step: 'Error',
-        message: `All ${failureCount} files failed to upload`,
+        message: `All ${results.length} files failed to upload`,
         isError: true,
       });
+      setUploadStep('idle');
     } else {
       setStatusMessage({
-        step: 'Complete',
+        step: 'Partial',
         message: `${successCount} files uploaded successfully, ${failureCount} failed`,
-        isSuccess: true,
+        isError: true,
       });
+      setUploadStep('complete'); // Show results even with some failures
     }
-
-    setUploadStep('complete');
-    setSelectedDays(null);
-
-    // Auto-close after 15 minutes
-    setTimeout(() => {
-      setUploadStep('idle');
-      setShowOverlay(false);
-      setIsLoading(false);
-      setUploadProgress(0);
-      setIsDistributing(false);
-    }, 900000);
 
     return results;
   } catch (error) {
@@ -912,6 +955,6 @@ export const handleMultiFileUpload = async (
     setUploadStep('idle');
     setUploadProgress(0);
     setIsDistributing(false);
-    return results;
+    return [];
   }
 };
