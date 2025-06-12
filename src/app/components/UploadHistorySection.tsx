@@ -19,8 +19,11 @@ interface UploadHistory {
   [address: string]: UploadRecord[];
 }
 
+type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
+
 const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUploadHistory }) => {
   const [history, setHistory] = React.useState<UploadRecord[]>([]);
+  const [selectedFilter, setSelectedFilter] = React.useState<FileType>('all');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -61,6 +64,118 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return archiveExtensions.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
+  // File type detection functions
+  const getFileType = (filename?: string): FileType => {
+    if (!filename) return 'all';
+
+    const extension = filename.toLowerCase();
+
+    // Image files
+    const imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.svg',
+      '.webp',
+      '.bmp',
+      '.ico',
+      '.tiff',
+      '.tif',
+    ];
+    if (imageExtensions.some(ext => extension.endsWith(ext))) {
+      return 'images';
+    }
+
+    // Video files
+    const videoExtensions = [
+      '.mp4',
+      '.avi',
+      '.mov',
+      '.wmv',
+      '.flv',
+      '.webm',
+      '.mkv',
+      '.m4v',
+      '.3gp',
+      '.ogv',
+    ];
+    if (videoExtensions.some(ext => extension.endsWith(ext))) {
+      return 'videos';
+    }
+
+    // Audio files
+    const audioExtensions = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.opus'];
+    if (audioExtensions.some(ext => extension.endsWith(ext))) {
+      return 'audio';
+    }
+
+    // Archive files
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    if (archiveExtensions.some(ext => extension.endsWith(ext))) {
+      return 'archives';
+    }
+
+    // Website files (common web file extensions)
+    const webExtensions = ['.html', '.htm', '.css', '.js', '.json'];
+    if (webExtensions.some(ext => extension.endsWith(ext))) {
+      return 'websites';
+    }
+
+    return 'all';
+  };
+
+  const getFileTypeLabel = (filename?: string): string => {
+    const type = getFileType(filename);
+    switch (type) {
+      case 'images':
+        return 'Image';
+      case 'videos':
+        return 'Video';
+      case 'audio':
+        return 'Audio';
+      case 'archives':
+        return 'Archive';
+      case 'websites':
+        return 'Website';
+      default:
+        return 'File';
+    }
+  };
+
+  // Filter history based on selected filter
+  const filteredHistory = React.useMemo(() => {
+    if (selectedFilter === 'all') {
+      return history;
+    }
+
+    return history.filter(record => {
+      const fileType = getFileType(record.filename);
+      return fileType === selectedFilter;
+    });
+  }, [history, selectedFilter]);
+
+  // Get filter counts
+  const getFilterCounts = React.useMemo(() => {
+    const counts = {
+      all: history.length,
+      images: 0,
+      videos: 0,
+      audio: 0,
+      archives: 0,
+      websites: 0,
+    };
+
+    history.forEach(record => {
+      const type = getFileType(record.filename);
+      if (type !== 'all') {
+        counts[type]++;
+      }
+    });
+
+    return counts;
+  }, [history]);
+
   const getReferenceUrl = (record: UploadRecord) => {
     // For non-archive files with a filename, include the filename in the URL
     if (record.filename && !isArchiveFile(record.filename)) {
@@ -71,25 +186,29 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   const downloadCSV = () => {
-    if (history.length === 0) return;
+    // Use filtered history for CSV export
+    const dataToExport = filteredHistory;
+    if (dataToExport.length === 0) return;
 
-    // CSV headers
+    // CSV headers - added File Type column
     const headers = [
       'Reference',
       'Stamp ID',
       'Date Created',
       'Expiry (Days)',
       'Filename',
+      'File Type',
       'Full Link',
     ];
 
     // Convert history data to CSV rows
-    const csvRows = history.map(record => [
+    const csvRows = dataToExport.map(record => [
       record.reference,
       record.stampId,
       formatDate(record.timestamp),
       formatExpiryDays(record.expiryDate),
       record.filename || 'Unnamed upload',
+      getFileTypeLabel(record.filename),
       getReferenceUrl(record),
     ]);
 
@@ -103,9 +222,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
+
+    // Include filter in filename if not 'all'
+    const filterSuffix = selectedFilter !== 'all' ? `-${selectedFilter}` : '';
     link.setAttribute(
       'download',
-      `upload-history-${address?.slice(0, 8)}-${new Date().toISOString().split('T')[0]}.csv`
+      `upload-history-${address?.slice(0, 8)}${filterSuffix}-${new Date().toISOString().split('T')[0]}.csv`
     );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -134,7 +256,15 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           const fields = line.split(',').map(field => field.replace(/^"|"$/g, '').trim());
 
           if (fields.length >= 6) {
-            const [reference, stampId, dateCreated, expiryDays, filename, fullLink] = fields;
+            const [
+              reference,
+              stampId,
+              dateCreated,
+              expiryDays,
+              filename,
+              fileTypeOrFullLink,
+              fullLink,
+            ] = fields;
 
             // Skip if reference already exists (prevent duplicates)
             if (existingReferences.has(reference)) {
@@ -213,7 +343,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       <div className={styles.titleContainer}>
         <h2 className={styles.title}>Upload History</h2>
         <div className={styles.buttonGroup}>
-          {history.length > 0 && (
+          {filteredHistory.length > 0 && (
             <button className={styles.downloadButton} onClick={downloadCSV} title="Download CSV">
               <svg
                 width="20"
@@ -277,16 +407,72 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         </div>
       </div>
 
+      {/* Filter buttons */}
+      {history.length > 0 && (
+        <div className={styles.filterContainer}>
+          <div className={styles.filterButtons}>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'all' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('all')}
+            >
+              All ({getFilterCounts.all})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'images' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('images')}
+              disabled={getFilterCounts.images === 0}
+            >
+              Images ({getFilterCounts.images})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'videos' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('videos')}
+              disabled={getFilterCounts.videos === 0}
+            >
+              Videos ({getFilterCounts.videos})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'audio' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('audio')}
+              disabled={getFilterCounts.audio === 0}
+            >
+              Audio ({getFilterCounts.audio})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'archives' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('archives')}
+              disabled={getFilterCounts.archives === 0}
+            >
+              Archives ({getFilterCounts.archives})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'websites' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('websites')}
+              disabled={getFilterCounts.websites === 0}
+            >
+              Websites ({getFilterCounts.websites})
+            </button>
+          </div>
+        </div>
+      )}
+
       {!address ? (
         <div className={styles.emptyState}>Connect wallet to check upload history</div>
       ) : history.length === 0 ? (
         <div className={styles.emptyState}>No uploads found for this address</div>
+      ) : filteredHistory.length === 0 ? (
+        <div className={styles.emptyState}>
+          No {selectedFilter === 'all' ? 'files' : selectedFilter} found in your upload history
+        </div>
       ) : (
         <div className={styles.historyList}>
-          {history.map((record, index) => (
+          {filteredHistory.map((record, index) => (
             <div key={index} className={styles.historyItem}>
               <div className={styles.itemHeader}>
-                <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                <div className={styles.filenameContainer}>
+                  <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                  <span className={styles.fileType}>{getFileTypeLabel(record.filename)}</span>
+                </div>
                 <span className={styles.date}>{formatDate(record.timestamp)}</span>
               </div>
               <div className={styles.itemDetails}>
