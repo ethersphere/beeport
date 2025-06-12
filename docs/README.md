@@ -18,6 +18,7 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 ### Technical Guides
 
+- **[Architecture](./architecture.md)** - Project architecture and third-party integrations
 - **[Postage Stamps](./postage-stamps.md)** - Understanding and managing storage stamps
 - **[File Formats & Limits](./file-formats-limits.md)** - Supported formats and size limitations
 - **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
