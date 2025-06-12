@@ -57,6 +57,7 @@ import {
   isArchiveFile,
   MultiFileResult,
 } from './FileUploadUtils';
+import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
 import { generateAndUpdateNonce } from './utils';
 import { useTokenManagement } from './TokenUtils';
 
@@ -147,6 +148,15 @@ const SwapComponent: React.FC = () => {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
   const [serveUncompressed, setServeUncompressed] = useState(true);
+
+  // NFT Collection states
+  const [isNFTCollection, setIsNFTCollection] = useState(false);
+  const [nftCollectionResult, setNftCollectionResult] = useState<{
+    imagesReference: string;
+    metadataReference: string;
+    totalImages: number;
+    totalMetadata: number;
+  } | null>(null);
 
   // Add states to track top-up completion
   const [topUpCompleted, setTopUpCompleted] = useState(false);
@@ -1207,6 +1217,65 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
 
+    // Handle NFT Collection uploads
+    if (isNFTCollection && selectedFile.name.toLowerCase().endsWith('.zip')) {
+      try {
+        const result = await processNFTCollection({
+          zipFile: selectedFile,
+          postageBatchId,
+          walletClient,
+          publicClient,
+          address,
+          beeApiUrl,
+          setProgress: setUploadProgress,
+          setStatusMessage: (message: string) =>
+            setStatusMessage({
+              step: 'Uploading',
+              message: message,
+            }),
+        });
+
+        setNftCollectionResult(result);
+
+        // Save both references to history
+        const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days default
+        saveUploadReference(result.imagesReference, postageBatchId, expiryDate, 'images.tar');
+        saveUploadReference(result.metadataReference, postageBatchId, expiryDate, 'metadata.tar');
+
+        setStatusMessage({
+          step: 'Complete',
+          message: `NFT Collection uploaded successfully! ${result.totalImages} images and ${result.totalMetadata} metadata files processed.`,
+          isSuccess: true,
+          reference: result.metadataReference,
+          filename: selectedFile.name,
+        });
+
+        setUploadStep('complete');
+        setSelectedDays(null);
+        setTimeout(() => {
+          setUploadStep('idle');
+          setShowOverlay(false);
+          setIsLoading(false);
+          setUploadProgress(0);
+          setIsDistributing(false);
+        }, 900000);
+
+        return;
+      } catch (error) {
+        console.error('NFT Collection upload error:', error);
+        setStatusMessage({
+          step: 'Error',
+          message: 'NFT Collection upload failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          isError: true,
+        });
+        setUploadStep('idle');
+        setUploadProgress(0);
+        setIsDistributing(false);
+        return;
+      }
+    }
+
     const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
     // Retry wrapper for single file upload
@@ -1854,6 +1923,28 @@ const SwapComponent: React.FC = () => {
                           </div>
                         )}
 
+                        {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
+                          <div className={styles.checkboxWrapper}>
+                            <input
+                              type="checkbox"
+                              id="nft-collection"
+                              checked={isNFTCollection}
+                              onChange={e => setIsNFTCollection(e.target.checked)}
+                              className={styles.checkbox}
+                              disabled={uploadStep === 'uploading'}
+                            />
+                            <label htmlFor="nft-collection" className={styles.checkboxLabel}>
+                              Upload NFT collection
+                              <span
+                                className={styles.tooltip}
+                                title="Upload a ZIP file containing 'images' and 'json' folders. Images will be uploaded separately, and JSON metadata will be updated with bzz.link URLs pointing to the uploaded images."
+                              >
+                                ?
+                              </span>
+                            </label>
+                          </div>
+                        )}
+
                         <button
                           onClick={handleFileUpload}
                           disabled={
@@ -1961,6 +2052,133 @@ const SwapComponent: React.FC = () => {
                             )}
                           </div>
                         ))}
+                      </div>
+                    ) : nftCollectionResult ? (
+                      // NFT Collection upload success
+                      <div className={styles.nftCollectionResults}>
+                        <div className={styles.nftCollectionSummary}>
+                          <h4>NFT Collection Uploaded Successfully!</h4>
+                          <p>
+                            {nftCollectionResult.totalImages} images and{' '}
+                            {nftCollectionResult.totalMetadata} metadata files processed
+                          </p>
+                        </div>
+
+                        <div className={styles.nftReferenceGroup}>
+                          <div className={styles.referenceBox}>
+                            <p>
+                              <strong>Images Reference:</strong>
+                            </p>
+                            <div className={styles.referenceCopyWrapper}>
+                              <code
+                                className={styles.referenceCode}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(
+                                    nftCollectionResult.imagesReference
+                                  );
+                                  const codeEl = document.querySelectorAll(
+                                    `.${styles.referenceCode}`
+                                  )[0];
+                                  if (codeEl) {
+                                    codeEl.setAttribute('data-copied', 'true');
+                                    setTimeout(() => {
+                                      codeEl.setAttribute('data-copied', 'false');
+                                    }, 2000);
+                                  }
+                                }}
+                                data-copied="false"
+                              >
+                                {nftCollectionResult.imagesReference}
+                              </code>
+                            </div>
+                            <div className={styles.linkButtonsContainer}>
+                              <button
+                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                onClick={() => {
+                                  const url = `${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/`;
+                                  navigator.clipboard.writeText(url);
+                                  const button = document.querySelectorAll(
+                                    `.${styles.copyLinkButton}`
+                                  )[0];
+                                  if (button) {
+                                    const originalText = button.textContent;
+                                    button.textContent = 'Link copied!';
+                                    setTimeout(() => {
+                                      button.textContent = originalText;
+                                    }, 2000);
+                                  }
+                                }}
+                              >
+                                Copy images link
+                              </button>
+                              <a
+                                href={`${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.referenceLink}
+                              >
+                                View images
+                              </a>
+                            </div>
+                          </div>
+
+                          <div className={styles.referenceBox}>
+                            <p>
+                              <strong>Metadata Reference:</strong>
+                            </p>
+                            <div className={styles.referenceCopyWrapper}>
+                              <code
+                                className={styles.referenceCode}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(
+                                    nftCollectionResult.metadataReference
+                                  );
+                                  const codeEl = document.querySelectorAll(
+                                    `.${styles.referenceCode}`
+                                  )[1];
+                                  if (codeEl) {
+                                    codeEl.setAttribute('data-copied', 'true');
+                                    setTimeout(() => {
+                                      codeEl.setAttribute('data-copied', 'false');
+                                    }, 2000);
+                                  }
+                                }}
+                                data-copied="false"
+                              >
+                                {nftCollectionResult.metadataReference}
+                              </code>
+                            </div>
+                            <div className={styles.linkButtonsContainer}>
+                              <button
+                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                onClick={() => {
+                                  const url = `${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/`;
+                                  navigator.clipboard.writeText(url);
+                                  const button = document.querySelectorAll(
+                                    `.${styles.copyLinkButton}`
+                                  )[1];
+                                  if (button) {
+                                    const originalText = button.textContent;
+                                    button.textContent = 'Link copied!';
+                                    setTimeout(() => {
+                                      button.textContent = originalText;
+                                    }, 2000);
+                                  }
+                                }}
+                              >
+                                Copy metadata link
+                              </button>
+                              <a
+                                href={`${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.referenceLink}
+                              >
+                                View metadata
+                              </a>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       // Single file upload success
@@ -2072,6 +2290,8 @@ const SwapComponent: React.FC = () => {
                         setIsTarFile(false);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
+                        setIsNFTCollection(false);
+                        setNftCollectionResult(null);
                       }}
                     >
                       Close
