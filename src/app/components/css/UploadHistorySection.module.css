@@ -58,6 +58,53 @@
   display: none;
 }
 
+/* Filter styles */
+.filterContainer {
+  margin-bottom: 20px;
+  padding: 0 18px;
+}
+
+.filterButtons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filterButton {
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 20px;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 8px 16px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.filterButton:hover:not(:disabled) {
+  background-color: rgba(48, 54, 61, 0.5);
+  border-color: #424a53;
+  color: #ffffff;
+}
+
+.filterButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filterButton.activeFilter {
+  background-color: #ff7a00;
+  border-color: #ff7a00;
+  color: #ffffff;
+}
+
+.filterButton.activeFilter:hover {
+  background-color: #e66a00;
+  border-color: #e66a00;
+}
+
 .emptyState {
   text-align: center;
   padding: 30px;
@@ -95,6 +142,14 @@
   border-bottom: 1px solid #30363d;
 }
 
+.filenameContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
 .filename {
   font-weight: 600;
   font-size: 18px;
@@ -102,9 +157,22 @@
   word-break: break-all;
 }
 
+.fileType {
+  font-size: 12px;
+  color: #8b949e;
+  background-color: rgba(48, 54, 61, 0.5);
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  width: fit-content;
+  font-weight: 500;
+}
+
 .date {
   color: #8b949e;
   font-size: 14px;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 
 .itemDetails {
@@ -192,4 +260,48 @@
 
 .backButton:hover {
   background-color: rgba(48, 54, 61, 0.5);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .titleContainer {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+  
+  .filterButtons {
+    justify-content: center;
+  }
+  
+  .filterButton {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+  
+  .itemHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .date {
+    margin-left: 0;
+  }
+  
+  .filename {
+    font-size: 16px;
+  }
+  
+  .referenceRow,
+  .stampRow,
+  .expiryRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .label {
+    width: auto;
+  }
 }
