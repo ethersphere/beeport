@@ -103,6 +103,7 @@ const SwapComponent: React.FC = () => {
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
   const [isChainsLoading, setIsChainsLoading] = useState(true);
   const [liquidityError, setLiquidityError] = useState<boolean>(false);
+  const [aggregatorDown, setAggregatorDown] = useState<boolean>(false);
   const [insufficientFunds, setInsufficientFunds] = useState<boolean>(false);
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
@@ -292,6 +293,7 @@ const SwapComponent: React.FC = () => {
     if (!isConnected || !address || !fromToken) return;
     setTotalUsdAmount(null);
     setLiquidityError(false);
+    setAggregatorDown(false);
     setIsPriceEstimating(true);
 
     // Cancel any previous price estimate operations
@@ -309,6 +311,8 @@ const SwapComponent: React.FC = () => {
 
       // Reset insufficient funds state at the beginning of new price estimation
       setInsufficientFunds(false);
+      setLiquidityError(false);
+      setAggregatorDown(false);
 
       try {
         const bzzAmount = calculateTotalAmount().toString();
@@ -416,7 +420,21 @@ const SwapComponent: React.FC = () => {
         if (!abortSignal.aborted) {
           console.error('Error estimating price:', error);
           setTotalUsdAmount(null);
-          setLiquidityError(true);
+
+          // Check if this is a LI.FI aggregator 404 error
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isLiFiNotFoundError =
+            errorMessage.includes('404') ||
+            errorMessage.includes('Not Found') ||
+            errorMessage.includes('No available quotes for the requested transfer') ||
+            errorMessage.includes('NotFoundError');
+
+          if (isLiFiNotFoundError) {
+            console.log('LI.FI aggregator appears to be down or no quotes available');
+            setAggregatorDown(true);
+          } else {
+            setLiquidityError(true);
+          }
         }
       } finally {
         // Only update loading state if not aborted
@@ -1606,6 +1624,7 @@ const SwapComponent: React.FC = () => {
                   setTotalUsdAmount(null);
                   setInsufficientFunds(false);
                   setLiquidityError(false);
+                  setAggregatorDown(false);
                   setIsPriceEstimating(false);
                 }
 
@@ -1666,11 +1685,13 @@ const SwapComponent: React.FC = () => {
 
           {selectedDays && totalUsdAmount !== null && Number(totalUsdAmount) !== 0 && (
             <p className={styles.priceInfo}>
-              {liquidityError
-                ? 'Not enough liquidity for this swap'
-                : insufficientFunds
-                  ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
-                  : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
+              {aggregatorDown
+                ? 'Aggregator down, use BZZ directly'
+                : liquidityError
+                  ? 'Not enough liquidity for this swap'
+                  : insufficientFunds
+                    ? `Cost ($${Number(totalUsdAmount).toFixed(2)}) exceeds your balance`
+                    : `Cost without gas ~ $${Number(totalUsdAmount).toFixed(2)}`}
             </p>
           )}
 
@@ -1678,7 +1699,11 @@ const SwapComponent: React.FC = () => {
             className={`${styles.button} ${
               !isConnected
                 ? ''
-                : !selectedDays || !fromToken || liquidityError || insufficientFunds
+                : !selectedDays ||
+                    !fromToken ||
+                    liquidityError ||
+                    aggregatorDown ||
+                    insufficientFunds
                   ? styles.buttonDisabled
                   : ''
             } ${isPriceEstimating ? styles.calculatingButton : ''}`}
@@ -1687,6 +1712,7 @@ const SwapComponent: React.FC = () => {
               (!selectedDays ||
                 !fromToken ||
                 liquidityError ||
+                aggregatorDown ||
                 insufficientFunds ||
                 isPriceEstimating)
             }
@@ -1702,6 +1728,8 @@ const SwapComponent: React.FC = () => {
               'No Token Available'
             ) : isPriceEstimating ? (
               'Calculating Cost...'
+            ) : aggregatorDown ? (
+              'Aggregator Down - Use BZZ'
             ) : liquidityError ? (
               "Cannot Swap - Can't Find Route"
             ) : insufficientFunds ? (
