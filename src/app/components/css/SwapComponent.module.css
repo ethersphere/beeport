@@ -355,6 +355,24 @@
 .checkboxLabel {
   font-size: 14px;
   color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background-color: #ff7a00;
+  color: #ffffff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: help;
+  flex-shrink: 0;
 }
 
 .uploadButton {
@@ -1347,5 +1365,88 @@
   font-size: 12px;
   color: #ff5a52;
   margin-top: 5px;
+}
+
+/* NFT Collection specific styles */
+.nftCollectionResults {
+  margin: 20px 0;
+}
+
+.nftCollectionSummary {
+  text-align: center;
+  margin-bottom: 25px;
+  padding: 15px;
+  background-color: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 8px;
+}
+
+.nftCollectionSummary h4 {
+  margin: 0 0 8px 0;
+  color: #3fb950;
+  font-size: 16px;
+}
+
+.nftCollectionSummary p {
+  margin: 0;
+  color: #8b949e;
+  font-size: 14px;
+}
+
+.nftReferenceGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.nftReferenceGroup .referenceBox {
+  padding: 15px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.nftReferenceGroup .referenceBox p {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.nftReferenceGroup .referenceBox p strong {
+  color: #ff7a00;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 480px) {
+  .nftCollectionSummary {
+    padding: 12px;
+    margin-bottom: 20px;
+  }
+  
+  .nftCollectionSummary h4 {
+    font-size: 15px;
+  }
+  
+  .nftCollectionSummary p {
+    font-size: 13px;
+  }
+  
+  .nftReferenceGroup {
+    gap: 15px;
+  }
+  
+  .nftReferenceGroup .referenceBox {
+    padding: 12px;
+  }
+  
+  .linkButtonsContainer {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .linkButtonsContainer .referenceLink {
+    width: 100%;
+    min-width: auto;
+  }
 }
 
