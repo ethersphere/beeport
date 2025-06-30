@@ -147,7 +147,7 @@ const uploadToSwarm = async (file: File, stamp: string) => {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${beeApiUrl}/bytes`, {
+  const response = await fetch(`${beeApiUrl}/bzz`, {
     method: 'POST',
     headers: {
       'swarm-postage-batch-id': stamp,
@@ -257,11 +257,10 @@ GET / v1 / transactions / { txHash } / status;
 
 - **API**: Direct HTTP API calls to Bee nodes
 - **Endpoints Used**:
-  - `POST /bytes` - Upload files
-  - `GET /bytes/{reference}` - Retrieve files
-  - `POST /stamps` - Create postage stamps
+  - `POST /bzz` - Upload files
+  - `GET /bzz/{reference}` - Retrieve files (via gateway)
+  - `GET /stamps/{id}` - Get stamp information
   - `GET /stamps` - List stamps
-  - `PATCH /stamps/{id}` - Top up stamps
 
 **Configuration:**
 
