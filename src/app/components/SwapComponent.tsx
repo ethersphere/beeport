@@ -1686,7 +1686,7 @@ const SwapComponent: React.FC = () => {
           {selectedDays && totalUsdAmount !== null && Number(totalUsdAmount) !== 0 && (
             <p className={styles.priceInfo}>
               {aggregatorDown
-                ? 'Aggregator down, use BZZ directly'
+                ? 'LIFI Router Error: Please try later'
                 : liquidityError
                   ? 'Not enough liquidity for this swap'
                   : insufficientFunds
@@ -1729,7 +1729,7 @@ const SwapComponent: React.FC = () => {
             ) : isPriceEstimating ? (
               'Calculating Cost...'
             ) : aggregatorDown ? (
-              'Aggregator Down - Use BZZ'
+              'LIFI Router Error: Please try later'
             ) : liquidityError ? (
               "Cannot Swap - Can't Find Route"
             ) : insufficientFunds ? (
