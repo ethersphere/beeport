@@ -1,0 +1,100 @@
+name: Swarm Upload
+
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      use_latest_tag:
+        description: 'Deploy latest tag'
+        required: false
+        default: true
+        type: boolean
+      custom_tag:
+        description: 'Or specify a custom tag (leave empty to use latest)'
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history including tags
+      
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag push trigger
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "trigger=automatic" >> $GITHUB_OUTPUT
+          else
+            # Manual trigger
+            if [ "${{ inputs.custom_tag }}" != "" ]; then
+              echo "tag=${{ inputs.custom_tag }}" >> $GITHUB_OUTPUT
+            else
+              # Get the latest tag
+              latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+              if [ -z "$latest_tag" ]; then
+                echo "No tags found in repository"
+                exit 1
+              fi
+              echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+            fi
+            echo "trigger=manual" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Checkout specific tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Checking out tag: ${{ steps.get_tag.outputs.tag }}"
+          git checkout tags/${{ steps.get_tag.outputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4 # Use the latest major version
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload to Swarm
+        uses: ethersphere/swarm-actions/upload-dir@latest
+        id: upload
+        with:
+          dir: ./out
+          index-document: index.html
+          postage-batch-id: ${{ secrets.PRIVATE_POSTAGE_BATCH_ID }}
+          bee-url: ${{ secrets.PRIVATE_BEE_URL }}
+          timeout: 300000
+          deferred: false
+
+      - name: Setup feed
+        uses: ethersphere/swarm-actions/write-feed@latest
+        id: feed
+        with:
+          reference: ${{ steps.upload.outputs.reference }}
+          topic: "multichain-ui"
+          postage-batch-id: ${{ secrets.PRIVATE_POSTAGE_BATCH_ID }}
+          bee-url: ${{ secrets.PRIVATE_BEE_URL }}
+          signer: ${{ secrets.MULTICHAIN_PRIVATE_SIGNER }}
+
+      - uses: ethersphere/swarm-actions/reference-to-cid@v0
+        id: cid
+        with:
+          reference: ${{ steps.feed.outputs.manifest }}
+
+      - run: |
+          echo 'Chunk Reference: ${{ steps.upload.outputs.reference }}'
+          echo 'Feed Reference: ${{ steps.feed.outputs.reference }}'
+          echo 'Feed Manifest: ${{ steps.feed.outputs.manifest }}'
+          echo 'Feed Bzz.link: https://${{ steps.cid.outputs.cid }}.bzz.link'
