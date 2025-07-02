@@ -25,14 +25,16 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 ## 🚀 Quick Start
 
-1. **Connect your wallet** to get started
-2. **Purchase or select a postage stamp** for storage
-3. **Choose your upload type**:
+1. **Connect your wallet** from any EVM-compatible chain (Ethereum, Polygon, Arbitrum, etc.)
+2. **Select tokens** - Use ETH, USDC, MATIC, or other major tokens you already have
+3. **Choose storage options** - The app automatically bridges your tokens to Gnosis Chain for xBZZ
+4. **Purchase or select a postage stamp** for storage
+5. **Choose your upload type**:
    - Single file for individual files
    - Multiple files for batch uploads
    - ZIP with special processing options
-4. **Configure options** based on your needs
-5. **Upload and get your Swarm references**
+6. **Configure options** based on your needs
+7. **Upload and get your Swarm references**
 
 ## 🔗 Useful Links
 
@@ -53,7 +55,7 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 ## 🛠️ Technical Requirements
 
 - **Wallet**: MetaMask or compatible Web3 wallet
-- **Network**: Gnosis Chain (for postage stamps)
+- **Network**: Any EVM-compatible chain (automatically bridges to Gnosis Chain via LI.FI)
 - **Browser**: Modern browser with JavaScript enabled
 - **Files**: See individual guides for format requirements
 

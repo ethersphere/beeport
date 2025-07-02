@@ -26,7 +26,7 @@ Postage stamps are prepaid storage credits on the Swarm network. Think of them l
 
 ### Through the Application
 
-1. **Connect wallet** with xBZZ tokens
+1. **Connect wallet** with tokens on any EVM chain (automatically bridges to xBZZ via LI.FI)
 2. **Navigate to stamp creation** section
 3. **Choose capacity** based on your needs
 4. **Set duration** (how long files should be stored)
@@ -140,9 +140,11 @@ Stamp capacity is determined by depth:
 
 ### Payment
 
-- **xBZZ tokens**: Native Swarm token required
-- **Gnosis Chain**: Transactions happen on Gnosis Chain
-- **Gas fees**: Small transaction fees apply
+- **Any EVM tokens**: Start with ETH, USDC, MATIC, or other major tokens on any supported chain
+- **Automatic bridging**: LI.FI automatically converts to xBZZ on Gnosis Chain
+- **xBZZ tokens**: Final payment made in native Swarm token
+- **Gnosis Chain**: Final transactions happen on Gnosis Chain
+- **Gas fees**: Small transaction fees apply on both source and destination chains
 - **Wallet required**: MetaMask or compatible wallet
 
 ## Troubleshooting Stamps
