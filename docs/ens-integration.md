@@ -19,7 +19,11 @@ Before using ENS integration, make sure you have:
 1. **An ENS domain** - You must own an ENS domain (e.g., `myname.eth`)
 2. **A resolver set** - Your domain must have a resolver configured
 3. **ETH for gas** - You need ETH to pay for the transaction on Ethereum mainnet
-4. **Wallet connected** - Your wallet must be connected to Ethereum mainnet
+4. **Wallet connected to Ethereum Mainnet** - You must be connected to Ethereum mainnet (Chain ID: 1)
+
+### Important: Network Requirements
+
+ENS domains are managed exclusively on **Ethereum Mainnet**. If you're connected to any other network (Polygon, Arbitrum, etc.), you'll need to switch to Ethereum Mainnet to manage ENS content hashes.
 
 ## Step-by-Step Guide
 
@@ -53,6 +57,34 @@ Once the transaction is confirmed, your content will be accessible at:
 - `yourname.eth` (ENS-compatible browsers)
 - `yourname.eth.limo`
 - `yourname.eth.link`
+
+## Testing Your Setup
+
+### Verify Domain Ownership
+
+Before trying to set a content hash, verify that you own the domain:
+
+1. Go to [app.ens.domains](https://app.ens.domains)
+2. Connect your wallet
+3. Search for your domain
+4. You should see "Manager" and "Owner" fields showing your address
+
+### Test with a Known Domain
+
+To verify the ENS integration works, you can test with a domain you know exists:
+
+1. Try entering a well-known domain like `vitalik.eth` or `nick.eth`
+2. You should see a clear error message: "You do not own this domain"
+3. This confirms the system is working correctly
+
+### Check Domain Registration
+
+If you're unsure whether a domain exists:
+
+1. Visit [app.ens.domains](https://app.ens.domains)
+2. Search for the domain name
+3. If it shows "Available", it's not registered
+4. If it shows owner details, it's registered
 
 ## Supported Domain Types
 
@@ -135,30 +167,61 @@ Access: docs.yourproject.eth.limo → Read docs
 
 ## Troubleshooting
 
+### "Please switch to Ethereum Mainnet"
+
+This warning appears when you're connected to a different blockchain network.
+
+**Solution:**
+
+- Switch your wallet to Ethereum Mainnet (Chain ID: 1)
+- ENS domains are only managed on Ethereum mainnet
+- Other networks like Polygon, Arbitrum, etc. cannot manage ENS records
+
+### "Domain is not registered or configured in ENS"
+
+This error means the domain doesn't exist or resolve to an address in the ENS registry.
+
+**Solutions:**
+
+- Double-check the domain name spelling
+- Verify the domain exists at [app.ens.domains](https://app.ens.domains)
+- Make sure the domain has been properly configured (has an address record)
+- If the domain doesn't exist, register it first
+- Try a different domain that you know exists
+
 ### "You do not own this domain"
 
 - Verify you own the domain in the ENS manager
 - Check that you're using the correct wallet
 - Ensure the domain name is spelled correctly
+- The error will show the current owner's address
 
 ### "Domain has no resolver set"
 
-- Go to the ENS Manager
+- Go to the [ENS Manager](https://app.ens.domains)
 - Set a resolver for your domain
 - Use the Public Resolver if unsure
 - Wait for the transaction to confirm
+
+### "Domain has no owner" / "Domain may have expired"
+
+- Check if the domain has expired
+- Renew the domain if necessary
+- Some domains might be in a grace period
 
 ### "Transaction failed"
 
 - Check you have enough ETH for gas
 - Verify your wallet is connected to Ethereum mainnet
 - Try again when gas prices are lower
+- Ensure you have permission to modify the domain
 
 ### "Content not loading"
 
 - Verify the Swarm reference is correct
 - Check that your content was uploaded successfully
 - Try accessing via different ENS gateways
+- Wait a few minutes for DNS propagation
 
 ## Technical Details
 

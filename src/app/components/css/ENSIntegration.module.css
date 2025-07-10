@@ -137,6 +137,12 @@
   margin-bottom: 8px;
 }
 
+.inputContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .input {
   width: 100%;
   padding: 12px;
@@ -154,10 +160,68 @@
   box-shadow: 0 0 0 2px rgba(255, 122, 0, 0.2);
 }
 
+.validating {
+  position: absolute;
+  right: 12px;
+  display: flex;
+  align-items: center;
+}
+
 .hint {
   color: #999;
   font-size: 12px;
   margin-top: 4px;
+}
+
+.domainHelp {
+  margin-top: 8px;
+}
+
+.domainHelp p {
+  color: #8b949e;
+  font-size: 12px;
+  margin: 0;
+}
+
+.domainHelp a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.domainHelp a:hover {
+  text-decoration: underline;
+}
+
+.validationError {
+  position: absolute;
+  right: 12px;
+  color: #dc3545;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.validationSuccess {
+  position: absolute;
+  right: 12px;
+  color: #28a745;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.domainInfo {
+  color: #28a745;
+  font-size: 12px;
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+.chainWarning {
+  background-color: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
 }
 
 .domainList {

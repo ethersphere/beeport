@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
+import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsResolver } from 'wagmi';
 import { parseAbi, namehash } from 'viem';
 import { normalize } from 'viem/ens';
 import styles from './css/ENSIntegration.module.css';
@@ -11,7 +11,6 @@ interface ENSIntegrationProps {
 
 // ENS contract addresses and ABIs
 const ENS_REGISTRY_ADDRESS = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
-const ENS_PUBLIC_RESOLVER_ADDRESS = '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41';
 
 const ENS_RESOLVER_ABI = parseAbi([
   'function setContenthash(bytes32 node, bytes calldata hash) external',
@@ -37,7 +36,7 @@ const encodeSwarmHash = (swarmReference: string): `0x${string}` => {
 };
 
 const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose }) => {
-  const { address } = useAccount();
+  const { address, chainId } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
 
@@ -47,9 +46,40 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [success, setSuccess] = useState<string>('');
   const [txHash, setTxHash] = useState<string>('');
 
+  // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
+  const {
+    data: ensAddress,
+    isError: ensAddressError,
+    isLoading: ensAddressLoading,
+  } = useEnsAddress({
+    name: selectedDomain || undefined,
+    chainId: 1, // Always use Ethereum mainnet for ENS
+  });
+
+  const { data: ensResolver, isError: ensResolverError } = useEnsResolver({
+    name: selectedDomain || undefined,
+    chainId: 1, // Always use Ethereum mainnet for ENS
+  });
+
+  const handleDomainChange = (domain: string) => {
+    setSelectedDomain(domain);
+    setError('');
+  };
+
+  // Check if we're on the right chain
+  const isWrongChain = chainId !== 1;
+
   const handleSetContentHash = async () => {
     if (!selectedDomain || !walletClient || !publicClient) {
       setError('Please enter a domain name and connect your wallet');
+      return;
+    }
+
+    // Check if we're on Ethereum mainnet
+    if (isWrongChain) {
+      setError(
+        'Please switch to Ethereum Mainnet to set ENS content hash. ENS records are stored on Ethereum mainnet.'
+      );
       return;
     }
 
@@ -59,7 +89,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
     setTxHash('');
 
     try {
-      // Normalize and validate the domain name
+      // Normalize the domain name
       let normalizedDomain: string;
       try {
         normalizedDomain = normalize(selectedDomain);
@@ -69,45 +99,72 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         return;
       }
 
+      // Check if domain resolves to an address (indicates it exists and is configured)
+      if (ensAddressError || !ensAddress) {
+        setError(
+          `Domain "${normalizedDomain}" is not registered or configured in ENS. Please check the domain name or register it at app.ens.domains.`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('Domain resolves to address:', ensAddress);
+      console.log('ENS Resolver:', ensResolver);
+
+      // Get domain node for contract calls
       const domainNode = namehash(normalizedDomain);
 
       console.log('Setting content hash for domain:', normalizedDomain);
       console.log('Domain node:', domainNode);
       console.log('Swarm reference:', swarmReference);
 
-      // Check if user owns this domain
-      const domainOwner = await publicClient.readContract({
-        address: ENS_REGISTRY_ADDRESS,
-        abi: ENS_REGISTRY_ABI,
-        functionName: 'owner',
-        args: [domainNode],
-      });
+      // Get the owner of the domain directly using registry
+      let domainOwner: string;
+      try {
+        domainOwner = (await publicClient.readContract({
+          address: ENS_REGISTRY_ADDRESS,
+          abi: ENS_REGISTRY_ABI,
+          functionName: 'owner',
+          args: [domainNode],
+        })) as string;
+      } catch (err) {
+        console.error('Error getting domain owner:', err);
+        setError(
+          `Unable to verify ownership of "${normalizedDomain}". Please ensure you're connected to Ethereum mainnet.`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('Domain owner:', domainOwner);
+      console.log('Current address:', address);
+
+      if (!domainOwner || domainOwner === '0x0000000000000000000000000000000000000000') {
+        setError(
+          `Domain "${normalizedDomain}" has no owner. The domain may have expired or not be properly registered.`
+        );
+        setIsLoading(false);
+        return;
+      }
 
       if (domainOwner.toLowerCase() !== address?.toLowerCase()) {
         setError(
-          `You do not own the domain "${normalizedDomain}". Please make sure you own this domain.`
+          `You do not own the domain "${normalizedDomain}". Current owner: ${domainOwner.slice(0, 10)}...${domainOwner.slice(-8)}`
         );
         setIsLoading(false);
         return;
       }
 
-      // Get the resolver for this domain
-      const resolverAddress = await publicClient.readContract({
-        address: ENS_REGISTRY_ADDRESS,
-        abi: ENS_REGISTRY_ABI,
-        functionName: 'resolver',
-        args: [domainNode],
-      });
-
-      console.log('Resolver address:', resolverAddress);
-
-      if (!resolverAddress || resolverAddress === '0x0000000000000000000000000000000000000000') {
+      // Check if domain has a resolver
+      if (!ensResolver || ensResolver === '0x0000000000000000000000000000000000000000') {
         setError(
-          `Domain "${normalizedDomain}" has no resolver set. Please set a resolver first using the ENS manager.`
+          `Domain "${normalizedDomain}" has no resolver set. Please set a resolver first using the ENS manager at app.ens.domains.`
         );
         setIsLoading(false);
         return;
       }
+
+      console.log('Using resolver:', ensResolver);
 
       // Encode the Swarm reference as content hash
       const contentHash = encodeSwarmHash(swarmReference);
@@ -115,7 +172,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
       // Prepare the transaction to set content hash
       const { request } = await publicClient.simulateContract({
-        address: resolverAddress as `0x${string}`,
+        address: ensResolver as `0x${string}`,
         abi: ENS_RESOLVER_ABI,
         functionName: 'setContenthash',
         args: [domainNode, contentHash],
@@ -154,6 +211,9 @@ Transaction confirmed: ${hash}`);
           errorMessage = 'Transaction was rejected by user';
         } else if (err.message.includes('execution reverted')) {
           errorMessage = 'Transaction failed - you may not have permission to modify this domain';
+        } else if (err.message.includes('returned no data')) {
+          errorMessage =
+            'Domain lookup failed. Please verify the domain is properly registered and try again';
         } else {
           errorMessage = err.message;
         }
@@ -163,6 +223,25 @@ Transaction confirmed: ${hash}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Show validation status
+  const getValidationStatus = () => {
+    if (!selectedDomain || !selectedDomain.includes('.')) return null;
+
+    if (ensAddressLoading) {
+      return (
+        <div className={styles.validating}>
+          <div className={styles.spinner}></div>
+        </div>
+      );
+    }
+
+    if (ensAddressError || !ensAddress) {
+      return <div className={styles.validationError}>❌ Domain not found</div>;
+    }
+
+    return <div className={styles.validationSuccess}>✅ Domain found</div>;
   };
 
   return (
@@ -176,6 +255,13 @@ Transaction confirmed: ${hash}`);
         </div>
 
         <div className={styles.content}>
+          {isWrongChain && (
+            <div className={styles.chainWarning}>
+              <strong>⚠️ Wrong Network:</strong> Please switch to Ethereum Mainnet to manage ENS
+              domains. ENS records are stored on Ethereum mainnet.
+            </div>
+          )}
+
           <div className={styles.referenceInfo}>
             <h3>Swarm Reference</h3>
             <code className={styles.reference}>{swarmReference}</code>
@@ -187,16 +273,32 @@ Transaction confirmed: ${hash}`);
 
             <div className={styles.domainInput}>
               <label htmlFor="domain">Domain Name:</label>
-              <input
-                id="domain"
-                type="text"
-                value={selectedDomain}
-                onChange={e => setSelectedDomain(e.target.value)}
-                placeholder="myname.eth"
-                className={styles.input}
-              />
+              <div className={styles.inputContainer}>
+                <input
+                  id="domain"
+                  type="text"
+                  value={selectedDomain}
+                  onChange={e => handleDomainChange(e.target.value)}
+                  placeholder="myname.eth"
+                  className={styles.input}
+                />
+                {getValidationStatus()}
+              </div>
               <div className={styles.hint}>
                 Enter your ENS domain name (e.g., myname.eth, myname.xyz)
+              </div>
+              {ensAddress && (
+                <div className={styles.domainInfo}>
+                  ✅ Domain resolves to: {ensAddress.slice(0, 10)}...{ensAddress.slice(-8)}
+                </div>
+              )}
+              <div className={styles.domainHelp}>
+                <p>
+                  Don't have an ENS domain?{' '}
+                  <a href="https://app.ens.domains" target="_blank" rel="noopener noreferrer">
+                    Register one here
+                  </a>
+                </p>
               </div>
             </div>
           </div>
@@ -231,7 +333,9 @@ Transaction confirmed: ${hash}`);
             <button
               className={styles.setButton}
               onClick={handleSetContentHash}
-              disabled={!selectedDomain || isLoading}
+              disabled={
+                !selectedDomain || isLoading || ensAddressLoading || !ensAddress || isWrongChain
+              }
             >
               {isLoading ? (
                 <>
@@ -258,6 +362,7 @@ Transaction confirmed: ${hash}`);
 
             <h4>Requirements:</h4>
             <ul>
+              <li>You must be connected to Ethereum Mainnet</li>
               <li>You must own the ENS domain</li>
               <li>The domain must have a resolver set</li>
               <li>You need ETH to pay for the transaction</li>
