@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
+import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
   address: string | undefined;
@@ -24,6 +25,8 @@ type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
 const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUploadHistory }) => {
   const [history, setHistory] = React.useState<UploadRecord[]>([]);
   const [selectedFilter, setSelectedFilter] = React.useState<FileType>('all');
+  const [showENSModal, setShowENSModal] = React.useState(false);
+  const [selectedReference, setSelectedReference] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -404,6 +407,26 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               </svg>
             </button>
           )}
+          {address && (
+            <div className={styles.ensInfo}>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
+              </svg>
+              <span className={styles.ensTooltip}>
+                Click on any reference to link it to your ENS domain
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -490,6 +513,16 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       ? `/${record.filename}`
                       : ''}
                   </a>
+                  <button
+                    className={styles.ensButton}
+                    onClick={() => {
+                      setSelectedReference(record.reference);
+                      setShowENSModal(true);
+                    }}
+                    title="Link to ENS Domain"
+                  >
+                    ENS
+                  </button>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
@@ -526,6 +559,17 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       <button className={styles.backButton} onClick={() => setShowUploadHistory(false)}>
         Back
       </button>
+
+      {/* ENS Integration Modal */}
+      {showENSModal && (
+        <ENSIntegration
+          swarmReference={selectedReference}
+          onClose={() => {
+            setShowENSModal(false);
+            setSelectedReference('');
+          }}
+        />
+      )}
     </div>
   );
 };
