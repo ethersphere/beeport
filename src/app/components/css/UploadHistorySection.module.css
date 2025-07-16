@@ -157,6 +157,13 @@
   word-break: break-all;
 }
 
+.filenameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .fileType {
   font-size: 12px;
   color: #8b949e;
@@ -269,23 +276,29 @@
   background-color: #3b82f6;
   color: #ffffff;
   border: none;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  transition: background-color 0.2s;
-  margin-left: 8px;
+  transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  width: fit-content;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .ensButton:hover {
   background-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .ensButton:active {
   background-color: #1d4ed8;
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .referenceRow {

@@ -507,7 +507,21 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             <div key={index} className={styles.historyItem}>
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
-                  <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                  <div className={styles.filenameRow}>
+                    <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                    {getFileType(record.filename) === 'websites' && (
+                      <button
+                        className={styles.ensButton}
+                        onClick={() => {
+                          setSelectedReference(record.reference);
+                          setShowENSModal(true);
+                        }}
+                        title="Link to ENS Domain"
+                      >
+                        ENS
+                      </button>
+                    )}
+                  </div>
                   <span className={styles.fileType}>{getFileTypeLabel(record.filename)}</span>
                 </div>
                 <span className={styles.date}>{formatDate(record.timestamp)}</span>
@@ -527,16 +541,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       ? `/${record.filename}`
                       : ''}
                   </a>
-                  <button
-                    className={styles.ensButton}
-                    onClick={() => {
-                      setSelectedReference(record.reference);
-                      setShowENSModal(true);
-                    }}
-                    title="Link to ENS Domain"
-                  >
-                    ENS
-                  </button>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
