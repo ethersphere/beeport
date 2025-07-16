@@ -153,6 +153,17 @@ const getDomainOwner = async (domain: string, publicClient: any): Promise<string
   return registryOwner;
 };
 
+// Helper function to shorten hash
+export const shortenHash = (
+  hash: string,
+  startLength: number = 6,
+  endLength: number = 4
+): string => {
+  if (!hash) return '';
+  if (hash.length <= startLength + endLength) return hash;
+  return `${hash.slice(0, startLength)}...${hash.slice(-endLength)}`;
+};
+
 const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose }) => {
   const { address, chainId } = useAccount();
   const publicClient = usePublicClient();
@@ -302,14 +313,12 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
       setSuccess(`Successfully set content hash for ${normalizedDomain}!
 
-Your domain now points to: bzz://${swarmReference}
+Your domain now points to: bzz://${shortenHash(swarmReference)}
 
 You can now access your content at:
 • ${normalizedDomain} (in ENS-compatible browsers)
 • ${normalizedDomain}.limo (via ENS gateway)
-• ${normalizedDomain}.link (via ENS gateway)
-
-Transaction confirmed: ${hash}`);
+• ${normalizedDomain}.link (via ENS gateway)`);
     } catch (err) {
       console.error('Error setting content hash:', err);
       let errorMessage = 'Failed to set content hash';
@@ -434,7 +443,7 @@ Transaction confirmed: ${hash}`);
                 rel="noopener noreferrer"
                 className={styles.txLink}
               >
-                {txHash}
+                {shortenHash(txHash, 6, 6)}
               </a>
             </div>
           )}
