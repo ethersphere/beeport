@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsResolver } from 'wagmi';
-import { parseAbi, namehash } from 'viem';
+import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
 import styles from './css/ENSIntegration.module.css';
 
@@ -11,6 +11,7 @@ interface ENSIntegrationProps {
 
 // ENS contract addresses and ABIs
 const ENS_REGISTRY_ADDRESS = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
+const ETH_BASE_REGISTRAR_ADDRESS = '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85'; // .eth domain BaseRegistrar (ERC721)
 
 const ENS_RESOLVER_ABI = parseAbi([
   'function setContenthash(bytes32 node, bytes calldata hash) external',
@@ -21,6 +22,65 @@ const ENS_REGISTRY_ABI = parseAbi([
   'function resolver(bytes32 node) external view returns (address)',
   'function owner(bytes32 node) external view returns (address)',
 ]);
+
+const ETH_BASE_REGISTRAR_ABI = parseAbi([
+  'function ownerOf(uint256 tokenId) external view returns (address)',
+]);
+
+const NAME_WRAPPER_ADDRESS = '0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401';
+
+const NAME_WRAPPER_ABI = parseAbi(['function ownerOf(uint256 id) external view returns (address)']);
+
+// Check if an address can manage a domain (either as owner or controller)
+const canManageDomain = async (
+  domain: string,
+  address: string,
+  publicClient: any
+): Promise<boolean> => {
+  try {
+    // Get the actual owner/registrant
+    const registrant = await getDomainOwner(domain, publicClient);
+    console.log('Final determined registrant:', registrant);
+
+    if (registrant.toLowerCase() === address.toLowerCase()) {
+      console.log('User is the registrant/owner');
+      return true;
+    }
+
+    // For wrapped names, the controller might be different, but typically the owner can manage
+    // Check registry owner as potential controller
+    const normalizedDomain = normalize(domain);
+    const domainNode = namehash(normalizedDomain);
+
+    const registryOwner = (await publicClient.readContract({
+      address: ENS_REGISTRY_ADDRESS,
+      abi: ENS_REGISTRY_ABI,
+      functionName: 'owner',
+      args: [domainNode],
+    })) as string;
+
+    console.log('Registry owner (controller):', registryOwner);
+
+    if (registryOwner.toLowerCase() === address.toLowerCase()) {
+      console.log('User is the controller');
+      return true;
+    }
+
+    // For wrapped names, check if user is approved operator or manager
+    if (registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
+      // Additional check for NameWrapper permissions
+      // NameWrapper has canModifyName function, but for simplicity, if they are the owner, allow
+      // Since we already checked owner above, and registrant is the wrapper owner
+      console.log('Wrapped name - owner check already performed');
+    }
+
+    console.log('User is neither owner nor controller');
+    return false;
+  } catch (err) {
+    console.error('Error checking domain management rights:', err);
+    return false;
+  }
+};
 
 // Convert Swarm reference to content hash format
 const encodeSwarmHash = (swarmReference: string): `0x${string}` => {
@@ -33,6 +93,64 @@ const encodeSwarmHash = (swarmReference: string): `0x${string}` => {
   const contentHash = `0x${swarmPrefix}${cleanReference}`;
 
   return contentHash as `0x${string}`;
+};
+
+// Get the actual owner of a domain (handles .eth domains properly, including wrapped names)
+const getDomainOwner = async (domain: string, publicClient: any): Promise<string> => {
+  const normalizedDomain = normalize(domain);
+  const domainNode = namehash(normalizedDomain);
+
+  // Get the owner from ENS Registry
+  const registryOwner = (await publicClient.readContract({
+    address: ENS_REGISTRY_ADDRESS,
+    abi: ENS_REGISTRY_ABI,
+    functionName: 'owner',
+    args: [domainNode],
+  })) as string;
+
+  console.log('Registry owner:', registryOwner);
+
+  // Check if it's wrapped (registry owner is NameWrapper)
+  if (registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
+    // Convert namehash to uint256 for ownerOf
+    const tokenId = BigInt(domainNode); // namehash is bytes32, interpret as uint256
+
+    const wrapperOwner = (await publicClient.readContract({
+      address: NAME_WRAPPER_ADDRESS,
+      abi: NAME_WRAPPER_ABI,
+      functionName: 'ownerOf',
+      args: [tokenId],
+    })) as string;
+
+    console.log('NameWrapper owner:', wrapperOwner);
+    return wrapperOwner;
+  }
+
+  // For unwrapped .eth domains
+  if (normalizedDomain.endsWith('.eth')) {
+    const label = normalizedDomain.replace('.eth', '');
+    const labelHash = keccak256(toBytes(label));
+    const tokenId = BigInt(labelHash);
+
+    try {
+      const baseOwner = (await publicClient.readContract({
+        address: ETH_BASE_REGISTRAR_ADDRESS,
+        abi: ETH_BASE_REGISTRAR_ABI,
+        functionName: 'ownerOf',
+        args: [tokenId],
+      })) as string;
+
+      console.log('BaseRegistrar owner:', baseOwner);
+      return baseOwner;
+    } catch (err) {
+      console.error('Error getting BaseRegistrar owner:', err);
+      throw new Error('Domain not found or not registered');
+    }
+  }
+
+  // For other domains, return registry owner
+  console.log('Using registry owner for non-.eth domain');
+  return registryOwner;
 };
 
 const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose }) => {
@@ -118,42 +236,34 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       console.log('Domain node:', domainNode);
       console.log('Swarm reference:', swarmReference);
 
-      // Get the owner of the domain directly using registry
-      let domainOwner: string;
-      try {
-        domainOwner = (await publicClient.readContract({
-          address: ENS_REGISTRY_ADDRESS,
-          abi: ENS_REGISTRY_ABI,
-          functionName: 'owner',
-          args: [domainNode],
-        })) as string;
-      } catch (err) {
-        console.error('Error getting domain owner:', err);
-        setError(
-          `Unable to verify ownership of "${normalizedDomain}". Please ensure you're connected to Ethereum mainnet.`
-        );
+      // Check if the user can manage the domain (either as registrant or controller)
+      console.log(
+        'Checking domain management rights for:',
+        normalizedDomain,
+        'Type:',
+        normalizedDomain.endsWith('.eth') ? '.eth domain' : 'other domain'
+      );
+      console.log('Connected address:', address);
+
+      const canManage = await canManageDomain(normalizedDomain, address!, publicClient);
+
+      if (!canManage) {
+        // Get the actual owner info for error message
+        try {
+          const domainOwner = await getDomainOwner(normalizedDomain, publicClient);
+          setError(
+            `You do not have permission to manage "${normalizedDomain}". The domain registrant is: ${domainOwner}`
+          );
+        } catch (err) {
+          setError(
+            `Unable to verify ownership of "${normalizedDomain}". ${err instanceof Error ? err.message : "Please ensure you're connected to Ethereum mainnet."}`
+          );
+        }
         setIsLoading(false);
         return;
       }
 
-      console.log('Domain owner:', domainOwner);
-      console.log('Current address:', address);
-
-      if (!domainOwner || domainOwner === '0x0000000000000000000000000000000000000000') {
-        setError(
-          `Domain "${normalizedDomain}" has no owner. The domain may have expired or not be properly registered.`
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      if (domainOwner.toLowerCase() !== address?.toLowerCase()) {
-        setError(
-          `You do not own the domain "${normalizedDomain}". Current owner: ${domainOwner.slice(0, 10)}...${domainOwner.slice(-8)}`
-        );
-        setIsLoading(false);
-        return;
-      }
+      console.log('User has permission to manage the domain');
 
       // Check if domain has a resolver
       if (!ensResolver || ensResolver === '0x0000000000000000000000000000000000000000') {
