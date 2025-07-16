@@ -82,15 +82,30 @@ const canManageDomain = async (
   }
 };
 
-// Convert Swarm reference to content hash format
+// Convert Swarm reference to content hash format (as per ENSIP-7)
 const encodeSwarmHash = (swarmReference: string): `0x${string}` => {
   // Remove 0x prefix if present
-  const cleanReference = swarmReference.replace(/^0x/, '');
+  let cleanReference = swarmReference.replace(/^0x/, '');
 
-  // Swarm content hash format: 0xe40101 + 32-byte hash
-  // 0xe4 = swarm-ns, 0x01 = swarm hash identifier, 0x01 = 32-byte length
-  const swarmPrefix = 'e40101';
+  // Validate hash length - should be 64 hex characters (32 bytes)
+  if (cleanReference.length !== 64) {
+    throw new Error(
+      `Invalid Swarm reference length: ${cleanReference.length} (expected 64 hex chars)`
+    );
+  }
+
+  // Swarm contenthash format per ENSIP-7:
+  // 0xe4 (swarm-ns) + 0x01 (cidv1) + 0xfa (swarm-manifest) + 0x01 (codec) + 0x1b (keccak-256) + 0x20 (32 bytes) + hash
+  const swarmPrefix = 'e40101fa011b20';
+
   const contentHash = `0x${swarmPrefix}${cleanReference}`;
+
+  console.log('Content hash:', contentHash);
+  // Validate final length: prefix is 14 chars (7 bytes), + 64 chars hash = 78 chars without 0x, 80 with 0x
+  if (contentHash.length !== 80) {
+    // including 0x
+    throw new Error(`Invalid contenthash length: ${contentHash.length}`);
+  }
 
   return contentHash as `0x${string}`;
 };
