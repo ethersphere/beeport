@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsResolver } from 'wagmi';
 import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
+import { Alchemy, Network } from 'alchemy-sdk';
 import styles from './css/ENSIntegration.module.css';
 
 interface ENSIntegrationProps {
@@ -179,6 +180,263 @@ export const shortenHash = (
   return `${hash.slice(0, startLength)}...${hash.slice(-endLength)}`;
 };
 
+// Add this new function to decode ENS token IDs to domain names
+const decodeENSName = async (tokenId: string, publicClient: any): Promise<string> => {
+  console.log('=== Starting decodeENSName for token ID:', tokenId);
+
+  try {
+    // Convert token ID to hex format for labelhash
+    const tokenIdBigInt = BigInt(tokenId);
+    const labelhash = `0x${tokenIdBigInt.toString(16).padStart(64, '0')}`;
+
+    console.log('Token ID:', tokenId);
+    console.log('Token ID BigInt:', tokenIdBigInt.toString());
+    console.log('Labelhash:', labelhash);
+
+    // First, try to get the domain name from ENS subgraph using labelhash
+    try {
+      const query = `
+        query {
+          domains(first: 1, where: { labelhash: "${labelhash}" }) {
+            name
+            labelName
+          }
+        }
+      `;
+
+      console.log('Querying ENS subgraph with labelhash:', labelhash);
+      const response = await fetch('https://api.thegraph.com/subgraphs/name/ensdomains/ens', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('ENS subgraph response:', data);
+
+        if (data.data?.domains && data.data.domains.length > 0) {
+          const domain = data.data.domains[0];
+          if (domain.name) {
+            console.log('✅ Found domain name from subgraph:', domain.name);
+            return domain.name;
+          } else if (domain.labelName) {
+            const domainName = domain.labelName + '.eth';
+            console.log('✅ Found label name from subgraph, constructing:', domainName);
+            return domainName;
+          }
+        }
+      }
+    } catch (subgraphError) {
+      console.log('ENS subgraph query failed:', subgraphError);
+    }
+
+    // Alternative subgraph query approach - try with different format
+    try {
+      const alternativeQuery = `
+        query {
+          domains(first: 1, where: { id: "${labelhash}" }) {
+            name
+            labelName
+          }
+        }
+      `;
+
+      console.log('Trying alternative subgraph query with id:', labelhash);
+      const response = await fetch('https://api.thegraph.com/subgraphs/name/ensdomains/ens', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: alternativeQuery }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Alternative subgraph response:', data);
+
+        if (data.data?.domains && data.data.domains.length > 0) {
+          const domain = data.data.domains[0];
+          if (domain.name) {
+            console.log('✅ Found domain name from alternative subgraph:', domain.name);
+            return domain.name;
+          } else if (domain.labelName) {
+            const domainName = domain.labelName + '.eth';
+            console.log('✅ Found label name from alternative subgraph:', domainName);
+            return domainName;
+          }
+        }
+      }
+    } catch (altSubgraphError) {
+      console.log('Alternative subgraph query failed:', altSubgraphError);
+    }
+
+    // Try to get the name from the ENS registry directly
+    try {
+      console.log('Trying ENS registry direct lookup...');
+      const ENS_REGISTRY_ADDRESS = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
+
+      // Get the owner of the name
+      const owner = await publicClient.readContract({
+        address: ENS_REGISTRY_ADDRESS,
+        abi: parseAbi(['function owner(bytes32 node) view returns (address)']),
+        functionName: 'owner',
+        args: [labelhash],
+      });
+
+      console.log('Registry owner for labelhash:', owner);
+
+      if (owner && owner !== '0x0000000000000000000000000000000000000000') {
+        // Try to reverse resolve the name
+        const reverseNode = `${owner.slice(2).toLowerCase()}.addr.reverse`;
+        console.log('Trying reverse resolution for:', reverseNode);
+      }
+    } catch (registryError) {
+      console.log('ENS registry lookup failed:', registryError);
+    }
+
+    // Fallback: Try to get domain name from ENS BaseRegistrar tokenURI
+    try {
+      console.log('Trying tokenURI approach...');
+      const tokenURI = (await publicClient.readContract({
+        address: ETH_BASE_REGISTRAR_ADDRESS,
+        abi: parseAbi(['function tokenURI(uint256 tokenId) view returns (string)']),
+        functionName: 'tokenURI',
+        args: [tokenIdBigInt],
+      })) as string;
+
+      console.log('Token URI:', tokenURI);
+
+      if (tokenURI) {
+        // Handle different URI formats
+        let metadata;
+
+        if (tokenURI.startsWith('data:application/json;base64,')) {
+          // Decode base64 data URI
+          const base64Data = tokenURI.replace('data:application/json;base64,', '');
+          const jsonString = atob(base64Data);
+          metadata = JSON.parse(jsonString);
+          console.log('Parsed base64 metadata:', metadata);
+        } else if (tokenURI.startsWith('data:application/json,')) {
+          // Direct JSON data URI
+          const jsonString = tokenURI.replace('data:application/json,', '');
+          metadata = JSON.parse(decodeURIComponent(jsonString));
+          console.log('Parsed JSON metadata:', metadata);
+        } else if (tokenURI.startsWith('http')) {
+          // HTTP URL - fetch metadata
+          console.log('Fetching metadata from URL:', tokenURI);
+          const metadataResponse = await fetch(tokenURI);
+          if (metadataResponse.ok) {
+            metadata = await metadataResponse.json();
+            console.log('Fetched metadata:', metadata);
+          }
+        }
+
+        if (metadata) {
+          // Try to extract domain name from metadata
+          if (metadata.name) {
+            let domainName = metadata.name;
+            console.log('Found name in metadata:', domainName);
+
+            // Clean up the name - remove brackets and extra content
+            domainName = domainName.replace(/\[.*?\]/g, '').trim();
+            domainName = domainName.replace(/^ENS Token #\d+\s*/, '').trim();
+
+            // If it doesn't end with .eth, add it
+            if (!domainName.includes('.') && !domainName.endsWith('.eth')) {
+              domainName = domainName + '.eth';
+            }
+
+            // Validate it's a reasonable domain name
+            if (domainName.length > 4 && !domainName.startsWith('ENS Token')) {
+              console.log('✅ Cleaned domain name:', domainName);
+              return domainName;
+            }
+          }
+
+          if (metadata.description) {
+            console.log('Checking description for domain name:', metadata.description);
+            // Sometimes the domain name is in the description
+            const descMatch = metadata.description.match(/(\w+\.eth)/);
+            if (descMatch) {
+              console.log('✅ Found domain in description:', descMatch[1]);
+              return descMatch[1];
+            }
+          }
+
+          // Check for attributes that might contain the domain name
+          if (metadata.attributes && Array.isArray(metadata.attributes)) {
+            for (const attr of metadata.attributes) {
+              if (attr.trait_type === 'Domain' || attr.trait_type === 'Name') {
+                let domainName = attr.value;
+                if (!domainName.includes('.')) {
+                  domainName = domainName + '.eth';
+                }
+                console.log('✅ Found domain in attributes:', domainName);
+                return domainName;
+              }
+            }
+          }
+        }
+      }
+    } catch (tokenUriError) {
+      console.log('TokenURI approach failed:', tokenUriError);
+    }
+
+    // Last resort: try to use a different ENS subgraph endpoint
+    try {
+      console.log('Trying alternative ENS subgraph endpoint...');
+      const query = `
+        query {
+          domains(first: 1, where: { labelhash: "${labelhash}" }) {
+            name
+            labelName
+          }
+        }
+      `;
+
+      const response = await fetch(
+        'https://api.studio.thegraph.com/query/49574/ens/version/latest',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Alternative endpoint response:', data);
+
+        if (data.data?.domains && data.data.domains.length > 0) {
+          const domain = data.data.domains[0];
+          if (domain.name) {
+            console.log('✅ Found domain name from alternative endpoint:', domain.name);
+            return domain.name;
+          } else if (domain.labelName) {
+            const domainName = domain.labelName + '.eth';
+            console.log('✅ Found label name from alternative endpoint:', domainName);
+            return domainName;
+          }
+        }
+      }
+    } catch (altEndpointError) {
+      console.log('Alternative endpoint failed:', altEndpointError);
+    }
+
+    // If all else fails, return a placeholder
+    console.log('❌ Could not decode domain name for token ID:', tokenId);
+    return `ENS Token #${tokenId}`;
+  } catch (error) {
+    console.error('Error in decodeENSName:', error);
+    return `ENS Token #${tokenId}`;
+  }
+};
+
 const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose }) => {
   const { address, chainId } = useAccount();
   const publicClient = usePublicClient();
@@ -195,6 +453,10 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
   // Add state for content association status
   const [contentAlreadyAssociated, setContentAlreadyAssociated] = useState<boolean>(false);
+
+  // Add state for owned domains
+  const [ownedDomains, setOwnedDomains] = useState<string[]>([]);
+  const [isLoadingDomains, setIsLoadingDomains] = useState(false);
 
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
@@ -285,6 +547,193 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
     swarmReference,
     address,
   ]);
+
+  // Add useEffect to fetch owned domains when wallet is connected
+  useEffect(() => {
+    const fetchOwnedDomains = async () => {
+      if (!address || !process.env.NEXT_PUBLIC_ALCHEMY_API_KEY) return;
+
+      setIsLoadingDomains(true);
+      try {
+        const alchemy = new Alchemy({
+          apiKey: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY,
+          network: Network.ETH_MAINNET,
+        });
+
+        const ensContract = '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85';
+        const nameWrapperContract = '0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401';
+
+        // Get both regular ENS domains and wrapped domains
+        const [ensNfts, wrappedNfts] = await Promise.all([
+          alchemy.nft.getNftsForOwner(address, {
+            contractAddresses: [ensContract],
+          }),
+          alchemy.nft.getNftsForOwner(address, {
+            contractAddresses: [nameWrapperContract],
+          }),
+        ]);
+
+        console.log('Raw ENS NFT data:', ensNfts.ownedNfts);
+        console.log('Raw Wrapped NFT data:', wrappedNfts.ownedNfts);
+
+        // Extract domain names from the ENS NFT data
+        const regularDomains = await Promise.allSettled(
+          ensNfts.ownedNfts.map(async nft => {
+            console.log('Processing ENS NFT:', nft);
+
+            try {
+              const tokenId = nft.tokenId;
+              console.log('ENS Token ID:', tokenId);
+
+              // First, try to get domain name from NFT metadata
+              if (nft.name && nft.name !== 'ENS' && !nft.name.startsWith('ENS Token')) {
+                let domainName = nft.name;
+                console.log('Found domain name in NFT name:', domainName);
+
+                // Clean up the name
+                domainName = domainName.replace(/\[.*?\]/g, '').trim();
+                domainName = domainName.replace(/^ENS Token #\d+\s*/, '').trim();
+
+                // Add .eth if it doesn't have a domain extension
+                if (!domainName.includes('.') && domainName.length > 0) {
+                  domainName = domainName + '.eth';
+                }
+
+                // Validate it's a reasonable domain name
+                if (domainName.length > 4 && !domainName.startsWith('ENS Token')) {
+                  console.log('✅ Using domain name from NFT metadata:', domainName);
+                  return domainName;
+                }
+              }
+
+              // Try to get from NFT description
+              if (nft.description) {
+                console.log('Checking NFT description:', nft.description);
+                const descMatch = nft.description.match(/(\w+\.eth)/);
+                if (descMatch) {
+                  console.log('✅ Found domain in NFT description:', descMatch[1]);
+                  return descMatch[1];
+                }
+              }
+
+              // Try to get from token URI metadata
+              if (nft.tokenUri) {
+                try {
+                  console.log('Fetching NFT tokenURI:', nft.tokenUri);
+                  const response = await fetch(nft.tokenUri);
+                  if (response.ok) {
+                    const metadata = await response.json();
+                    console.log('NFT tokenURI metadata:', metadata);
+
+                    if (metadata.name && !metadata.name.startsWith('ENS Token')) {
+                      let domainName = metadata.name;
+                      domainName = domainName.replace(/\[.*?\]/g, '').trim();
+
+                      if (!domainName.includes('.') && domainName.length > 0) {
+                        domainName = domainName + '.eth';
+                      }
+
+                      if (domainName.length > 4 && !domainName.startsWith('ENS Token')) {
+                        console.log('✅ Found domain in tokenURI metadata:', domainName);
+                        return domainName;
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.log('Failed to fetch tokenURI metadata:', err);
+                }
+              }
+
+              // Fallback: Try to decode the domain name from the token ID
+              const domainName = await decodeENSName(tokenId, publicClient);
+              console.log('Decoded ENS domain name:', domainName);
+              return domainName;
+            } catch (err) {
+              console.error('Error processing ENS NFT:', err);
+              return `ENS Token #${nft.tokenId}`;
+            }
+          })
+        );
+
+        // Process wrapped domains
+        const wrappedDomains = await Promise.allSettled(
+          wrappedNfts.ownedNfts.map(async nft => {
+            console.log('Processing Wrapped NFT:', nft);
+
+            try {
+              const tokenId = nft.tokenId;
+              console.log('Wrapped Token ID:', tokenId);
+
+              // For wrapped domains, try to get the name from metadata first
+              if (nft.name) {
+                console.log('Found wrapped domain name from NFT metadata:', nft.name);
+                return nft.name;
+              }
+
+              // Try to get from tokenURI
+              if (nft.tokenUri) {
+                try {
+                  const response = await fetch(nft.tokenUri);
+                  const metadata = await response.json();
+                  if (metadata.name) {
+                    console.log('Found wrapped domain name from tokenURI:', metadata.name);
+                    return metadata.name;
+                  }
+                } catch (err) {
+                  console.log('Failed to fetch wrapped domain metadata:', err);
+                }
+              }
+
+              // Try to decode using the same method as regular domains
+              const domainName = await decodeENSName(tokenId, publicClient);
+              console.log('Decoded wrapped domain name:', domainName);
+              return domainName;
+            } catch (err) {
+              console.error('Error processing wrapped NFT:', err);
+              return `Wrapped Token #${nft.tokenId}`;
+            }
+          })
+        );
+
+        // Extract successful results and filter out failed ones
+        const regularDomainResults = regularDomains
+          .filter(result => result.status === 'fulfilled')
+          .map(result => (result as PromiseFulfilledResult<string>).value);
+
+        const wrappedDomainResults = wrappedDomains
+          .filter(result => result.status === 'fulfilled')
+          .map(result => (result as PromiseFulfilledResult<string>).value);
+
+        // Combine and filter domains
+        const allDomains = [...regularDomainResults, ...wrappedDomainResults];
+        const validDomains = allDomains.filter(
+          domain =>
+            domain &&
+            !domain.startsWith('ENS Token #') &&
+            !domain.startsWith('Wrapped Token #') &&
+            domain.length > 0
+        );
+
+        // Remove duplicates and sort
+        const uniqueDomains = [...new Set(validDomains)].sort();
+
+        console.log('Regular domains processed:', regularDomainResults.length);
+        console.log('Wrapped domains processed:', wrappedDomainResults.length);
+        console.log('All found domains:', allDomains);
+        console.log('Valid domains:', validDomains);
+        console.log('Unique domains:', uniqueDomains);
+
+        setOwnedDomains(uniqueDomains);
+      } catch (err) {
+        console.error('Error fetching owned domains:', err);
+        setOwnedDomains([]);
+      } finally {
+        setIsLoadingDomains(false);
+      }
+    };
+
+    fetchOwnedDomains();
+  }, [address]);
 
   // Function to save reference with associated domain
   const saveReferenceWithDomain = (reference: string, domain: string) => {
@@ -530,24 +979,58 @@ You can now access your content at:
           </div>
 
           <div className={styles.domainSection}>
-            <h3>Enter Your ENS Domain</h3>
+            <h3>Select Your ENS Domain</h3>
 
             <div className={styles.domainInput}>
               <label htmlFor="domain">Domain Name:</label>
               <div className={styles.inputContainer}>
-                <input
-                  id="domain"
-                  type="text"
-                  value={selectedDomain}
-                  onChange={e => handleDomainChange(e.target.value)}
-                  placeholder="myname.eth"
-                  className={styles.input}
-                />
+                {ownedDomains.length > 0 ? (
+                  <select
+                    id="domain"
+                    value={selectedDomain}
+                    onChange={e => handleDomainChange(e.target.value)}
+                    className={styles.domainSelect}
+                    disabled={isLoadingDomains}
+                  >
+                    <option value="">
+                      {isLoadingDomains ? 'Loading domains...' : 'Select a domain...'}
+                    </option>
+                    {ownedDomains.map(domain => (
+                      <option key={domain} value={domain}>
+                        {domain}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="domain"
+                    type="text"
+                    value={selectedDomain}
+                    onChange={e => handleDomainChange(e.target.value)}
+                    placeholder="myname.eth"
+                    className={styles.input}
+                    disabled={isLoadingDomains}
+                  />
+                )}
                 {getValidationStatus()}
               </div>
               <div className={styles.hint}>
-                Enter your ENS domain name (e.g., myname.eth, myname.xyz)
+                {isLoadingDomains ? (
+                  <div className={styles.loadingDomains}>
+                    <div className={styles.spinner}></div>
+                    🔍 Searching for your ENS domains...
+                  </div>
+                ) : ownedDomains.length > 0 ? (
+                  `Found ${ownedDomains.length} domain(s). Select one from the dropdown above.`
+                ) : (
+                  'Enter your ENS domain name (e.g., myname.eth, myname.xyz)'
+                )}
               </div>
+              {!isLoadingDomains && ownedDomains.length === 0 && (
+                <div className={styles.noDomains}>
+                  No ENS domains found for your wallet. You can still enter a domain manually above.
+                </div>
+              )}
               {ensAddress && (
                 <div className={styles.domainInfo}>
                   ✅ Domain resolves to: {ensAddress.slice(0, 10)}...{ensAddress.slice(-8)}
