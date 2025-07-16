@@ -14,6 +14,7 @@ interface UploadRecord {
   filename?: string;
   stampId: string;
   expiryDate: number;
+  associatedDomains?: string[]; // New field for ENS domains linked to this reference
 }
 
 interface UploadHistory {
@@ -201,6 +202,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Expiry (Days)',
       'Filename',
       'File Type',
+      'Associated Domains', // New column
       'Full Link',
     ];
 
@@ -212,6 +214,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       formatExpiryDays(record.expiryDate),
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record.filename),
+      record.associatedDomains?.join(', ') || '', // New field
       getReferenceUrl(record),
     ]);
 
@@ -266,6 +269,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               expiryDays,
               filename,
               fileTypeOrFullLink,
+              associatedDomainsStr,
               fullLink,
             ] = fields;
 
@@ -280,13 +284,23 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             const expiryInSeconds = parseInt(expiryDays.replace(' days', '')) * 86400;
 
             if (!isNaN(timestamp) && !isNaN(expiryInSeconds)) {
-              newRecords.push({
+              const record: UploadRecord = {
                 reference,
                 stampId,
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
                 expiryDate: expiryInSeconds,
-              });
+              };
+
+              // Parse associated domains if present
+              if (associatedDomainsStr) {
+                record.associatedDomains = associatedDomainsStr
+                  .split(',')
+                  .map(d => d.trim())
+                  .filter(d => d);
+              }
+
+              newRecords.push(record);
 
               // Add to existing references set to prevent duplicates within the same upload
               existingReferences.add(reference);
@@ -423,7 +437,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
               </svg>
               <span className={styles.ensTooltip}>
-                Click on any reference to link it to your ENS domain
+                Click on ENS button to link reference to your ENS domain
               </span>
             </div>
           )}
@@ -550,6 +564,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   <span className={styles.label}>Expires:</span>
                   <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
                 </div>
+                {record.associatedDomains && record.associatedDomains.length > 0 && (
+                  <div className={styles.associatedDomainsRow}>
+                    <span className={styles.label}>Linked to:</span>
+                    <div className={styles.domainsList}>
+                      {record.associatedDomains.map((domain, idx) => (
+                        <a
+                          key={idx}
+                          href={`https://${domain}.limo`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.domainLink}
+                        >
+                          {domain}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}

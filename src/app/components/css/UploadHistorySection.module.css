@@ -312,6 +312,33 @@
   background-color: rgba(48, 54, 61, 0.5);
 }
 
+.associatedDomainsRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.domainsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.domainLink {
+  color: #ff7a00;
+  text-decoration: none;
+  background-color: #1f2937;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.domainLink:hover {
+  background-color: #2d3748;
+  text-decoration: underline;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .titleContainer {

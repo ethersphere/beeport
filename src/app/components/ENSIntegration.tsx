@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsResolver } from 'wagmi';
 import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
@@ -190,6 +190,9 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [success, setSuccess] = useState<string>('');
   const [txHash, setTxHash] = useState<string>('');
 
+  // Add state for current contenthash
+  const [currentContentHash, setCurrentContentHash] = useState<string>('');
+
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
     data: ensAddress,
@@ -212,6 +215,111 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
   // Check if we're on the right chain
   const isWrongChain = chainId !== 1;
+
+  // Add useEffect to fetch contenthash when domain is validated
+  useEffect(() => {
+    const fetchCurrentContentHash = async () => {
+      if (!selectedDomain || !ensResolver || !publicClient) return;
+
+      try {
+        const normalizedDomain = normalize(selectedDomain);
+        const domainNode = namehash(normalizedDomain);
+
+        const contentHashBytes = (await publicClient.readContract({
+          address: ensResolver as `0x${string}`,
+          abi: ENS_RESOLVER_ABI,
+          functionName: 'contenthash',
+          args: [domainNode],
+        })) as `0x${string}`;
+
+        if (contentHashBytes === '0x') {
+          setCurrentContentHash('No content hash set');
+          return;
+        }
+
+        // Check if it's a Swarm hash (starts with e40101fa011b20)
+        const cleanHash = contentHashBytes.replace('0x', '').toLowerCase();
+        if (cleanHash.startsWith('e40101fa011b20')) {
+          // Extract the 32-byte hash (last 64 hex chars)
+          const swarmRef = cleanHash.slice(14);
+          setCurrentContentHash(`Swarm: bzz://${shortenHash(swarmRef)}`);
+
+          // Check if this matches the current swarmReference being set
+          const cleanSwarmReference = swarmReference.replace(/^0x/, '').toLowerCase();
+          if (swarmRef === cleanSwarmReference && address) {
+            // Save to history if not already saved with this domain
+            saveReferenceWithDomain(swarmReference, selectedDomain);
+          }
+        } else {
+          // For other types, display the full hex
+          setCurrentContentHash(`Content Hash: ${shortenHash(contentHashBytes, 6, 6)}`);
+        }
+      } catch (err) {
+        console.error('Error fetching current contenthash:', err);
+        setCurrentContentHash('Error fetching content hash');
+      }
+    };
+
+    if (ensAddress && !ensAddressLoading && !ensAddressError) {
+      fetchCurrentContentHash();
+    } else {
+      setCurrentContentHash('');
+    }
+  }, [
+    selectedDomain,
+    ensResolver,
+    publicClient,
+    ensAddress,
+    ensAddressLoading,
+    ensAddressError,
+    swarmReference,
+    address,
+  ]);
+
+  // Function to save reference with associated domain
+  const saveReferenceWithDomain = (reference: string, domain: string) => {
+    if (!address) return;
+
+    const savedHistory = localStorage.getItem('uploadHistory');
+    const history = savedHistory ? JSON.parse(savedHistory) : {};
+    const addressHistory = history[address] || [];
+
+    // Find existing record with this reference
+    const existingRecord = addressHistory.find((record: any) => record.reference === reference);
+
+    if (existingRecord) {
+      // Check if domain is already associated
+      if (!existingRecord.associatedDomains) {
+        existingRecord.associatedDomains = [];
+      }
+
+      if (!existingRecord.associatedDomains.includes(domain)) {
+        existingRecord.associatedDomains.push(domain);
+
+        // Save updated history
+        history[address] = addressHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(history));
+
+        console.log(`Added domain ${domain} to existing reference ${reference}`);
+      }
+    } else {
+      // Create new record if reference doesn't exist
+      const newRecord = {
+        reference,
+        timestamp: Date.now(),
+        filename: `ENS-linked content for ${domain}`,
+        stampId: 'unknown', // We don't have stamp info for existing content
+        expiryDate: Date.now() + 30 * 24 * 60 * 60 * 1000, // Default 30 days
+        associatedDomains: [domain],
+      };
+
+      addressHistory.unshift(newRecord);
+      history[address] = addressHistory;
+      localStorage.setItem('uploadHistory', JSON.stringify(history));
+
+      console.log(`Created new history record for reference ${reference} with domain ${domain}`);
+    }
+  };
 
   const handleSetContentHash = async () => {
     if (!selectedDomain || !walletClient || !publicClient) {
@@ -326,6 +434,11 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       console.log('Transaction confirmed:', receipt);
 
+      // Save the domain association to history
+      if (address) {
+        saveReferenceWithDomain(swarmReference, normalizedDomain);
+      }
+
       setSuccess(`Successfully set content hash for ${normalizedDomain}!
 
 Your domain now points to: bzz://${shortenHash(swarmReference)}
@@ -424,6 +537,11 @@ You can now access your content at:
               {ensAddress && (
                 <div className={styles.domainInfo}>
                   ✅ Domain resolves to: {ensAddress.slice(0, 10)}...{ensAddress.slice(-8)}
+                </div>
+              )}
+              {currentContentHash && (
+                <div className={styles.currentContentHash}>
+                  <strong>Current Content:</strong> {currentContentHash}
                 </div>
               )}
               <div className={styles.domainHelp}>
