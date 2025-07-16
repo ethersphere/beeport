@@ -193,6 +193,9 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   // Add state for current contenthash
   const [currentContentHash, setCurrentContentHash] = useState<string>('');
 
+  // Add state for content association status
+  const [contentAlreadyAssociated, setContentAlreadyAssociated] = useState<boolean>(false);
+
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
     data: ensAddress,
@@ -234,6 +237,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
         if (contentHashBytes === '0x') {
           setCurrentContentHash('No content hash set');
+          setContentAlreadyAssociated(false);
           return;
         }
 
@@ -247,16 +251,21 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
           // Check if this matches the current swarmReference being set
           const cleanSwarmReference = swarmReference.replace(/^0x/, '').toLowerCase();
           if (swarmRef === cleanSwarmReference && address) {
+            setContentAlreadyAssociated(true);
             // Save to history if not already saved with this domain
             saveReferenceWithDomain(swarmReference, selectedDomain);
+          } else {
+            setContentAlreadyAssociated(false);
           }
         } else {
           // For other types, display the full hex
           setCurrentContentHash(`Content Hash: ${shortenHash(contentHashBytes, 6, 6)}`);
+          setContentAlreadyAssociated(false);
         }
       } catch (err) {
         console.error('Error fetching current contenthash:', err);
         setCurrentContentHash('Error fetching content hash');
+        setContentAlreadyAssociated(false);
       }
     };
 
@@ -264,6 +273,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       fetchCurrentContentHash();
     } else {
       setCurrentContentHash('');
+      setContentAlreadyAssociated(false);
     }
   }, [
     selectedDomain,
@@ -512,7 +522,11 @@ You can now access your content at:
           <div className={styles.referenceInfo}>
             <h3>Swarm Reference</h3>
             <code className={styles.reference}>{swarmReference}</code>
-            <p>This will be set as the content hash for your selected domain.</p>
+            {contentAlreadyAssociated ? (
+              <p>✅ This content hash is already associated with {selectedDomain}</p>
+            ) : (
+              <p>This will be set as the content hash for your selected domain.</p>
+            )}
           </div>
 
           <div className={styles.domainSection}>
@@ -586,7 +600,12 @@ You can now access your content at:
               className={styles.setButton}
               onClick={handleSetContentHash}
               disabled={
-                !selectedDomain || isLoading || ensAddressLoading || !ensAddress || isWrongChain
+                !selectedDomain ||
+                isLoading ||
+                ensAddressLoading ||
+                !ensAddress ||
+                isWrongChain ||
+                contentAlreadyAssociated // Disable if content is already associated
               }
             >
               {isLoading ? (
@@ -594,6 +613,8 @@ You can now access your content at:
                   <div className={styles.spinner}></div>
                   Setting Content Hash...
                 </>
+              ) : contentAlreadyAssociated ? (
+                'Content Already Associated'
               ) : (
                 'Set Content Hash'
               )}
