@@ -439,8 +439,22 @@
   box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
 }
 
+.loadingContainer {
+  width: 100%;
+  padding: 20px;
+  background-color: rgba(48, 54, 61, 0.1);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px;
+}
+
 .loadingDomains {
-  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 14px;
   color: #8b949e;
   font-style: italic;

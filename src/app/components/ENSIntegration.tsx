@@ -3,7 +3,7 @@ import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsReso
 import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
 import { Alchemy, Network } from 'alchemy-sdk';
-import { ENS_SUBGRAPH_URL } from './constants';
+import { ENS_SUBGRAPH_URL, ENS_SUBGRAPH_API_KEY } from './constants';
 import styles from './css/ENSIntegration.module.css';
 
 interface ENSIntegrationProps {
@@ -209,6 +209,7 @@ const decodeENSName = async (tokenId: string, publicClient: any): Promise<string
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
         },
         body: JSON.stringify({ query }),
       });
@@ -261,7 +262,8 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
   // Add state for owned domains
   const [ownedDomains, setOwnedDomains] = useState<string[]>([]);
-  const [isLoadingDomains, setIsLoadingDomains] = useState(false);
+  const [isLoadingDomains, setIsLoadingDomains] = useState(true); // Start as true since we fetch domains on mount
+  const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false); // Track if we've completed initial fetch
 
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
@@ -356,92 +358,127 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   // Add useEffect to fetch owned domains when wallet is connected
   useEffect(() => {
     const fetchOwnedDomains = async () => {
-      if (!address) return;
+      if (!address) {
+        setIsLoadingDomains(false);
+        setHasAttemptedFetch(true);
+        return;
+      }
 
       setIsLoadingDomains(true);
       try {
         console.log('Fetching all manageable domains for address:', address);
 
-        // Query ENS subgraph for all domains where the user is owner, manager, or has other permissions
-        const subgraphQuery = `
-          query GetUserDomains($address: String!) {
-            domains(
-              where: {
-                or: [
-                  { owner: $address },
-                  { registrant: $address },
-                  { wrappedOwner: $address }
-                ]
-              }
-              orderBy: name
-              orderDirection: asc
-              first: 1000
-            ) {
-              id
+        // Step 1: Get domains owned by the user (using official ENS subgraph example)
+        const getDomainsQuery = `
+          query getDomainsForAccount($address: String!) {
+            domains(where: { owner: $address }) {
               name
-              labelName
-              owner {
-                id
-              }
-              registrant {
-                id
-              }
-              wrappedOwner {
-                id
-              }
-              parent {
-                name
-              }
             }
           }
         `;
 
-        console.log('Querying ENS subgraph for all user domains...');
-        const subgraphResponse = await fetch(ENS_SUBGRAPH_URL, {
+        console.log('Querying ENS subgraph for owned domains...');
+        const domainsResponse = await fetch(ENS_SUBGRAPH_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
           },
           body: JSON.stringify({
-            query: subgraphQuery,
+            query: getDomainsQuery,
             variables: { address: address.toLowerCase() },
           }),
         });
 
         let allDomains: string[] = [];
 
-        if (subgraphResponse.ok) {
-          const subgraphData = await subgraphResponse.json();
-          console.log('ENS subgraph response:', subgraphData);
+        if (domainsResponse.ok) {
+          const domainsData = await domainsResponse.json();
+          console.log('Domains response:', domainsData);
 
-          if (subgraphData.data?.domains) {
-            // Extract and filter domain names from subgraph data
-            const subgraphDomains = subgraphData.data.domains
-              .filter((domain: any) => {
-                const name = domain.name;
-                const userAddress = address.toLowerCase();
-
+          if (domainsData.data?.domains) {
+            // Extract domains and filter out invalid ones
+            const ownedDomains = domainsData.data.domains
+              .map((domain: any) => domain.name)
+              .filter((name: string) => {
                 // Basic validation
                 if (!name || !name.includes('.')) return false;
 
                 // Exclude reverse DNS entries
                 if (name.includes('.addr.reverse')) return false;
 
-                // Exclude domains with hex-like patterns in brackets (reverse lookups)
+                // Exclude domains with hex-like patterns
                 if (name.match(/^\[[\da-f]+\]\./)) return false;
 
-                // Only include domains where user has actual ownership/management rights
-                const hasOwnership =
-                  domain.owner?.id?.toLowerCase() === userAddress ||
-                  domain.registrant?.id?.toLowerCase() === userAddress ||
-                  domain.wrappedOwner?.id?.toLowerCase() === userAddress;
+                return true;
+              });
 
-                return hasOwnership;
-              })
-              .map((domain: any) => domain.name);
+            console.log('Owned domains found:', ownedDomains);
+            allDomains.push(...ownedDomains);
 
-            console.log('Filtered domains found via subgraph:', subgraphDomains);
-            allDomains.push(...subgraphDomains);
+            // Step 2: For each owned domain, get its subdomains (using official ENS pattern)
+            for (const domain of ownedDomains) {
+              const getSubDomainsQuery = `
+                query getSubDomains($domain: String!) {
+                  domains(where: { name: $domain }) {
+                    name
+                    id
+                    subdomains(first: 100) {
+                      name
+                    }
+                    subdomainCount
+                  }
+                }
+              `;
+
+              try {
+                console.log(`Fetching subdomains for ${domain}...`);
+                const subdomainsResponse = await fetch(ENS_SUBGRAPH_URL, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
+                  },
+                  body: JSON.stringify({
+                    query: getSubDomainsQuery,
+                    variables: { domain: domain },
+                  }),
+                });
+
+                if (subdomainsResponse.ok) {
+                  const subdomainsData = await subdomainsResponse.json();
+                  console.log(`Subdomains response for ${domain}:`, subdomainsData);
+
+                  if (subdomainsData.data?.domains?.[0]?.subdomains) {
+                    const subdomains = subdomainsData.data.domains[0].subdomains
+                      .filter((subdomain: any) => {
+                        const name = subdomain.name;
+                        const userAddress = address.toLowerCase();
+
+                        // Basic validation
+                        if (!name || !name.includes('.')) return false;
+
+                        // Exclude reverse DNS entries
+                        if (name.includes('.addr.reverse')) return false;
+
+                        // Check if user has management rights over the subdomain
+                        const hasOwnership =
+                          subdomain.owner?.id?.toLowerCase() === userAddress ||
+                          subdomain.registrant?.id?.toLowerCase() === userAddress ||
+                          subdomain.wrappedOwner?.id?.toLowerCase() === userAddress;
+
+                        return hasOwnership;
+                      })
+                      .map((subdomain: any) => subdomain.name);
+
+                    console.log(`Subdomains found for ${domain}:`, subdomains);
+                    allDomains.push(...subdomains);
+                  }
+                }
+              } catch (err) {
+                console.error(`Error fetching subdomains for ${domain}:`, err);
+              }
+            }
           }
         } else {
           console.log('ENS subgraph query failed, falling back to NFT-based approach');
@@ -577,6 +614,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         setOwnedDomains([]);
       } finally {
         setIsLoadingDomains(false);
+        setHasAttemptedFetch(true);
       }
     };
 
@@ -658,8 +696,13 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         return;
       }
 
-      // Check if domain resolves to an address (indicates it exists and is configured)
-      if (ensAddressError || !ensAddress) {
+      // Check if domain exists and is manageable
+      const isOwnedDomain = ownedDomains.includes(normalizedDomain);
+      const hasResolver = ensResolver && !ensResolverError;
+      const hasAddress = ensAddress && !ensAddressError;
+
+      // Domain is valid if it's in our owned list, has a resolver, or has an address
+      if (!isOwnedDomain && !hasResolver && !hasAddress) {
         setError(
           `Domain "${normalizedDomain}" is not registered or configured in ENS. Please check the domain name or register it at app.ens.domains.`
         );
@@ -791,11 +834,35 @@ You can now access your content at:
       );
     }
 
-    if (ensAddressError || !ensAddress) {
+    // Check if domain is in our owned domains list (most reliable for subdomains)
+    const isOwnedDomain = ownedDomains.includes(selectedDomain);
+
+    // For owned domains, we know they exist and are manageable
+    if (isOwnedDomain) {
+      return <div className={styles.validationSuccess}>✅ Domain found</div>;
+    }
+
+    // For manual entry, check if it has a resolver (domains without address records can still have resolvers)
+    if (ensResolver && !ensResolverError) {
+      return <div className={styles.validationSuccess}>✅ Domain found</div>;
+    }
+
+    // Check if it has an address record (traditional validation)
+    if (ensAddress && !ensAddressError) {
+      return <div className={styles.validationSuccess}>✅ Domain found</div>;
+    }
+
+    // Only show error if we've confirmed it doesn't exist
+    if (ensAddressError && ensResolverError) {
       return <div className={styles.validationError}>❌ Domain not found</div>;
     }
 
-    return <div className={styles.validationSuccess}>✅ Domain found</div>;
+    // Still loading resolver info, show spinner
+    return (
+      <div className={styles.validating}>
+        <div className={styles.spinner}></div>
+      </div>
+    );
   };
 
   return (
@@ -832,17 +899,23 @@ You can now access your content at:
             <div className={styles.domainInput}>
               <label htmlFor="domain">Domain Name:</label>
               <div className={styles.inputContainer}>
-                {ownedDomains.length > 0 ? (
+                {isLoadingDomains ? (
+                  // Show loading state while fetching domains
+                  <div className={styles.loadingContainer}>
+                    <div className={styles.loadingDomains}>
+                      <div className={styles.spinner}></div>
+                      🔍 Searching for your ENS domains...
+                    </div>
+                  </div>
+                ) : ownedDomains.length > 0 ? (
+                  // Show dropdown if domains were found
                   <select
                     id="domain"
                     value={selectedDomain}
                     onChange={e => handleDomainChange(e.target.value)}
                     className={styles.domainSelect}
-                    disabled={isLoadingDomains}
                   >
-                    <option value="">
-                      {isLoadingDomains ? 'Loading domains...' : 'Select a domain...'}
-                    </option>
+                    <option value="">Select a domain...</option>
                     {ownedDomains.map(domain => (
                       <option key={domain} value={domain}>
                         {domain}
@@ -850,6 +923,7 @@ You can now access your content at:
                     ))}
                   </select>
                 ) : (
+                  // Show input field if no domains were found
                   <input
                     id="domain"
                     type="text"
@@ -857,24 +931,18 @@ You can now access your content at:
                     onChange={e => handleDomainChange(e.target.value)}
                     placeholder="myname.eth"
                     className={styles.input}
-                    disabled={isLoadingDomains}
                   />
                 )}
-                {getValidationStatus()}
+                {!isLoadingDomains && getValidationStatus()}
               </div>
-              <div className={styles.hint}>
-                {isLoadingDomains ? (
-                  <div className={styles.loadingDomains}>
-                    <div className={styles.spinner}></div>
-                    🔍 Searching for your ENS domains...
-                  </div>
-                ) : ownedDomains.length > 0 ? (
-                  `Found ${ownedDomains.length} domain(s). Select one from the dropdown above.`
-                ) : (
-                  'Enter your ENS domain name (e.g., myname.eth, myname.xyz)'
-                )}
-              </div>
-              {!isLoadingDomains && ownedDomains.length === 0 && (
+              {!isLoadingDomains && (
+                <div className={styles.hint}>
+                  {ownedDomains.length > 0
+                    ? `Found ${ownedDomains.length} domain(s). Select one from the dropdown above.`
+                    : 'Enter your ENS domain name (e.g., myname.eth, myname.xyz)'}
+                </div>
+              )}
+              {!isLoadingDomains && hasAttemptedFetch && ownedDomains.length === 0 && (
                 <div className={styles.noDomains}>
                   No ENS domains found for your wallet. You can still enter a domain manually above.
                 </div>
