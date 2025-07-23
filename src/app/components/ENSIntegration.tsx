@@ -594,12 +594,11 @@ Your new ENS domain is now registered and ready to use:
 
 💡 **Tip**: Switch to "Set Content Hash" mode to link this domain to your Swarm content!`);
 
-        // Refresh owned domains list
+        // Refresh the domain list to include the newly registered domain
         if (address) {
-          // Add a delay to ensure the domain shows up in queries
+          // Add a delay to ensure the domain shows up in the subgraph
           setTimeout(() => {
-            // The domain is already added to the list above
-            console.log('Domain registration complete, domain added to list');
+            refreshDomainList();
           }, 2000);
         }
       }
@@ -733,205 +732,212 @@ Your new ENS domain is now registered and ready to use:
 
   // Add useEffect to fetch owned domains when wallet is connected
   useEffect(() => {
-    const fetchOwnedDomains = async () => {
-      if (!address) {
-        setIsLoadingDomains(false);
-        setHasAttemptedFetch(true);
-        return;
-      }
-
-      setIsLoadingDomains(true);
-      try {
-        console.log('Fetching all manageable domains for address:', address);
-
-        // Step 1: Get domains owned by the user (using official ENS subgraph example)
-        const getDomainsQuery = `
-          query getDomainsForAccount($address: String!) {
-            domains(where: { owner: $address }) {
-              name
-            }
-            wrappedDomains: domains(where: { wrappedOwner: $address }) {
-              name
-            }
-          }
-        `;
-
-        console.log('Querying ENS subgraph for owned domains...');
-        const domainsResponse = await fetch(ENS_SUBGRAPH_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
-          },
-          body: JSON.stringify({
-            query: getDomainsQuery,
-            variables: { address: address.toLowerCase() },
-          }),
-        });
-
-        let allDomains: string[] = [];
-
-        if (domainsResponse.ok) {
-          const domainsData = await domainsResponse.json();
-          console.log('Domains response:', domainsData);
-
-          // Extract regular domains
-          if (domainsData.data?.domains) {
-            const ownedDomains = domainsData.data.domains
-              .map((domain: any) => domain.name)
-              .filter((name: string) => {
-                // Basic validation
-                if (!name || !name.includes('.')) return false;
-
-                // Exclude reverse DNS entries
-                if (name.includes('.addr.reverse')) return false;
-
-                // Exclude domains with hex-like patterns
-                if (name.match(/^\[[\da-f]+\]\./)) return false;
-
-                return true;
-              });
-
-            console.log('Regular owned domains found:', ownedDomains);
-            allDomains.push(...ownedDomains);
-          }
-
-          // Extract wrapped domains
-          if (domainsData.data?.wrappedDomains) {
-            const wrappedDomains = domainsData.data.wrappedDomains
-              .map((domain: any) => domain.name)
-              .filter((name: string) => {
-                // Basic validation
-                if (!name || !name.includes('.')) return false;
-
-                // Exclude reverse DNS entries
-                if (name.includes('.addr.reverse')) return false;
-
-                // Exclude domains with hex-like patterns
-                if (name.match(/^\[[\da-f]+\]\./)) return false;
-
-                return true;
-              });
-
-            console.log('Wrapped domains found:', wrappedDomains);
-            allDomains.push(...wrappedDomains);
-          }
-
-          // Step 2: For each owned domain, get its subdomains (using official ENS pattern)
-          for (const domain of allDomains) {
-            const getSubDomainsQuery = `
-              query getSubDomains($domain: String!) {
-                domains(where: { name: $domain }) {
-                  name
-                  id
-                  subdomains(first: 100) {
-                    name
-                  }
-                  subdomainCount
-                }
-              }
-            `;
-
-            try {
-              console.log(`Fetching subdomains for ${domain}...`);
-              const subdomainsResponse = await fetch(ENS_SUBGRAPH_URL, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
-                },
-                body: JSON.stringify({
-                  query: getSubDomainsQuery,
-                  variables: { domain: domain },
-                }),
-              });
-
-              if (subdomainsResponse.ok) {
-                const subdomainsData = await subdomainsResponse.json();
-                console.log(`Subdomains response for ${domain}:`, subdomainsData);
-
-                if (subdomainsData.data?.domains?.[0]?.subdomains) {
-                  const subdomains = subdomainsData.data.domains[0].subdomains
-                    .filter((subdomain: any) => {
-                      const name = subdomain.name;
-                      const userAddress = address.toLowerCase();
-
-                      // Basic validation
-                      if (!name || !name.includes('.')) return false;
-
-                      // Exclude reverse DNS entries
-                      if (name.includes('.addr.reverse')) return false;
-
-                      // Check if user has management rights over the subdomain
-                      const hasOwnership =
-                        subdomain.owner?.id?.toLowerCase() === userAddress ||
-                        subdomain.registrant?.id?.toLowerCase() === userAddress ||
-                        subdomain.wrappedOwner?.id?.toLowerCase() === userAddress;
-
-                      return hasOwnership;
-                    })
-                    .map((subdomain: any) => subdomain.name);
-
-                  console.log(`Subdomains found for ${domain}:`, subdomains);
-                  allDomains.push(...subdomains);
-                }
-              }
-            } catch (err) {
-              console.error(`Error fetching subdomains for ${domain}:`, err);
-            }
-          }
-        } else {
-          console.log('ENS subgraph query failed');
-        }
-
-        // Remove duplicates and filter valid domains
-        const validDomains = allDomains.filter(
-          domain =>
-            domain &&
-            !domain.startsWith('ENS Token #') &&
-            !domain.startsWith('Wrapped Token #') &&
-            domain.includes('.') &&
-            domain.length > 0 &&
-            !domain.includes('.addr.reverse') && // Exclude reverse DNS entries
-            !domain.match(/^\[[\da-f]+\]\./) && // Exclude hex-pattern domains
-            domain.split('.').length >= 2 && // Must have at least one dot (e.g., name.eth)
-            domain.length < 100 // Reasonable length limit
-        );
-
-        // Remove duplicates and sort
-        const uniqueDomains = [...new Set(validDomains)].sort();
-
-        console.log('All domains found:', allDomains);
-        console.log('Valid domains:', validDomains);
-        console.log('Final unique domains:', uniqueDomains);
-
-        // Get recently registered domains from sessionStorage
-        // const recentDomains = getRecentDomains(address); // Removed sessionStorage
-        // console.log('Recently registered domains:', recentDomains);
-
-        // Merge with subgraph results
-        const allDomainsWithRecent = [...uniqueDomains]; // Removed recentDomains
-        const finalUniqueDomains = [...new Set(allDomainsWithRecent)].sort();
-
-        console.log(`📊 Final domain list:`, {
-          fromSubgraph: uniqueDomains.length,
-          // fromRecent: recentDomains.length, // Removed recentDomains
-          totalUnique: finalUniqueDomains.length,
-          domains: finalUniqueDomains,
-        });
-
-        setOwnedDomains(finalUniqueDomains);
-      } catch (err) {
-        console.error('Error fetching owned domains:', err);
-        setOwnedDomains([]);
-      } finally {
-        setIsLoadingDomains(false);
-        setHasAttemptedFetch(true);
-      }
-    };
-
     fetchOwnedDomains();
   }, [address]);
+
+  // Fetch owned domains function
+  const fetchOwnedDomains = async () => {
+    if (!address || !publicClient) {
+      setIsLoadingDomains(false);
+      setHasAttemptedFetch(true);
+      return;
+    }
+
+    setIsLoadingDomains(true);
+    try {
+      console.log('Fetching all manageable domains for address:', address);
+
+      // Step 1: Get domains owned by the user (using official ENS subgraph example)
+      const getDomainsQuery = `
+        query getDomainsForAccount($address: String!) {
+          domains(where: { owner: $address }) {
+            name
+          }
+          wrappedDomains: domains(where: { wrappedOwner: $address }) {
+            name
+          }
+        }
+      `;
+
+      console.log('Querying ENS subgraph for owned domains...');
+      const domainsResponse = await fetch(ENS_SUBGRAPH_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
+        },
+        body: JSON.stringify({
+          query: getDomainsQuery,
+          variables: { address: address.toLowerCase() },
+        }),
+      });
+
+      let allDomains: string[] = [];
+
+      if (domainsResponse.ok) {
+        const domainsData = await domainsResponse.json();
+        console.log('Domains response:', domainsData);
+
+        // Extract regular domains
+        if (domainsData.data?.domains) {
+          const ownedDomains = domainsData.data.domains
+            .map((domain: any) => domain.name)
+            .filter((name: string) => {
+              // Basic validation
+              if (!name || !name.includes('.')) return false;
+
+              // Exclude reverse DNS entries
+              if (name.includes('.addr.reverse')) return false;
+
+              // Exclude domains with hex-like patterns
+              if (name.match(/^\[[\da-f]+\]\./)) return false;
+
+              return true;
+            });
+
+          console.log('Regular owned domains found:', ownedDomains);
+          allDomains.push(...ownedDomains);
+        }
+
+        // Extract wrapped domains
+        if (domainsData.data?.wrappedDomains) {
+          const wrappedDomains = domainsData.data.wrappedDomains
+            .map((domain: any) => domain.name)
+            .filter((name: string) => {
+              // Basic validation
+              if (!name || !name.includes('.')) return false;
+
+              // Exclude reverse DNS entries
+              if (name.includes('.addr.reverse')) return false;
+
+              // Exclude domains with hex-like patterns
+              if (name.match(/^\[[\da-f]+\]\./)) return false;
+
+              return true;
+            });
+
+          console.log('Wrapped domains found:', wrappedDomains);
+          allDomains.push(...wrappedDomains);
+        }
+
+        // Step 2: For each owned domain, get its subdomains (using official ENS pattern)
+        for (const domain of allDomains) {
+          const getSubDomainsQuery = `
+            query getSubDomains($domain: String!) {
+              domains(where: { name: $domain }) {
+                name
+                id
+                subdomains(first: 100) {
+                  name
+                }
+                subdomainCount
+              }
+            }
+          `;
+
+          try {
+            console.log(`Fetching subdomains for ${domain}...`);
+            const subdomainsResponse = await fetch(ENS_SUBGRAPH_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${ENS_SUBGRAPH_API_KEY}`,
+              },
+              body: JSON.stringify({
+                query: getSubDomainsQuery,
+                variables: { domain: domain },
+              }),
+            });
+
+            if (subdomainsResponse.ok) {
+              const subdomainsData = await subdomainsResponse.json();
+              console.log(`Subdomains response for ${domain}:`, subdomainsData);
+
+              if (subdomainsData.data?.domains?.[0]?.subdomains) {
+                const subdomains = subdomainsData.data.domains[0].subdomains
+                  .filter((subdomain: any) => {
+                    const name = subdomain.name;
+                    const userAddress = address.toLowerCase();
+
+                    // Basic validation
+                    if (!name || !name.includes('.')) return false;
+
+                    // Exclude reverse DNS entries
+                    if (name.includes('.addr.reverse')) return false;
+
+                    // Check if user has management rights over the subdomain
+                    const hasOwnership =
+                      subdomain.owner?.id?.toLowerCase() === userAddress ||
+                      subdomain.registrant?.id?.toLowerCase() === userAddress ||
+                      subdomain.wrappedOwner?.id?.toLowerCase() === userAddress;
+
+                    return hasOwnership;
+                  })
+                  .map((subdomain: any) => subdomain.name);
+
+                console.log(`Subdomains found for ${domain}:`, subdomains);
+                allDomains.push(...subdomains);
+              }
+            }
+          } catch (err) {
+            console.error(`Error fetching subdomains for ${domain}:`, err);
+          }
+        }
+      } else {
+        console.log('ENS subgraph query failed');
+      }
+
+      // Remove duplicates and filter valid domains
+      const validDomains = allDomains.filter(
+        domain =>
+          domain &&
+          !domain.startsWith('ENS Token #') &&
+          !domain.startsWith('Wrapped Token #') &&
+          domain.includes('.') &&
+          domain.length > 0 &&
+          !domain.includes('.addr.reverse') && // Exclude reverse DNS entries
+          !domain.match(/^\[[\da-f]+\]\./) && // Exclude hex-pattern domains
+          domain.split('.').length >= 2 && // Must have at least one dot (e.g., name.eth)
+          domain.length < 100 // Reasonable length limit
+      );
+
+      // Remove duplicates and sort
+      const uniqueDomains = [...new Set(validDomains)].sort();
+
+      console.log('All domains found:', allDomains);
+      console.log('Valid domains:', validDomains);
+      console.log('Final unique domains:', uniqueDomains);
+
+      // Get recently registered domains from sessionStorage
+      // const recentDomains = getRecentDomains(address); // Removed sessionStorage
+      // console.log('Recently registered domains:', recentDomains);
+
+      // Merge with subgraph results
+      const allDomainsWithRecent = [...uniqueDomains]; // Removed recentDomains
+      const finalUniqueDomains = [...new Set(allDomainsWithRecent)].sort();
+
+      console.log(`📊 Final domain list:`, {
+        fromSubgraph: uniqueDomains.length,
+        // fromRecent: recentDomains.length, // Removed recentDomains
+        totalUnique: finalUniqueDomains.length,
+        domains: finalUniqueDomains,
+      });
+
+      setOwnedDomains(finalUniqueDomains);
+    } catch (err) {
+      console.error('Error fetching owned domains:', err);
+      setOwnedDomains([]);
+    } finally {
+      setIsLoadingDomains(false);
+      setHasAttemptedFetch(true);
+    }
+  };
+
+  // Function to refresh just the domain list (for after registration)
+  const refreshDomainList = async () => {
+    console.log('🔄 Refreshing domain list after registration...');
+    await fetchOwnedDomains();
+  };
 
   // Function to save reference with associated domain
   const saveReferenceWithDomain = (reference: string, domain: string) => {
