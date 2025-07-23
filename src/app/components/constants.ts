@@ -27,6 +27,8 @@ export const DEFAULT_BEE_API_URL =
 
 export const BEE_GATEWAY_URL = `https://bzz.link/bzz/`;
 
+export const ENS_SUBGRAPH_URL = 'https://api.thegraph.com/subgraphs/name/ensdomains/ens';
+
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_PRICE_ORACLE_ADDRESS ||
   '0x47EeF336e7fE5bED98499A4696bce8f28c1B0a8b';
