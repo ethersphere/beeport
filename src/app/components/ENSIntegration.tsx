@@ -14,6 +14,7 @@ interface ENSIntegrationProps {
 // ENS contract addresses and ABIs
 const ENS_REGISTRY_ADDRESS = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const ETH_BASE_REGISTRAR_ADDRESS = '0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85'; // .eth domain BaseRegistrar (ERC721)
+const ETH_REGISTRAR_CONTROLLER_ADDRESS = '0x253553366da8546fc250f225fe3d25d0c782303b'; // Domain registration controller
 
 const ENS_RESOLVER_ABI = parseAbi([
   'function setContenthash(bytes32 node, bytes calldata hash) external',
@@ -29,7 +30,19 @@ const ETH_BASE_REGISTRAR_ABI = parseAbi([
   'function ownerOf(uint256 tokenId) external view returns (address)',
 ]);
 
+const ETH_REGISTRAR_CONTROLLER_ABI = parseAbi([
+  'function commit(bytes32 commitment) external',
+  'function register(string calldata name, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] calldata data, bool reverseRecord, uint16 ownerControlledFuses) external payable',
+  'function makeCommitment(string calldata name, address owner, uint256 duration, bytes32 secret, address resolver, bytes[] calldata data, bool reverseRecord, uint16 ownerControlledFuses) external pure returns (bytes32)',
+  'function rentPrice(string calldata name, uint256 duration) external view returns (uint256)',
+  'function available(string calldata name) external view returns (bool)',
+  'function commitments(bytes32) external view returns (uint256)',
+  'function MIN_COMMITMENT_AGE() external view returns (uint256)',
+  'function MAX_COMMITMENT_AGE() external view returns (uint256)',
+]);
+
 const NAME_WRAPPER_ADDRESS = '0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401';
+const ENS_PUBLIC_RESOLVER_ADDRESS = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'; // ENS Public Resolver
 
 const NAME_WRAPPER_ABI = parseAbi(['function ownerOf(uint256 id) external view returns (address)']);
 
@@ -324,6 +337,17 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [isLoadingDomains, setIsLoadingDomains] = useState(true); // Start as true since we fetch domains on mount
   const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false); // Track if we've completed initial fetch
 
+  // Add state for domain registration
+  const [registrationMode, setRegistrationMode] = useState(false);
+  const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+  const [registrationPrice, setRegistrationPrice] = useState<string>('');
+  const [commitmentTxHash, setCommitmentTxHash] = useState<string>('');
+  const [commitmentTimestamp, setCommitmentTimestamp] = useState<number>(0);
+  const [registrationStep, setRegistrationStep] = useState<
+    'input' | 'commit' | 'waiting' | 'register' | 'completed'
+  >('input');
+
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
     data: ensAddress,
@@ -342,10 +366,309 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const handleDomainChange = (domain: string) => {
     setSelectedDomain(domain);
     setError('');
+
+    // Reset registration state when domain changes
+    if (registrationMode) {
+      setIsAvailable(null);
+      setRegistrationPrice('');
+      setRegistrationStep('input');
+      setCommitmentTxHash('');
+      setCommitmentTimestamp(0);
+    }
+  };
+
+  // Check domain availability for registration
+  const checkDomainAvailability = async (domainName: string) => {
+    if (!domainName || !publicClient) return;
+
+    // Only check .eth domains for registration
+    if (!domainName.endsWith('.eth')) {
+      setIsAvailable(false);
+      return;
+    }
+
+    setIsCheckingAvailability(true);
+    try {
+      const name = domainName.replace('.eth', '');
+      console.log('🔍 Checking availability for:', name);
+
+      const available = (await publicClient.readContract({
+        address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+        abi: ETH_REGISTRAR_CONTROLLER_ABI,
+        functionName: 'available',
+        args: [name],
+      })) as boolean;
+
+      console.log('✅ Domain availability:', available);
+      setIsAvailable(available);
+
+      if (available) {
+        // Get price for 1 year registration
+        const duration = BigInt(365 * 24 * 60 * 60); // 1 year in seconds
+        const price = (await publicClient.readContract({
+          address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+          abi: ETH_REGISTRAR_CONTROLLER_ABI,
+          functionName: 'rentPrice',
+          args: [name, duration],
+        })) as bigint;
+
+        const priceInEth = (Number(price) / 1e18).toFixed(4);
+        setRegistrationPrice(priceInEth);
+        console.log('💰 Registration price:', priceInEth, 'ETH');
+      } else {
+        setRegistrationPrice('');
+      }
+    } catch (error) {
+      console.error('❌ Error checking availability:', error);
+      setIsAvailable(null);
+    } finally {
+      setIsCheckingAvailability(false);
+    }
+  };
+
+  // Handle domain registration process
+  const handleDomainRegistration = async () => {
+    if (!selectedDomain || !walletClient || !publicClient || !address) {
+      setError('Please enter a domain name and connect your wallet');
+      return;
+    }
+
+    // Check if we're on Ethereum mainnet
+    if (isWrongChain) {
+      setError('Please switch to Ethereum Mainnet to register ENS domains.');
+      return;
+    }
+
+    const domainName = selectedDomain.replace('.eth', '');
+    const duration = BigInt(365 * 24 * 60 * 60); // 1 year in seconds
+    const secret =
+      `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('')}` as `0x${string}`;
+
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      if (registrationStep === 'input') {
+        console.log('🚀 Starting domain registration - COMMIT phase');
+        setRegistrationStep('commit');
+
+        // Step 1: Make commitment following ENS docs
+        console.log('📝 Making commitment with parameters:', {
+          name: domainName,
+          owner: address,
+          duration: duration.toString(),
+          secret,
+          resolver: ENS_PUBLIC_RESOLVER_ADDRESS,
+          data: '[]', // Empty bytes array
+          reverseRecord: false,
+          ownerControlledFuses: 0,
+        });
+
+        const commitment = (await publicClient.readContract({
+          address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+          abi: ETH_REGISTRAR_CONTROLLER_ABI,
+          functionName: 'makeCommitment',
+          args: [
+            domainName,
+            address,
+            duration,
+            secret,
+            ENS_PUBLIC_RESOLVER_ADDRESS, // Use ENS Public Resolver
+            [], // Empty bytes array for data
+            false, // reverseRecord
+            0, // ownerControlledFuses
+          ],
+        })) as `0x${string}`;
+
+        console.log('✅ Generated commitment hash:', commitment);
+
+        // Submit commitment transaction
+        const { request } = await publicClient.simulateContract({
+          address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+          abi: ETH_REGISTRAR_CONTROLLER_ABI,
+          functionName: 'commit',
+          args: [commitment],
+          account: address,
+        });
+
+        const commitHash = await walletClient.writeContract(request);
+        console.log('✅ Commitment transaction hash:', commitHash);
+
+        setCommitmentTxHash(commitHash);
+        setTxHash(commitHash);
+        setSuccess('Commitment submitted! Waiting for confirmation...');
+
+        // Wait for transaction confirmation
+        await publicClient.waitForTransactionReceipt({ hash: commitHash });
+        console.log('✅ Commitment confirmed');
+
+        // Store commitment data for registration step
+        setCommitmentTimestamp(Date.now());
+        setRegistrationStep('waiting');
+        setSuccess(`✅ Step 1/2 Complete: Commitment confirmed!
+
+⏱️ Please wait 60 seconds before completing registration.
+
+This waiting period is required by ENS to prevent front-running attacks where someone could see your registration attempt and register the domain before you.`);
+
+        // Store secret temporarily (in production, this should be more secure)
+        sessionStorage.setItem(`ens_secret_${domainName}`, secret);
+      } else if (registrationStep === 'waiting') {
+        console.log('🚀 Starting domain registration - REGISTER phase');
+        setRegistrationStep('register');
+
+        // Get stored secret
+        const storedSecret = sessionStorage.getItem(`ens_secret_${domainName}`);
+        if (!storedSecret) {
+          throw new Error('Registration secret not found. Please start over.');
+        }
+
+        // Get registration price
+        const price = (await publicClient.readContract({
+          address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+          abi: ETH_REGISTRAR_CONTROLLER_ABI,
+          functionName: 'rentPrice',
+          args: [domainName, duration],
+        })) as bigint;
+
+        console.log('💰 Registration price:', price.toString(), 'wei');
+
+        // Step 2: Complete registration following ENS docs
+        console.log('📝 Registering with parameters:', {
+          name: domainName,
+          owner: address,
+          duration: duration.toString(),
+          secret: storedSecret,
+          resolver: ENS_PUBLIC_RESOLVER_ADDRESS,
+          data: '[]', // Empty bytes array
+          reverseRecord: false,
+          ownerControlledFuses: 0,
+          value: price.toString(),
+        });
+
+        const { request } = await publicClient.simulateContract({
+          address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+          abi: ETH_REGISTRAR_CONTROLLER_ABI,
+          functionName: 'register',
+          args: [
+            domainName,
+            address,
+            duration,
+            storedSecret as `0x${string}`,
+            ENS_PUBLIC_RESOLVER_ADDRESS, // Use ENS Public Resolver
+            [], // Empty bytes array for data
+            false, // reverseRecord
+            0, // ownerControlledFuses
+          ],
+          account: address,
+          value: price,
+        });
+
+        const registerHash = await walletClient.writeContract(request);
+        console.log('✅ Registration transaction hash:', registerHash);
+
+        setTxHash(registerHash);
+        setSuccess('Registration submitted! Waiting for confirmation...');
+
+        // Wait for transaction confirmation
+        await publicClient.waitForTransactionReceipt({ hash: registerHash });
+        console.log('✅ Registration confirmed');
+
+        // Clean up stored secret
+        sessionStorage.removeItem(`ens_secret_${domainName}`);
+
+        setRegistrationStep('completed');
+        setSuccess(`🎉 Registration Complete! Welcome to ${selectedDomain}!
+
+Your new ENS domain is now registered and ready to use:
+
+✅ **Domain**: ${selectedDomain}
+✅ **Duration**: 1 year (expires ${new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString()})
+✅ **Resolver**: ENS Public Resolver
+✅ **Owner**: ${address}
+
+**What you can do now:**
+• Receive crypto payments at ${selectedDomain}
+• Set up a decentralized website
+• Use it as your web3 identity across dApps
+• Set records (email, website, social profiles)
+
+💡 **Tip**: Switch to "Set Content Hash" mode to link this domain to your Swarm content!`);
+
+        // Refresh owned domains list
+        if (address) {
+          // Add a delay to ensure the domain shows up in queries
+          setTimeout(() => {
+            // Re-fetch owned domains to include the new registration
+            const fetchOwnedDomains = async () => {
+              // Implementation would be similar to the existing fetchOwnedDomains function
+              // This would refresh the dropdown with the newly registered domain
+            };
+            fetchOwnedDomains();
+          }, 2000);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Registration error:', error);
+      let errorMessage = 'Registration failed';
+
+      if (error instanceof Error) {
+        if (error.message.includes('user rejected')) {
+          errorMessage = 'Transaction was cancelled by user';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient ETH to complete registration';
+        } else {
+          errorMessage = `Registration failed: ${error.message}`;
+        }
+      }
+
+      setError(errorMessage);
+
+      // Reset on error
+      if (registrationStep === 'commit') {
+        setRegistrationStep('input');
+      } else if (registrationStep === 'register') {
+        setRegistrationStep('waiting');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Check if we're on the right chain
   const isWrongChain = chainId !== 1;
+
+  // Check domain availability when in registration mode and domain changes
+  useEffect(() => {
+    if (registrationMode && selectedDomain) {
+      const timeoutId = setTimeout(() => {
+        checkDomainAvailability(selectedDomain);
+      }, 500); // Debounce to avoid too many requests
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedDomain, registrationMode]);
+
+  // Handle waiting period countdown
+  useEffect(() => {
+    if (registrationStep === 'waiting' && commitmentTimestamp > 0) {
+      const interval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = now - commitmentTimestamp;
+        const waitTime = 60 * 1000; // 60 seconds
+
+        if (elapsed >= waitTime) {
+          clearInterval(interval);
+          setSuccess(
+            `✅ Waiting period complete! You can now complete your registration for ${selectedDomain}`
+          );
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [registrationStep, commitmentTimestamp, selectedDomain]);
 
   // Add useEffect to fetch contenthash when domain is validated
   useEffect(() => {
@@ -993,13 +1316,54 @@ You can now access your content at:
             )}
           </div>
 
+          {/* Mode Toggle */}
+          <div className={styles.modeToggle}>
+            <button
+              className={`${styles.modeButton} ${!registrationMode ? styles.active : ''}`}
+              onClick={() => {
+                setRegistrationMode(false);
+                setError('');
+                setSuccess('');
+                setRegistrationStep('input');
+              }}
+              disabled={isLoading}
+            >
+              Set Content Hash
+            </button>
+            <button
+              className={`${styles.modeButton} ${registrationMode ? styles.active : ''}`}
+              onClick={() => {
+                setRegistrationMode(true);
+                setError('');
+                setSuccess('');
+                setRegistrationStep('input');
+              }}
+              disabled={isLoading}
+            >
+              Register Domain
+            </button>
+          </div>
+
           <div className={styles.domainSection}>
-            <h3>Select Your ENS Domain</h3>
+            <h3>{registrationMode ? 'Register New ENS Domain' : 'Select Your ENS Domain'}</h3>
 
             <div className={styles.domainInput}>
-              <label htmlFor="domain">Domain Name:</label>
+              <label htmlFor="domain">
+                {registrationMode ? 'New Domain Name:' : 'Domain Name:'}
+              </label>
               <div className={styles.inputContainer}>
-                {isLoadingDomains ? (
+                {registrationMode ? (
+                  // Registration mode: Always show input field
+                  <input
+                    id="domain"
+                    type="text"
+                    value={selectedDomain}
+                    onChange={e => handleDomainChange(e.target.value)}
+                    placeholder="mynewdomain.eth"
+                    className={styles.input}
+                    disabled={isLoading}
+                  />
+                ) : isLoadingDomains ? (
                   // Show loading state while fetching domains
                   <div className={styles.loadingContainer}>
                     <div className={styles.loadingDomains}>
@@ -1014,6 +1378,7 @@ You can now access your content at:
                     value={selectedDomain}
                     onChange={e => handleDomainChange(e.target.value)}
                     className={styles.domainSelect}
+                    disabled={isLoading}
                   >
                     <option value="">Select a domain...</option>
                     {ownedDomains.map(domain => (
@@ -1031,20 +1396,53 @@ You can now access your content at:
                     onChange={e => handleDomainChange(e.target.value)}
                     placeholder="myname.eth"
                     className={styles.input}
+                    disabled={isLoading}
                   />
                 )}
-                {!isLoadingDomains && getValidationStatus()}
+                {!registrationMode && !isLoadingDomains && getValidationStatus()}
               </div>
-              {!isLoadingDomains && (
+
+              {/* Domain availability status for registration mode */}
+              {registrationMode && selectedDomain && (
+                <div className={styles.availabilityStatus}>
+                  {isCheckingAvailability ? (
+                    <div className={styles.checking}>
+                      <div className={styles.spinner}></div>
+                      Checking availability...
+                    </div>
+                  ) : isAvailable === true ? (
+                    <div className={styles.available}>
+                      ✅ {selectedDomain} is available!
+                      {registrationPrice && (
+                        <span className={styles.price}>
+                          Registration: {registrationPrice} ETH/year
+                        </span>
+                      )}
+                    </div>
+                  ) : isAvailable === false ? (
+                    <div className={styles.unavailable}>❌ {selectedDomain} is not available</div>
+                  ) : null}
+                </div>
+              )}
+              {!registrationMode && !isLoadingDomains && (
                 <div className={styles.hint}>
                   {ownedDomains.length > 0
                     ? `Found ${ownedDomains.length} domain(s). Select one from the dropdown above.`
                     : 'Enter your ENS domain name (e.g., myname.eth, myname.xyz)'}
                 </div>
               )}
-              {!isLoadingDomains && hasAttemptedFetch && ownedDomains.length === 0 && (
-                <div className={styles.noDomains}>
-                  No ENS domains found for your wallet. You can still enter a domain manually above.
+              {!registrationMode &&
+                !isLoadingDomains &&
+                hasAttemptedFetch &&
+                ownedDomains.length === 0 && (
+                  <div className={styles.noDomains}>
+                    No ENS domains found for your wallet. You can still enter a domain manually
+                    above.
+                  </div>
+                )}
+              {registrationMode && (
+                <div className={styles.hint}>
+                  Enter a new .eth domain name to register (e.g., mynewdomain.eth)
                 </div>
               )}
               {ensAddress && (
@@ -1059,9 +1457,10 @@ You can now access your content at:
               )}
               <div className={styles.domainHelp}>
                 <p>
-                  Don't have an ENS domain?{' '}
+                  Don't have an ENS domain? Use the "Register Domain" button below to get started,
+                  or{' '}
                   <a href="https://app.ens.domains" target="_blank" rel="noopener noreferrer">
-                    Register one here
+                    visit app.ens.domains
                   </a>
                 </p>
               </div>
@@ -1095,32 +1494,72 @@ You can now access your content at:
           )}
 
           <div className={styles.actions}>
-            <button
-              className={styles.setButton}
-              onClick={handleSetContentHash}
-              disabled={
-                !selectedDomain ||
-                isLoading ||
-                ensAddressLoading ||
-                isWrongChain ||
-                contentAlreadyAssociated || // Disable if content is already associated
-                // For domain validation, check if it's owned, has resolver, or has address
-                (!ownedDomains.includes(selectedDomain) &&
-                  (!ensResolver || ensResolverError) &&
-                  (!ensAddress || ensAddressError))
-              }
-            >
-              {isLoading ? (
-                <>
-                  <div className={styles.spinner}></div>
-                  Setting Content Hash...
-                </>
-              ) : contentAlreadyAssociated ? (
-                'Content Already Associated'
-              ) : (
-                'Set Content Hash'
-              )}
-            </button>
+            {registrationMode ? (
+              <>
+                <button
+                  className={styles.setButton}
+                  onClick={handleDomainRegistration}
+                  disabled={
+                    !selectedDomain ||
+                    isLoading ||
+                    isWrongChain ||
+                    isAvailable !== true ||
+                    (registrationStep === 'waiting' &&
+                      commitmentTimestamp > 0 &&
+                      Date.now() - commitmentTimestamp < 60000)
+                  }
+                >
+                  {isLoading ? (
+                    <>
+                      <div className={styles.spinner}></div>
+                      {registrationStep === 'commit' && 'Committing...'}
+                      {registrationStep === 'register' && 'Registering...'}
+                    </>
+                  ) : registrationStep === 'input' ? (
+                    'Start Registration'
+                  ) : registrationStep === 'waiting' ? (
+                    commitmentTimestamp > 0 && Date.now() - commitmentTimestamp < 60000 ? (
+                      `Wait ${Math.ceil((60000 - (Date.now() - commitmentTimestamp)) / 1000)}s`
+                    ) : (
+                      'Complete Registration'
+                    )
+                  ) : registrationStep === 'completed' ? (
+                    'Registration Complete'
+                  ) : (
+                    'Register Domain'
+                  )}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={styles.setButton}
+                  onClick={handleSetContentHash}
+                  disabled={
+                    !selectedDomain ||
+                    isLoading ||
+                    ensAddressLoading ||
+                    isWrongChain ||
+                    contentAlreadyAssociated || // Disable if content is already associated
+                    // For domain validation, check if it's owned, has resolver, or has address
+                    (!ownedDomains.includes(selectedDomain) &&
+                      (!ensResolver || ensResolverError) &&
+                      (!ensAddress || ensAddressError))
+                  }
+                >
+                  {isLoading ? (
+                    <>
+                      <div className={styles.spinner}></div>
+                      Setting Content Hash...
+                    </>
+                  ) : contentAlreadyAssociated ? (
+                    'Content Already Associated'
+                  ) : (
+                    'Set Content Hash'
+                  )}
+                </button>
+              </>
+            )}
             <button className={styles.cancelButton} onClick={onClose}>
               Cancel
             </button>
