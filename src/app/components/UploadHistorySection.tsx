@@ -15,6 +15,7 @@ interface UploadRecord {
   stampId: string;
   expiryDate: number;
   associatedDomains?: string[]; // New field for ENS domains linked to this reference
+  isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
 }
 
 interface UploadHistory {
@@ -69,8 +70,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   // File type detection functions
-  const getFileType = (filename?: string): FileType => {
+  const getFileType = (input?: string | UploadRecord): FileType => {
+    // Handle both filename string and UploadRecord input
+    let filename: string | undefined;
+    let isWebpageUpload = false;
+
+    if (typeof input === 'string') {
+      filename = input;
+    } else if (input && typeof input === 'object') {
+      filename = input.filename;
+      isWebpageUpload = input.isWebpageUpload || false;
+    }
+
     if (!filename) return 'all';
+
+    // Check if this was uploaded as a webpage first (overrides file extension)
+    if (isWebpageUpload) {
+      return 'websites';
+    }
 
     const extension = filename.toLowerCase();
 
@@ -129,8 +146,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return 'all';
   };
 
-  const getFileTypeLabel = (filename?: string): string => {
-    const type = getFileType(filename);
+  const getFileTypeLabel = (input?: string | UploadRecord): string => {
+    const type = getFileType(input);
     switch (type) {
       case 'images':
         return 'Image';
@@ -154,7 +171,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     return history.filter(record => {
-      const fileType = getFileType(record.filename);
+      const fileType = getFileType(record);
       return fileType === selectedFilter;
     });
   }, [history, selectedFilter]);
@@ -171,7 +188,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     };
 
     history.forEach(record => {
-      const type = getFileType(record.filename);
+      const type = getFileType(record);
       if (type !== 'all') {
         counts[type]++;
       }
@@ -202,6 +219,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Expiry (Days)',
       'Filename',
       'File Type',
+      'Is Webpage',
       'Associated Domains', // New column
       'Full Link',
     ];
@@ -213,7 +231,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       formatDate(record.timestamp),
       formatExpiryDays(record.expiryDate),
       record.filename || 'Unnamed upload',
-      getFileTypeLabel(record.filename),
+      getFileTypeLabel(record),
+      record.isWebpageUpload ? 'Yes' : 'No',
       record.associatedDomains?.join(', ') || '', // New field
       getReferenceUrl(record),
     ]);
@@ -268,7 +287,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               dateCreated,
               expiryDays,
               filename,
-              fileTypeOrFullLink,
+              fileType,
+              isWebpage,
               associatedDomainsStr,
               fullLink,
             ] = fields;
@@ -290,6 +310,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
                 expiryDate: expiryInSeconds,
+                isWebpageUpload: isWebpage === 'Yes',
               };
 
               // Parse associated domains if present
@@ -509,7 +530,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
                     <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
-                    {getFileType(record.filename) === 'websites' && (
+                    {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}
                         onClick={() => {
@@ -522,7 +543,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       </button>
                     )}
                   </div>
-                  <span className={styles.fileType}>{getFileTypeLabel(record.filename)}</span>
+                  <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                 </div>
                 <span className={styles.date}>{formatDate(record.timestamp)}</span>
               </div>
