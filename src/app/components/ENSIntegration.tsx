@@ -40,44 +40,103 @@ const canManageDomain = async (
   publicClient: any
 ): Promise<boolean> => {
   try {
-    // Get the actual owner/registrant
-    const registrant = await getDomainOwner(domain, publicClient);
-    console.log('Final determined registrant:', registrant);
-
-    if (registrant.toLowerCase() === address.toLowerCase()) {
-      console.log('User is the registrant/owner');
-      return true;
-    }
-
-    // For wrapped names, the controller might be different, but typically the owner can manage
-    // Check registry owner as potential controller
     const normalizedDomain = normalize(domain);
     const domainNode = namehash(normalizedDomain);
 
-    const registryOwner = (await publicClient.readContract({
-      address: ENS_REGISTRY_ADDRESS,
-      abi: ENS_REGISTRY_ABI,
-      functionName: 'owner',
-      args: [domainNode],
-    })) as string;
+    // Check if it's a subdomain
+    const isSubdomain = domain.split('.').length > 2;
 
-    console.log('Registry owner (controller):', registryOwner);
+    if (isSubdomain) {
+      console.log('Checking subdomain permissions for:', domain);
 
-    if (registryOwner.toLowerCase() === address.toLowerCase()) {
-      console.log('User is the controller');
-      return true;
+      // For subdomains, check registry owner (controller) directly
+      const registryOwner = (await publicClient.readContract({
+        address: ENS_REGISTRY_ADDRESS,
+        abi: ENS_REGISTRY_ABI,
+        functionName: 'owner',
+        args: [domainNode],
+      })) as string;
+
+      console.log('Subdomain registry owner (controller):', registryOwner);
+
+      // If you're the controller of the subdomain, you can manage it
+      if (registryOwner.toLowerCase() === address.toLowerCase()) {
+        console.log('User is the subdomain controller');
+        return true;
+      }
+
+      // For subdomains, also check if the parent domain owner can manage
+      const parentDomain = domain.split('.').slice(1).join('.');
+      console.log('Checking parent domain permissions:', parentDomain);
+
+      const parentNode = namehash(parentDomain);
+      const parentOwner = (await publicClient.readContract({
+        address: ENS_REGISTRY_ADDRESS,
+        abi: ENS_REGISTRY_ABI,
+        functionName: 'owner',
+        args: [parentNode],
+      })) as string;
+
+      console.log('Parent domain owner:', parentOwner);
+
+      // If you own the parent domain, you can typically manage subdomains
+      if (parentOwner.toLowerCase() === address.toLowerCase()) {
+        console.log('User owns parent domain, can manage subdomain');
+        return true;
+      }
+
+      // Also check if parent domain is owned via BaseRegistrar (for .eth domains)
+      if (parentDomain.endsWith('.eth')) {
+        try {
+          const parentRegistrant = await getDomainOwner(parentDomain, publicClient);
+          if (parentRegistrant.toLowerCase() === address.toLowerCase()) {
+            console.log('User is parent domain registrant, can manage subdomain');
+            return true;
+          }
+        } catch (err) {
+          console.log('Could not check parent domain registrant:', err);
+        }
+      }
+
+      console.log('User cannot manage subdomain');
+      return false;
+    } else {
+      // For main domains, use the existing logic
+      console.log('Checking main domain permissions for:', domain);
+
+      // Get the actual owner/registrant
+      const registrant = await getDomainOwner(domain, publicClient);
+      console.log('Final determined registrant:', registrant);
+
+      if (registrant.toLowerCase() === address.toLowerCase()) {
+        console.log('User is the registrant/owner');
+        return true;
+      }
+
+      // Check registry owner as potential controller
+      const registryOwner = (await publicClient.readContract({
+        address: ENS_REGISTRY_ADDRESS,
+        abi: ENS_REGISTRY_ABI,
+        functionName: 'owner',
+        args: [domainNode],
+      })) as string;
+
+      console.log('Registry owner (controller):', registryOwner);
+
+      if (registryOwner.toLowerCase() === address.toLowerCase()) {
+        console.log('User is the controller');
+        return true;
+      }
+
+      // For wrapped names, check if user is approved operator or manager
+      if (registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
+        // Additional check for NameWrapper permissions
+        console.log('Wrapped name - owner check already performed');
+      }
+
+      console.log('User is neither owner nor controller');
+      return false;
     }
-
-    // For wrapped names, check if user is approved operator or manager
-    if (registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
-      // Additional check for NameWrapper permissions
-      // NameWrapper has canModifyName function, but for simplicity, if they are the owner, allow
-      // Since we already checked owner above, and registrant is the wrapper owner
-      console.log('Wrapped name - owner check already performed');
-    }
-
-    console.log('User is neither owner nor controller');
-    return false;
   } catch (err) {
     console.error('Error checking domain management rights:', err);
     return false;
@@ -667,13 +726,28 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   };
 
   const handleSetContentHash = async () => {
+    console.log('🚀 Starting handleSetContentHash for domain:', selectedDomain);
+    console.log('📊 Initial state:', {
+      selectedDomain,
+      walletClient: !!walletClient,
+      publicClient: !!publicClient,
+      isWrongChain,
+      ensResolver,
+      ensResolverError,
+      ensAddress,
+      ensAddressError,
+      ownedDomains,
+    });
+
     if (!selectedDomain || !walletClient || !publicClient) {
+      console.log('❌ Missing required parameters');
       setError('Please enter a domain name and connect your wallet');
       return;
     }
 
     // Check if we're on Ethereum mainnet
     if (isWrongChain) {
+      console.log('❌ Wrong chain, need Ethereum mainnet');
       setError(
         'Please switch to Ethereum Mainnet to set ENS content hash. ENS records are stored on Ethereum mainnet.'
       );
@@ -690,7 +764,9 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       let normalizedDomain: string;
       try {
         normalizedDomain = normalize(selectedDomain);
+        console.log('✅ Domain normalized:', normalizedDomain);
       } catch (err) {
+        console.log('❌ Domain normalization failed:', err);
         setError('Invalid domain name. Please enter a valid ENS domain (e.g., myname.eth)');
         setIsLoading(false);
         return;
@@ -701,8 +777,19 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       const hasResolver = ensResolver && !ensResolverError;
       const hasAddress = ensAddress && !ensAddressError;
 
+      console.log('🔍 Domain validation checks:', {
+        isOwnedDomain,
+        hasResolver,
+        hasAddress,
+        ensResolver,
+        ensResolverError,
+        ensAddress,
+        ensAddressError,
+      });
+
       // Domain is valid if it's in our owned list, has a resolver, or has an address
       if (!isOwnedDomain && !hasResolver && !hasAddress) {
+        console.log('❌ Domain validation failed - domain not found or manageable');
         setError(
           `Domain "${normalizedDomain}" is not registered or configured in ENS. Please check the domain name or register it at app.ens.domains.`
         );
@@ -710,35 +797,47 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         return;
       }
 
-      console.log('Domain resolves to address:', ensAddress);
-      console.log('ENS Resolver:', ensResolver);
+      console.log('✅ Domain validation passed');
+
+      console.log('📍 Domain resolution info:', {
+        ensAddress,
+        ensResolver,
+        resolverNonZero: ensResolver !== '0x0000000000000000000000000000000000000000',
+      });
 
       // Get domain node for contract calls
       const domainNode = namehash(normalizedDomain);
 
-      console.log('Setting content hash for domain:', normalizedDomain);
-      console.log('Domain node:', domainNode);
-      console.log('Swarm reference:', swarmReference);
+      console.log('🎯 Domain metadata:', {
+        normalizedDomain,
+        domainNode,
+        swarmReference,
+        isSubdomain: normalizedDomain.split('.').length > 2,
+      });
 
       // Check if the user can manage the domain (either as registrant or controller)
-      console.log(
-        'Checking domain management rights for:',
-        normalizedDomain,
-        'Type:',
-        normalizedDomain.endsWith('.eth') ? '.eth domain' : 'other domain'
-      );
-      console.log('Connected address:', address);
+      console.log('🔐 Starting permission check for:', {
+        domain: normalizedDomain,
+        type: normalizedDomain.endsWith('.eth') ? '.eth domain' : 'other domain',
+        connectedAddress: address,
+        isSubdomain: normalizedDomain.split('.').length > 2,
+      });
 
       const canManage = await canManageDomain(normalizedDomain, address!, publicClient);
 
+      console.log('🔐 Permission check result:', { canManage });
+
       if (!canManage) {
+        console.log('❌ Permission check failed, getting owner info...');
         // Get the actual owner info for error message
         try {
           const domainOwner = await getDomainOwner(normalizedDomain, publicClient);
+          console.log('📋 Domain owner info:', domainOwner);
           setError(
             `You do not have permission to manage "${normalizedDomain}". The domain registrant is: ${domainOwner}`
           );
         } catch (err) {
+          console.log('❌ Error getting domain owner:', err);
           setError(
             `Unable to verify ownership of "${normalizedDomain}". ${err instanceof Error ? err.message : "Please ensure you're connected to Ethereum mainnet."}`
           );
@@ -747,10 +846,11 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         return;
       }
 
-      console.log('User has permission to manage the domain');
+      console.log('✅ User has permission to manage the domain');
 
       // Check if domain has a resolver
       if (!ensResolver || ensResolver === '0x0000000000000000000000000000000000000000') {
+        console.log('❌ No resolver set for domain');
         setError(
           `Domain "${normalizedDomain}" has no resolver set. Please set a resolver first using the ENS manager at app.ens.domains.`
         );
@@ -758,7 +858,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         return;
       }
 
-      console.log('Using resolver:', ensResolver);
+      console.log('✅ Resolver found:', ensResolver);
 
       // Encode the Swarm reference as content hash
       const contentHash = encodeSwarmHash(swarmReference);
@@ -1002,9 +1102,12 @@ You can now access your content at:
                 !selectedDomain ||
                 isLoading ||
                 ensAddressLoading ||
-                !ensAddress ||
                 isWrongChain ||
-                contentAlreadyAssociated // Disable if content is already associated
+                contentAlreadyAssociated || // Disable if content is already associated
+                // For domain validation, check if it's owned, has resolver, or has address
+                (!ownedDomains.includes(selectedDomain) &&
+                  (!ensResolver || ensResolverError) &&
+                  (!ensAddress || ensAddressError))
               }
             >
               {isLoading ? (
