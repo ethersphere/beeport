@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useAccount, usePublicClient, useWalletClient, useEnsAddress, useEnsResolver } from 'wagmi';
+import {
+  useAccount,
+  usePublicClient,
+  useWalletClient,
+  useEnsAddress,
+  useEnsResolver,
+  useSwitchChain,
+} from 'wagmi';
 import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
+import { mainnet } from 'wagmi/chains';
 import { ENS_SUBGRAPH_URL, ENS_SUBGRAPH_API_KEY } from './constants';
 import styles from './css/ENSIntegration.module.css';
 
@@ -256,12 +264,14 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const { address, chainId } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const { switchChain } = useSwitchChain();
 
   const [selectedDomain, setSelectedDomain] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [txHash, setTxHash] = useState<string>('');
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
 
   // Add state for current contenthash
   const [currentContentHash, setCurrentContentHash] = useState<string>('');
@@ -284,6 +294,54 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [registrationStep, setRegistrationStep] = useState<
     'input' | 'commit' | 'waiting' | 'register' | 'completed'
   >('input');
+
+  // Function to switch to Ethereum mainnet
+  const switchToEthereum = async () => {
+    if (!switchChain) return false;
+
+    try {
+      setIsSwitchingNetwork(true);
+      await switchChain({ chainId: mainnet.id });
+      console.log('✅ Switched to Ethereum mainnet');
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to switch to Ethereum:', error);
+      return false;
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
+
+  // Check and switch to Ethereum when component mounts
+  useEffect(() => {
+    if (address && chainId !== 1) {
+      console.log('🔄 ENS requires Ethereum mainnet, switching...');
+      switchToEthereum();
+    }
+  }, [address, chainId]);
+
+  // Function to ensure we're on Ethereum before ENS operations
+  const ensureEthereumNetwork = async (): Promise<boolean> => {
+    if (chainId === 1) {
+      return true; // Already on Ethereum
+    }
+
+    if (!address) {
+      setError('Please connect your wallet first');
+      return false;
+    }
+
+    setError('Switching to Ethereum mainnet for ENS operations...');
+    const switched = await switchToEthereum();
+
+    if (!switched) {
+      setError('Please switch to Ethereum mainnet manually to use ENS features');
+      return false;
+    }
+
+    setError(''); // Clear error after successful switch
+    return true;
+  };
 
   // Use wagmi hooks to resolve ENS data - these will return null if domain doesn't exist
   const {
@@ -370,9 +428,9 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       return;
     }
 
-    // Check if we're on Ethereum mainnet
-    if (chainId !== 1) {
-      setError('Please switch to Ethereum Mainnet to register ENS domains.');
+    // Ensure we're on Ethereum mainnet
+    const isOnEthereum = await ensureEthereumNetwork();
+    if (!isOnEthereum) {
       return;
     }
 
@@ -926,7 +984,7 @@ Your new ENS domain is now registered and ready to use:
       selectedDomain,
       walletClient: !!walletClient,
       publicClient: !!publicClient,
-      isWrongChain: chainId !== 1,
+      chainId,
       ensResolver,
       ensResolverError,
       ensAddress,
@@ -940,12 +998,9 @@ Your new ENS domain is now registered and ready to use:
       return;
     }
 
-    // Check if we're on Ethereum mainnet
-    if (chainId !== 1) {
-      console.log('❌ Wrong chain, need Ethereum mainnet');
-      setError(
-        'Please switch to Ethereum Mainnet to set ENS content hash. ENS records are stored on Ethereum mainnet.'
-      );
+    // Ensure we're on Ethereum mainnet
+    const isOnEthereum = await ensureEthereumNetwork();
+    if (!isOnEthereum) {
       return;
     }
 
@@ -1173,8 +1228,12 @@ You can now access your content at:
         <div className={styles.content}>
           {chainId !== 1 && (
             <div className={styles.chainWarning}>
-              <strong>⚠️ Wrong Network:</strong> Please switch to Ethereum Mainnet to manage ENS
-              domains. ENS records are stored on Ethereum mainnet.
+              <strong>⚠️ Wrong Network:</strong> ENS requires Ethereum Mainnet.
+              {isSwitchingNetwork ? (
+                <span> 🔄 Switching to Ethereum...</span>
+              ) : (
+                <span> Please switch to Ethereum Mainnet to use ENS features.</span>
+              )}
             </div>
           )}
 
@@ -1375,6 +1434,7 @@ You can now access your content at:
                     !selectedDomain ||
                     isLoading ||
                     chainId !== 1 ||
+                    isSwitchingNetwork ||
                     isAvailable !== true ||
                     (registrationStep === 'waiting' &&
                       commitmentTimestamp > 0 &&
@@ -1387,6 +1447,8 @@ You can now access your content at:
                       {registrationStep === 'commit' && 'Committing...'}
                       {registrationStep === 'register' && 'Registering...'}
                     </>
+                  ) : isSwitchingNetwork ? (
+                    'Switching to Ethereum...'
                   ) : registrationStep === 'input' ? (
                     'Start Registration'
                   ) : registrationStep === 'waiting' ? (
@@ -1412,6 +1474,7 @@ You can now access your content at:
                     isLoading ||
                     ensAddressLoading ||
                     chainId !== 1 ||
+                    isSwitchingNetwork ||
                     contentAlreadyAssociated || // Disable if content is already associated
                     // For domain validation, check if it's owned, has resolver, or has address
                     (!ownedDomains.includes(selectedDomain) &&
@@ -1424,6 +1487,8 @@ You can now access your content at:
                       <div className={styles.spinner}></div>
                       Setting Content Hash...
                     </>
+                  ) : isSwitchingNetwork ? (
+                    'Switching to Ethereum...'
                   ) : contentAlreadyAssociated ? (
                     'Content Already Associated'
                   ) : (
