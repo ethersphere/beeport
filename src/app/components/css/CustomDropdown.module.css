@@ -44,23 +44,42 @@
   font-style: italic;
 }
 
-.selectedDomain {
+.selectedContent {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
+}
+
+.selectedText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.selectedLabel {
   color: #ffffff;
+  font-weight: 500;
 }
 
-.domainIcon {
-  font-size: 16px;
-  opacity: 0.8;
+.selectedDescription {
+  color: #8b949e;
+  font-size: 12px;
+  margin-top: 2px;
 }
 
-.loadingText {
+.loadingContent {
   display: flex;
   align-items: center;
   gap: 8px;
   color: #8b949e;
+}
+
+.optionIcon {
+  font-size: 16px;
+  opacity: 0.8;
+  min-width: 20px;
+  text-align: center;
 }
 
 .chevron {
@@ -164,11 +183,21 @@
   color: #ff7a00;
 }
 
-.domainName {
+.optionContent {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  font-family: monospace;
+}
+
+.optionLabel {
+  font-weight: 500;
   font-size: 14px;
-  word-break: break-all;
+}
+
+.optionDescription {
+  color: #8b949e;
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 .checkmark {
@@ -210,7 +239,7 @@
     padding: 14px 16px;
   }
   
-  .domainName {
+  .optionLabel {
     font-size: 16px; /* Prevent zoom on iOS */
   }
 }

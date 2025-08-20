@@ -37,6 +37,8 @@ import StampListSection from './StampListSection';
 import UploadHistorySection from './UploadHistorySection';
 import SearchableChainDropdown from './SearchableChainDropdown';
 import SearchableTokenDropdown from './SearchableTokenDropdown';
+import StorageStampsDropdown from './StorageStampsDropdown';
+import StorageDurationDropdown from './StorageDurationDropdown';
 
 import {
   formatErrorMessage,
@@ -1659,17 +1661,12 @@ const SwapComponent: React.FC = () => {
               >
                 Storage stamps
               </label>
-              <select
-                className={styles.select}
-                value={selectedDepth}
-                onChange={e => handleDepthChange(Number(e.target.value))}
-              >
-                {STORAGE_OPTIONS.map(({ depth, size }) => (
-                  <option key={depth} value={depth}>
-                    {size}
-                  </option>
-                ))}
-              </select>
+              <StorageStampsDropdown
+                storageOptions={STORAGE_OPTIONS}
+                selectedDepth={selectedDepth}
+                onDepthChange={handleDepthChange}
+                disabled={isLoading}
+              />
             </div>
           )}
 
@@ -1680,21 +1677,13 @@ const SwapComponent: React.FC = () => {
             >
               {isTopUp ? 'Additional duration' : 'Storage duration'}
             </label>
-            <select
-              className={styles.select}
-              value={selectedDays || ''}
-              onChange={e => {
-                const value = e.target.value;
-                setSelectedDays(value === '' ? null : Number(value));
-              }}
-            >
-              <option value="">Please select duration</option>
-              {TIME_OPTIONS.map(option => (
-                <option key={option.days} value={option.days}>
-                  {option.display}
-                </option>
-              ))}
-            </select>
+            <StorageDurationDropdown
+              timeOptions={TIME_OPTIONS}
+              selectedDays={selectedDays}
+              onDaysChange={setSelectedDays}
+              disabled={isLoading}
+              placeholder={isTopUp ? 'Please select additional duration' : 'Please select duration'}
+            />
           </div>
 
           {selectedDays && totalUsdAmount !== null && Number(totalUsdAmount) !== 0 && (
