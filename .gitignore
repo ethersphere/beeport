@@ -47,3 +47,8 @@ cache/
 artifacts/
 dist/
 misc/registry_data_2.json
+
+# test site
+backend/backend.log
+ci/webhook-logs.txt
+deploy-log.txt
