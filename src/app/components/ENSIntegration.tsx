@@ -11,6 +11,7 @@ import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
 import { mainnet } from 'wagmi/chains';
 import { ENS_SUBGRAPH_URL, ENS_SUBGRAPH_API_KEY } from './constants';
+import ENSDomainDropdown from './ENSDomainDropdown';
 import styles from './css/ENSIntegration.module.css';
 
 interface ENSIntegrationProps {
@@ -1302,28 +1303,23 @@ You can now access your content at:
                   />
                 ) : isLoadingDomains ? (
                   // Show loading state while fetching domains
-                  <div className={styles.loadingContainer}>
-                    <div className={styles.loadingDomains}>
-                      <div className={styles.spinner}></div>
-                      🔍 Searching for your ENS domains...
-                    </div>
-                  </div>
+                  <ENSDomainDropdown
+                    domains={[]}
+                    selectedDomain={selectedDomain}
+                    onDomainSelect={handleDomainChange}
+                    isLoading={true}
+                    disabled={isLoading}
+                    placeholder="🔍 Searching for your ENS domains..."
+                  />
                 ) : ownedDomains.length > 0 ? (
                   // Show dropdown if domains were found
-                  <select
-                    id="domain"
-                    value={selectedDomain}
-                    onChange={e => handleDomainChange(e.target.value)}
-                    className={styles.domainSelect}
+                  <ENSDomainDropdown
+                    domains={ownedDomains}
+                    selectedDomain={selectedDomain}
+                    onDomainSelect={handleDomainChange}
                     disabled={isLoading}
-                  >
-                    <option value="">Select a domain...</option>
-                    {ownedDomains.map(domain => (
-                      <option key={domain} value={domain}>
-                        {domain}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select a domain..."
+                  />
                 ) : (
                   // Show input field if no domains were found
                   <input

@@ -509,27 +509,7 @@
   border-left: 3px solid #ff7a00;
 }
 
-.domainSelect {
-  width: 100%;
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-  color: #1a202c;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.domainSelect:hover {
-  border-color: #cbd5e0;
-}
-
-.domainSelect:focus {
-  outline: none;
-  border-color: #3182ce;
-  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
-}
+/* Removed domainSelect styles - now using custom ENSDomainDropdown component */
 
 .loadingContainer {
   width: 100%;
