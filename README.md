@@ -41,6 +41,10 @@ npx serve out
 
 7. How do we handle downloads of data, do we enforce gitcoin passport or leave it to ENS?
 
+## ✅ Recently Added Features
+
+- **ENS Integration**: Link your ENS domains to Swarm content! Users can now access uploaded content via human-readable domain names (e.g., `yourname.eth`) instead of complex Swarm reference hashes.
+
 ## How to run locally
 
 First install swarm desktop and run it or install and run bee node locally

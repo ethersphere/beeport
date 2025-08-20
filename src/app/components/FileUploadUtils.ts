@@ -34,7 +34,8 @@ export interface FileUploadParams {
     reference: string,
     postageBatchId: string,
     expiryDate: number,
-    filename?: string
+    filename?: string,
+    isWebpageUpload?: boolean
   ) => void;
 }
 
@@ -61,7 +62,8 @@ export interface MultiFileUploadParams {
     reference: string,
     postageBatchId: string,
     expiryDate: number,
-    filename?: string
+    filename?: string,
+    isWebpageUpload?: boolean
   ) => void;
   setMultiFileResults: React.Dispatch<React.SetStateAction<MultiFileResult[]>>;
 }
@@ -483,7 +485,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           parsedReference.reference,
           postageBatchId,
           stamp.batchTTL,
-          processedFile?.name
+          processedFile?.name,
+          isWebpageUpload
         );
 
         return parsedReference.reference;
@@ -886,7 +889,13 @@ export const handleMultiFileUpload = async (
             const expiryDate = Date.now() + stampStatus.batchTTL * 1000;
 
             console.log(`Saving reference for ${result.filename}: ${result.reference}`);
-            saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename);
+            saveUploadReference(
+              result.reference,
+              postageBatchId,
+              expiryDate,
+              result.filename,
+              false
+            );
 
             setUploadStampInfo({
               batchID: stampStatus.batchID,
@@ -907,7 +916,7 @@ export const handleMultiFileUpload = async (
           console.error('Error getting stamp info for history:', stampError);
           // Still save the reference even if we can't get stamp info
           const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // Default 30 days
-          saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename);
+          saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename, false);
         }
       }
 

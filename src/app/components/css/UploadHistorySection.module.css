@@ -157,6 +157,13 @@
   word-break: break-all;
 }
 
+.filenameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .fileType {
   font-size: 12px;
   color: #8b949e;
@@ -245,6 +252,62 @@
   color: #8b949e;
 }
 
+/* ENS Integration Styles */
+.ensInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8b949e;
+  position: relative;
+  margin-left: 8px;
+}
+
+.ensInfo svg {
+  color: #3b82f6;
+}
+
+.ensTooltip {
+  font-size: 12px;
+  color: #8b949e;
+  font-weight: 500;
+}
+
+.ensButton {
+  background-color: #3b82f6;
+  color: #ffffff;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: fit-content;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.ensButton:hover {
+  background-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.ensButton:active {
+  background-color: #1d4ed8;
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.referenceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .backButton {
   margin-top: 20px;
   padding: 10px 16px;
@@ -260,6 +323,33 @@
 
 .backButton:hover {
   background-color: rgba(48, 54, 61, 0.5);
+}
+
+.associatedDomainsRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.domainsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.domainLink {
+  color: #ff7a00;
+  text-decoration: none;
+  background-color: #1f2937;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.domainLink:hover {
+  background-color: #2d3748;
+  text-decoration: underline;
 }
 
 /* Responsive design */

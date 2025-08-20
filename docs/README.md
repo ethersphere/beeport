@@ -20,6 +20,7 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 - **[Architecture](./architecture.md)** - Project architecture and third-party integrations
 - **[Postage Stamps](./postage-stamps.md)** - Understanding and managing storage stamps
+- **[ENS Integration](./ens-integration.md)** - Link your ENS domains to Swarm content
 - **[File Formats & Limits](./file-formats-limits.md)** - Supported formats and size limitations
 - **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
 
@@ -44,13 +45,14 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 ## 📋 Feature Overview
 
-| Feature        | File Types | Special Processing          | Use Case             |
-| -------------- | ---------- | --------------------------- | -------------------- |
-| Single File    | Any        | Optional archive extraction | Individual files     |
-| Multiple Files | Any        | Sequential upload           | Batch operations     |
-| ZIP Upload     | .zip       | Extract → TAR conversion    | Archive distribution |
-| Webpage Upload | .tar, .zip | Web server configuration    | Static websites      |
-| NFT Collection | .zip       | Metadata URL rewriting      | NFT projects         |
+| Feature         | File Types | Special Processing          | Use Case             |
+| --------------- | ---------- | --------------------------- | -------------------- |
+| Single File     | Any        | Optional archive extraction | Individual files     |
+| Multiple Files  | Any        | Sequential upload           | Batch operations     |
+| ZIP Upload      | .zip       | Extract → TAR conversion    | Archive distribution |
+| Webpage Upload  | .tar, .zip | Web server configuration    | Static websites      |
+| NFT Collection  | .zip       | Metadata URL rewriting      | NFT projects         |
+| ENS Integration | Any        | Content hash linking        | Domain-based access  |
 
 ## 🛠️ Technical Requirements
 

@@ -27,6 +27,11 @@ export const DEFAULT_BEE_API_URL =
 
 export const BEE_GATEWAY_URL = `https://bzz.link/bzz/`;
 
+export const ENS_SUBGRAPH_URL =
+  'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
+
+export const ENS_SUBGRAPH_API_KEY = '5260e01a116d193aced5a8963059e9d7';
+
 export const GNOSIS_PRICE_ORACLE_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_PRICE_ORACLE_ADDRESS ||
   '0x47EeF336e7fE5bED98499A4696bce8f28c1B0a8b';

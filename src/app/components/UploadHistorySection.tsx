@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
+import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
   address: string | undefined;
@@ -13,6 +14,8 @@ interface UploadRecord {
   filename?: string;
   stampId: string;
   expiryDate: number;
+  associatedDomains?: string[]; // New field for ENS domains linked to this reference
+  isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
 }
 
 interface UploadHistory {
@@ -24,6 +27,8 @@ type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
 const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUploadHistory }) => {
   const [history, setHistory] = React.useState<UploadRecord[]>([]);
   const [selectedFilter, setSelectedFilter] = React.useState<FileType>('all');
+  const [showENSModal, setShowENSModal] = React.useState(false);
+  const [selectedReference, setSelectedReference] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -65,8 +70,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   // File type detection functions
-  const getFileType = (filename?: string): FileType => {
+  const getFileType = (input?: string | UploadRecord): FileType => {
+    // Handle both filename string and UploadRecord input
+    let filename: string | undefined;
+    let isWebpageUpload = false;
+
+    if (typeof input === 'string') {
+      filename = input;
+    } else if (input && typeof input === 'object') {
+      filename = input.filename;
+      isWebpageUpload = input.isWebpageUpload || false;
+    }
+
     if (!filename) return 'all';
+
+    // Check if this was uploaded as a webpage first (overrides file extension)
+    if (isWebpageUpload) {
+      return 'websites';
+    }
 
     const extension = filename.toLowerCase();
 
@@ -125,8 +146,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return 'all';
   };
 
-  const getFileTypeLabel = (filename?: string): string => {
-    const type = getFileType(filename);
+  const getFileTypeLabel = (input?: string | UploadRecord): string => {
+    const type = getFileType(input);
     switch (type) {
       case 'images':
         return 'Image';
@@ -150,7 +171,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     return history.filter(record => {
-      const fileType = getFileType(record.filename);
+      const fileType = getFileType(record);
       return fileType === selectedFilter;
     });
   }, [history, selectedFilter]);
@@ -167,7 +188,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     };
 
     history.forEach(record => {
-      const type = getFileType(record.filename);
+      const type = getFileType(record);
       if (type !== 'all') {
         counts[type]++;
       }
@@ -198,6 +219,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Expiry (Days)',
       'Filename',
       'File Type',
+      'Is Webpage',
+      'Associated Domains', // New column
       'Full Link',
     ];
 
@@ -208,7 +231,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       formatDate(record.timestamp),
       formatExpiryDays(record.expiryDate),
       record.filename || 'Unnamed upload',
-      getFileTypeLabel(record.filename),
+      getFileTypeLabel(record),
+      record.isWebpageUpload ? 'Yes' : 'No',
+      record.associatedDomains?.join(', ') || '', // New field
       getReferenceUrl(record),
     ]);
 
@@ -262,7 +287,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               dateCreated,
               expiryDays,
               filename,
-              fileTypeOrFullLink,
+              fileType,
+              isWebpage,
+              associatedDomainsStr,
               fullLink,
             ] = fields;
 
@@ -277,13 +304,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             const expiryInSeconds = parseInt(expiryDays.replace(' days', '')) * 86400;
 
             if (!isNaN(timestamp) && !isNaN(expiryInSeconds)) {
-              newRecords.push({
+              const record: UploadRecord = {
                 reference,
                 stampId,
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
                 expiryDate: expiryInSeconds,
-              });
+                isWebpageUpload: isWebpage === 'Yes',
+              };
+
+              // Parse associated domains if present
+              if (associatedDomainsStr) {
+                record.associatedDomains = associatedDomainsStr
+                  .split(',')
+                  .map(d => d.trim())
+                  .filter(d => d);
+              }
+
+              newRecords.push(record);
 
               // Add to existing references set to prevent duplicates within the same upload
               existingReferences.add(reference);
@@ -404,6 +442,26 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               </svg>
             </button>
           )}
+          {address && (
+            <div className={styles.ensInfo}>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
+              </svg>
+              <span className={styles.ensTooltip}>
+                Click on ENS button to link reference to your ENS domain
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -470,8 +528,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             <div key={index} className={styles.historyItem}>
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
-                  <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
-                  <span className={styles.fileType}>{getFileTypeLabel(record.filename)}</span>
+                  <div className={styles.filenameRow}>
+                    <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                    {getFileType(record) === 'websites' && (
+                      <button
+                        className={styles.ensButton}
+                        onClick={() => {
+                          setSelectedReference(record.reference);
+                          setShowENSModal(true);
+                        }}
+                        title="Link to ENS Domain"
+                      >
+                        ENS
+                      </button>
+                    )}
+                  </div>
+                  <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                 </div>
                 <span className={styles.date}>{formatDate(record.timestamp)}</span>
               </div>
@@ -517,6 +589,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   <span className={styles.label}>Expires:</span>
                   <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
                 </div>
+                {record.associatedDomains && record.associatedDomains.length > 0 && (
+                  <div className={styles.associatedDomainsRow}>
+                    <span className={styles.label}>Linked to:</span>
+                    <div className={styles.domainsList}>
+                      {record.associatedDomains.map((domain, idx) => (
+                        <a
+                          key={idx}
+                          href={`https://${domain}.limo`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.domainLink}
+                        >
+                          {domain}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -526,6 +616,17 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       <button className={styles.backButton} onClick={() => setShowUploadHistory(false)}>
         Back
       </button>
+
+      {/* ENS Integration Modal */}
+      {showENSModal && (
+        <ENSIntegration
+          swarmReference={selectedReference}
+          onClose={() => {
+            setShowENSModal(false);
+            setSelectedReference('');
+          }}
+        />
+      )}
     </div>
   );
 };

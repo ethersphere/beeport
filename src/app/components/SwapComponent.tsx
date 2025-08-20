@@ -1169,7 +1169,8 @@ const SwapComponent: React.FC = () => {
     reference: string,
     postageBatchId: string,
     expiryDate: number,
-    filename?: string
+    filename?: string,
+    isWebpageUpload?: boolean
   ) => {
     if (!address) return;
 
@@ -1183,6 +1184,7 @@ const SwapComponent: React.FC = () => {
       filename,
       stampId: postageBatchId,
       expiryDate,
+      isWebpageUpload,
     });
 
     history[address] = addressHistory;
@@ -1257,8 +1259,20 @@ const SwapComponent: React.FC = () => {
 
         // Save both references to history
         const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days default
-        saveUploadReference(result.imagesReference, postageBatchId, expiryDate, 'images.tar');
-        saveUploadReference(result.metadataReference, postageBatchId, expiryDate, 'metadata.tar');
+        saveUploadReference(
+          result.imagesReference,
+          postageBatchId,
+          expiryDate,
+          'images.tar',
+          false
+        );
+        saveUploadReference(
+          result.metadataReference,
+          postageBatchId,
+          expiryDate,
+          'metadata.tar',
+          false
+        );
 
         setStatusMessage({
           step: 'Complete',
