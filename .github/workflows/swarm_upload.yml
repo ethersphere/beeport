@@ -66,6 +66,8 @@ jobs:
 
       - name: Build application
         run: npm run build
+        env:
+          NEXT_PUBLIC_DEFAULT_BEE_API_URL: https://app.ethswarm.org
 
       - name: Upload to Swarm
         uses: ethersphere/swarm-actions/upload-dir@latest
