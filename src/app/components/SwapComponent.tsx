@@ -49,6 +49,8 @@ import {
   getGnosisPublicClient,
   setGnosisRpcUrl,
   handleExchangeRateUpdate,
+  fetchCurrentPriceFromOracle,
+  fetchStampInfo,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -169,6 +171,9 @@ const SwapComponent: React.FC = () => {
     cost: string;
   } | null>(null);
 
+  // Add state for original stamp info (used in top-ups)
+  const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
 
@@ -234,6 +239,9 @@ const SwapComponent: React.FC = () => {
         resetTokens();
       }
     }
+    // selectedChainId intentionally omitted - we only want to respond to chainId changes
+    // Including it would cause the effect to run twice when chains differ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainId, isInitialized, resetTokens]);
 
   useEffect(() => {
@@ -260,23 +268,7 @@ const SwapComponent: React.FC = () => {
     fetchChains();
   }, []);
 
-  useEffect(() => {
-    if (!selectedDays || selectedDays === 0) {
-      setTotalUsdAmount(null);
-      setSwarmConfig(DEFAULT_SWARM_CONFIG);
-      return;
-    }
-
-    if (!currentPrice) return;
-
-    try {
-      updateSwarmBatchInitialBalance();
-    } catch (error) {
-      console.error('Error calculating total cost:', error);
-      setTotalUsdAmount(null);
-      setSwarmConfig(DEFAULT_SWARM_CONFIG);
-    }
-  }, [currentPrice, selectedDays, selectedDepth]);
+  // This useEffect will be moved after updateSwarmBatchInitialBalance declaration
 
   useEffect(() => {
     if (!isConnected || !address || !fromToken) return;
@@ -448,8 +440,6 @@ const SwapComponent: React.FC = () => {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // Intentionally only depends on swarmConfig.swarmBatchTotal to avoid infinite loops
-    // Adding all dependencies would cause constant re-runs and break price estimation
   }, [swarmConfig.swarmBatchTotal]);
 
   // Initialize LiFi function
@@ -502,33 +492,20 @@ const SwapComponent: React.FC = () => {
     fetchAndSetNode();
   }, [beeApiUrl, fetchAndSetNodeWalletAddress]);
 
+  // This useEffect will be moved after fetchCurrentPrice declaration
+
+  const fetchCurrentPrice = useCallback(async () => {
+    const price = await fetchCurrentPriceFromOracle(publicClient);
+    setCurrentPrice(price);
+  }, [publicClient]);
+
   useEffect(() => {
     // Execute first two functions immediately
     fetchCurrentPrice();
     fetchAndSetNodeWalletAddress();
-  }, [isConnected, address, fetchAndSetNodeWalletAddress]);
+  }, [isConnected, address, fetchCurrentPrice, fetchAndSetNodeWalletAddress]);
 
-  const fetchCurrentPrice = async () => {
-    if (publicClient) {
-      try {
-        // Just use getGnosisPublicClient directly, it will use the global RPC URL
-        const price = await getGnosisPublicClient().readContract({
-          address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
-          abi: GNOSIS_PRICE_ORACLE_ABI,
-          functionName: 'currentPrice',
-        });
-        console.log('price', price);
-        setCurrentPrice(BigInt(price));
-      } catch (error) {
-        console.error('Error fetching current price:', error);
-        setCurrentPrice(BigInt(28000));
-      }
-    } else {
-      setCurrentPrice(BigInt(28000));
-    }
-  };
-
-  const updateSwarmBatchInitialBalance = () => {
+  const updateSwarmBatchInitialBalance = useCallback(() => {
     if (currentPrice !== null) {
       const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
       const totalPricePerDuration =
@@ -553,7 +530,26 @@ const SwapComponent: React.FC = () => {
         swarmBatchTotal: totalAmount.toString(),
       }));
     }
-  };
+  }, [currentPrice, selectedDays, isTopUp, originalStampInfo, selectedDepth]);
+
+  // Move the useEffect that was causing declaration order issues
+  useEffect(() => {
+    if (!selectedDays || selectedDays === 0) {
+      setTotalUsdAmount(null);
+      setSwarmConfig(DEFAULT_SWARM_CONFIG);
+      return;
+    }
+
+    if (!currentPrice) return;
+
+    try {
+      updateSwarmBatchInitialBalance();
+    } catch (error) {
+      console.error('Error calculating total cost:', error);
+      setTotalUsdAmount(null);
+      setSwarmConfig(DEFAULT_SWARM_CONFIG);
+    }
+  }, [currentPrice, selectedDays, selectedDepth, updateSwarmBatchInitialBalance]);
 
   const calculateTotalAmount = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
@@ -1446,33 +1442,9 @@ const SwapComponent: React.FC = () => {
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
 
-  // Add this to the state variables near the beginning of the component
-  const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+  // originalStampInfo state declaration moved to the top with other state declarations
 
-  // Add this effect to fetch stamp info when topUpBatchId is set
-  useEffect(() => {
-    // Only fetch if we have a topUpBatchId and we're in top-up mode
-    if (topUpBatchId && isTopUp) {
-      const getStampInfo = async () => {
-        const stampInfo = await fetchStampInfo(topUpBatchId);
-        if (stampInfo) {
-          console.log('Fetched original stamp info:', stampInfo);
-          setOriginalStampInfo(stampInfo);
-
-          // Update the depth to match the original stamp
-          setSelectedDepth(stampInfo.depth);
-
-          // Lock the depth to the original value since we can't change it for top-ups
-          setSwarmConfig(prev => ({
-            ...prev,
-            swarmBatchDepth: stampInfo.depth.toString(),
-          }));
-        }
-      };
-
-      getStampInfo();
-    }
-  }, [topUpBatchId, isTopUp, beeApiUrl]);
+  // This useEffect will be moved after fetchStampInfo declaration
 
   // Modified URL parameter parsing to also check for hash fragments
   useEffect(() => {
@@ -1504,27 +1476,37 @@ const SwapComponent: React.FC = () => {
   }, []); // Only run once on mount
 
   // Function to fetch stamp information for a given batchId
-  const fetchStampInfo = async (batchId: string): Promise<StampInfo | null> => {
-    try {
-      // Make sure the batchId doesn't have 0x prefix for the API call
-      const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+  const fetchStampInfoForComponent = useCallback(
+    async (batchId: string): Promise<StampInfo | null> => {
+      return await fetchStampInfo(batchId, beeApiUrl);
+    },
+    [beeApiUrl]
+  );
 
-      const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
-        signal: AbortSignal.timeout(15000),
-      });
+  // Add this effect to fetch stamp info when topUpBatchId is set
+  useEffect(() => {
+    // Only fetch if we have a topUpBatchId and we're in top-up mode
+    if (topUpBatchId && isTopUp) {
+      const getStampInfo = async () => {
+        const stampInfo = await fetchStampInfoForComponent(topUpBatchId);
+        if (stampInfo) {
+          console.log('Fetched original stamp info:', stampInfo);
+          setOriginalStampInfo(stampInfo);
 
-      if (!response.ok) {
-        console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
-        return null;
-      }
+          // Update the depth to match the original stamp
+          setSelectedDepth(stampInfo.depth);
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error(`Error fetching stamp info for ${batchId}:`, error);
-      return null;
+          // Lock the depth to the original value since we can't change it for top-ups
+          setSwarmConfig(prev => ({
+            ...prev,
+            swarmBatchDepth: stampInfo.depth.toString(),
+          }));
+        }
+      };
+
+      getStampInfo();
     }
-  };
+  }, [topUpBatchId, isTopUp, fetchStampInfoForComponent]);
 
   // Calculate amount for topping up an existing batch
   const calculateTopUpAmount = (originalDepth: number) => {

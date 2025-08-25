@@ -336,3 +336,63 @@ export const fetchNodeWalletAddress = async (
     return defaultAddress;
   }
 };
+
+/**
+ * Fetches current price from Gnosis price oracle
+ * @param publicClient Optional public client to use, if not provided uses getGnosisPublicClient
+ * @returns Promise<bigint> The current price, or 28000n as fallback
+ */
+export const fetchCurrentPriceFromOracle = async (
+  publicClient?: any,
+  priceOracleAddress?: string,
+  priceOracleAbi?: any
+): Promise<bigint> => {
+  try {
+    // Import constants here to avoid circular dependencies
+    const { GNOSIS_PRICE_ORACLE_ADDRESS, GNOSIS_PRICE_ORACLE_ABI } = await import('./constants');
+
+    const client = publicClient || getGnosisPublicClient();
+    const oracleAddress = priceOracleAddress || GNOSIS_PRICE_ORACLE_ADDRESS;
+    const oracleAbi = priceOracleAbi || GNOSIS_PRICE_ORACLE_ABI;
+
+    const price = await client.readContract({
+      address: oracleAddress as `0x${string}`,
+      abi: oracleAbi,
+      functionName: 'currentPrice',
+    });
+
+    console.log('Price fetched from oracle:', price);
+    return BigInt(price);
+  } catch (error) {
+    console.error('Error fetching current price from oracle:', error);
+    return BigInt(28000); // Fallback price
+  }
+};
+
+/**
+ * Fetches stamp information for a given batch ID
+ * @param batchId The batch ID (with or without 0x prefix)
+ * @param beeApiUrl The Bee API URL
+ * @returns Promise<StampInfo | null> The stamp information or null if failed
+ */
+export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promise<any | null> => {
+  try {
+    // Make sure the batchId doesn't have 0x prefix for the API call
+    const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+
+    const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching stamp info for ${batchId}:`, error);
+    return null;
+  }
+};
