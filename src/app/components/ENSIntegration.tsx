@@ -167,7 +167,7 @@ const canManageDomain = async (
 // Convert Swarm reference to content hash format (as per ENSIP-7)
 const encodeSwarmHash = (swarmReference: string): `0x${string}` => {
   // Remove 0x prefix if present
-  let cleanReference = swarmReference.replace(/^0x/, '');
+  const cleanReference = swarmReference.replace(/^0x/, '');
 
   // Validate hash length - should be 64 hex characters (32 bytes)
   if (cleanReference.length !== 64) {
@@ -773,7 +773,7 @@ Your new ENS domain is now registered and ready to use:
         }),
       });
 
-      let allDomains: string[] = [];
+      const allDomains: string[] = [];
 
       if (domainsResponse.ok) {
         const domainsData = await domainsResponse.json();
@@ -1390,8 +1390,8 @@ You can now access your content at:
               )}
               <div className={styles.domainHelp}>
                 <p>
-                  Don't have an ENS domain? Use the "Register Domain" button below to get started,
-                  or{' '}
+                  Don&apos;t have an ENS domain? Use the &quot;Register Domain&quot; button below to
+                  get started, or{' '}
                   <a href="https://app.ens.domains" target="_blank" rel="noopener noreferrer">
                     visit app.ens.domains
                   </a>
