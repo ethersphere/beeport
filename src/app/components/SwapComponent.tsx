@@ -213,7 +213,7 @@ const SwapComponent: React.FC = () => {
     };
 
     init();
-  }, [isConnected, address, isInitialized]);
+  }, [isConnected, address, isInitialized, resetTokens]);
 
   // Separate useEffect to fetch tokens after selectedChainId is updated
   useEffect(() => {

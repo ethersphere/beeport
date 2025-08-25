@@ -1,5 +1,5 @@
 import { ChainType, getTokenBalancesByChain, getTokens, TokensResponse } from '@lifi/sdk';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { formatUnits } from 'viem';
 import { performWithRetry, toChecksumAddress } from './utils';
 
@@ -66,12 +66,12 @@ export const useTokenManagement = (
   /**
    * Reset token state
    */
-  const resetTokens = () => {
+  const resetTokens = useCallback(() => {
     setTokenBalances(null);
     setAvailableTokens(null);
     setFromToken('');
     setSelectedTokenInfo(null);
-  };
+  }, []);
 
   /**
    * Fetch tokens and balances for a specific chain
