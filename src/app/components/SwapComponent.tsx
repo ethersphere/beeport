@@ -543,10 +543,9 @@ const SwapComponent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Execute first two functions immediately
+    // Execute price fetching when wallet connects
     fetchCurrentPrice();
-    fetchAndSetNodeWalletAddress();
-  }, [isConnected, address, fetchCurrentPrice, fetchAndSetNodeWalletAddress]);
+  }, [isConnected, address, fetchCurrentPrice]);
 
   const updateSwarmBatchInitialBalance = useCallback(() => {
     if (currentPrice !== null) {
