@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
@@ -60,7 +60,7 @@ import {
   MultiFileResult,
 } from './FileUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
-import { generateAndUpdateNonce } from './utils';
+import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
 import { useTokenManagement } from './TokenUtils';
 
 // Update the StampInfo interface to include the additional properties
@@ -237,25 +237,12 @@ const SwapComponent: React.FC = () => {
   }, [chainId, isInitialized, resetTokens]);
 
   useEffect(() => {
-    const fetchAndSetNode = async () => {
-      await fetchNodeWalletAddress();
-    };
-    fetchAndSetNode();
-  }, [beeApiUrl]);
-
-  useEffect(() => {
     if (isConnected && publicClient && walletClient) {
       // Reinitialize LiFi whenever the wallet changes
       initializeLiFi();
     } else {
     }
   }, [isConnected, publicClient, walletClient, address]);
-
-  useEffect(() => {
-    // Execute first two functions immediately
-    fetchCurrentPrice();
-    fetchNodeWalletAddress();
-  }, [isConnected, address]);
 
   useEffect(() => {
     const fetchChains = async () => {
@@ -503,23 +490,23 @@ const SwapComponent: React.FC = () => {
     });
   };
 
-  const fetchNodeWalletAddress = async () => {
-    try {
-      const response = await fetch(`${beeApiUrl}/wallet`, {
-        signal: AbortSignal.timeout(15000),
-      });
-      setNodeAddress(DEFAULT_NODE_ADDRESS);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.walletAddress) {
-          setNodeAddress(data.walletAddress);
-          console.log('Node wallet address set:', data.walletAddress);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching node wallet address:', error);
-    }
-  };
+  const fetchAndSetNodeWalletAddress = useCallback(async () => {
+    const address = await fetchNodeWalletAddress(beeApiUrl, DEFAULT_NODE_ADDRESS);
+    setNodeAddress(address);
+  }, [beeApiUrl]);
+
+  useEffect(() => {
+    const fetchAndSetNode = async () => {
+      await fetchAndSetNodeWalletAddress();
+    };
+    fetchAndSetNode();
+  }, [beeApiUrl, fetchAndSetNodeWalletAddress]);
+
+  useEffect(() => {
+    // Execute first two functions immediately
+    fetchCurrentPrice();
+    fetchAndSetNodeWalletAddress();
+  }, [isConnected, address, fetchAndSetNodeWalletAddress]);
 
   const fetchCurrentPrice = async () => {
     if (publicClient) {

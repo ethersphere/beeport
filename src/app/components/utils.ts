@@ -305,3 +305,34 @@ export const getGnosisPublicClient = () => {
     transport: rpcUrl ? http(rpcUrl) : http(),
   });
 };
+
+/**
+ * Fetches the node wallet address from the Bee API
+ * @param beeApiUrl The Bee API URL to fetch from
+ * @param defaultAddress The default address to return if fetch fails
+ * @returns Promise<string> The wallet address
+ */
+export const fetchNodeWalletAddress = async (
+  beeApiUrl: string,
+  defaultAddress: string
+): Promise<string> => {
+  try {
+    const response = await fetch(`${beeApiUrl}/wallet`, {
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.walletAddress) {
+        console.log('Node wallet address fetched:', data.walletAddress);
+        return data.walletAddress;
+      }
+    }
+
+    console.log('Using default node address:', defaultAddress);
+    return defaultAddress;
+  } catch (error) {
+    console.error('Error fetching node wallet address:', error);
+    return defaultAddress;
+  }
+};
