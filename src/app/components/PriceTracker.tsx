@@ -29,7 +29,7 @@ const PriceTracker = () => {
       setLoading(true);
       try {
         // Get Gnosis client
-        const publicClient = getGnosisPublicClient();
+        const publicClient = getGnosisPublicClient().client;
 
         // First, determine the token order in the pool (token0 vs token1)
         // This is important for calculating the price correctly

@@ -293,17 +293,33 @@ export const handleExchangeRateUpdate = async (
  * Creates and returns a public client for the Gnosis chain
  * @returns A public client configured for the Gnosis chain
  */
-export const getGnosisPublicClient = () => {
+export const getGnosisPublicClient = (rpcIndex: number = 0) => {
   // Use global custom RPC URL if set, otherwise fall back to env variable
-  // const rpcUrl = globalCustomRpcUrl || process.env.NEXT_PUBLIC_GNOSIS_RPC;
+  const envRpcUrl = process.env.NEXT_PUBLIC_GNOSIS_RPC;
 
-  const rpcUrl = globalCustomRpcUrl || 'https://go.getblock.io/228e95bbea11427d8feb1038bcc04a98';
+  // Public fallback RPC URLs in order of preference
+  const fallbackRpcs = [
+    'https://rpc.gnosischain.com',
+    'https://gnosis-mainnet.public.blastapi.io',
+    'https://gnosis.drpc.org',
+  ];
+
+  let rpcUrl;
+  if (rpcIndex === 0) {
+    // Primary attempt: use custom/env RPC or first fallback
+    rpcUrl = globalCustomRpcUrl || envRpcUrl || fallbackRpcs[0];
+  } else {
+    // Fallback attempts: use specific fallback RPC
+    rpcUrl = fallbackRpcs[rpcIndex] || fallbackRpcs[fallbackRpcs.length - 1];
+  }
 
   // We are using public RPC for the Gnosis chain unless a custom RPC is set or env variable is set
-  return createPublicClient({
+  const client = createPublicClient({
     chain: gnosis,
     transport: rpcUrl ? http(rpcUrl) : http(),
   });
+
+  return { client, rpcUrl };
 };
 
 /**
@@ -342,7 +358,7 @@ export const fetchNodeWalletAddress = async (
  * @param publicClient Optional public client to use, if not provided uses getGnosisPublicClient
  * @param priceOracleAddress Optional oracle address, if not provided uses default
  * @param priceOracleAbi Optional oracle ABI, if not provided uses default
- * @returns Promise<bigint> The current price, or 28000n as fallback
+ * @returns Promise<bigint> The current price, or 65000n as fallback
  */
 export const fetchCurrentPriceFromOracle = async (
   publicClient?: any,
@@ -350,26 +366,30 @@ export const fetchCurrentPriceFromOracle = async (
   priceOracleAbi?: any
 ): Promise<bigint> => {
   try {
-    // Use getGnosisPublicClient directly to ensure we have the right client
-    const client = publicClient || getGnosisPublicClient();
-    
+    // Use our custom RPC configuration first, not wagmi's publicClient
+    const client = getGnosisPublicClient().client;
+
     // If no address/abi provided, we'll need them from the calling component
     // to avoid circular dependencies
     if (!priceOracleAddress || !priceOracleAbi) {
-      throw new Error('Price oracle address and ABI must be provided to avoid circular dependencies');
+      throw new Error(
+        'Price oracle address and ABI must be provided to avoid circular dependencies'
+      );
     }
-    
+
     const price = await client.readContract({
       address: priceOracleAddress as `0x${string}`,
       abi: priceOracleAbi,
       functionName: 'currentPrice',
+      args: [],
     });
-    
-    console.log('Price fetched from oracle:', price);
-    return BigInt(price);
+
+    console.log('Price fetched from oracle (utility):', price);
+    return BigInt(price as string | number | bigint);
   } catch (error) {
     console.error('Error fetching current price from oracle:', error);
-    return BigInt(28000); // Fallback price
+    console.log('Using utility fallback price: 65000');
+    return BigInt(65000); // Fallback price
   }
 };
 

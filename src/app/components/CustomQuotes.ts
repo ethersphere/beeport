@@ -33,7 +33,7 @@ export const checkGasForwarding = async (
   let fromAmountForGas: bigint = 0n;
 
   try {
-    const gnosisProvider = getGnosisPublicClient();
+    const gnosisProvider = getGnosisPublicClient().client;
     const balance = await gnosisProvider.getBalance({
       address: address as `0x${string}`,
     });

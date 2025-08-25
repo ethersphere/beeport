@@ -497,13 +497,50 @@ const SwapComponent: React.FC = () => {
   // This useEffect will be moved after fetchCurrentPrice declaration
 
   const fetchCurrentPrice = useCallback(async () => {
-    const price = await fetchCurrentPriceFromOracle(
-      publicClient,
-      GNOSIS_PRICE_ORACLE_ADDRESS,
-      GNOSIS_PRICE_ORACLE_ABI
-    );
-    setCurrentPrice(price);
-  }, [publicClient]);
+    // Get RPC info outside try block for error logging
+    const { client, rpcUrl } = getGnosisPublicClient(0);
+
+    try {
+      // Try primary RPC (custom/env or first fallback)
+      const price = await client.readContract({
+        address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
+        abi: GNOSIS_PRICE_ORACLE_ABI,
+        functionName: 'currentPrice',
+      });
+
+      if (price === null || price === undefined) {
+        console.log('Oracle returned empty data, using fallback price: 65000');
+        setCurrentPrice(BigInt(65000));
+        return;
+      }
+
+      console.log('Price fetched from oracle:', price);
+      setCurrentPrice(BigInt(price));
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Primary RPC (${rpcUrl}) failed:`, errorMsg.split('.')[0]);
+
+      // Try with a different RPC as fallback
+      try {
+        const { client: fallbackClient, rpcUrl: fallbackRpcUrl } = getGnosisPublicClient(1);
+        const fallbackPrice = await fallbackClient.readContract({
+          address: GNOSIS_PRICE_ORACLE_ADDRESS as `0x${string}`,
+          abi: GNOSIS_PRICE_ORACLE_ABI,
+          functionName: 'currentPrice',
+        });
+
+        console.log('Price fetched from fallback RPC:', fallbackPrice);
+        setCurrentPrice(BigInt(fallbackPrice));
+      } catch (fallbackError) {
+        const { rpcUrl: fallbackRpcUrl } = getGnosisPublicClient(1);
+        const fallbackErrorMsg =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        console.error(`Fallback RPC (${fallbackRpcUrl}) failed:`, fallbackErrorMsg.split('.')[0]);
+        console.log('Using final fallback price: 65000');
+        setCurrentPrice(BigInt(65000)); // Final fallback price
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Execute first two functions immediately
