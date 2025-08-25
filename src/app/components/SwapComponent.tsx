@@ -234,7 +234,7 @@ const SwapComponent: React.FC = () => {
         resetTokens();
       }
     }
-  }, [chainId, isInitialized]);
+  }, [chainId, isInitialized, resetTokens]);
 
   useEffect(() => {
     const fetchAndSetNode = async () => {
@@ -460,6 +460,9 @@ const SwapComponent: React.FC = () => {
         priceEstimateAbortControllerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally only depends on swarmConfig.swarmBatchTotal to avoid infinite loops
+    // Adding all dependencies would cause constant re-runs and break price estimation
   }, [swarmConfig.swarmBatchTotal]);
 
   // Initialize LiFi function
