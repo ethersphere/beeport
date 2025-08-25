@@ -1422,6 +1422,24 @@ const SwapComponent: React.FC = () => {
     setActiveDropdown(dropdownName);
   };
 
+  const handleTokenSelect = (address: string, token: any) => {
+    console.log('Token manually selected:', address, token?.symbol);
+
+    // Only reset duration if this is a user-initiated token change (not during initial loading)
+    if (fromToken && address !== fromToken) {
+      console.log('Resetting duration due to token change');
+      setSelectedDays(null);
+      setTotalUsdAmount(null);
+      setInsufficientFunds(false);
+      setLiquidityError(false);
+      setAggregatorDown(false);
+      setIsPriceEstimating(false);
+    }
+
+    setFromToken(address);
+    setSelectedTokenInfo(token);
+  };
+
   // Reset insufficientFunds whenever the selected token changes
   useEffect(() => {
     // When token info changes, reset insufficient funds flag
@@ -1630,23 +1648,7 @@ const SwapComponent: React.FC = () => {
               tokenBalances={tokenBalances}
               selectedTokenInfo={selectedTokenInfo}
               availableTokens={availableTokens}
-              onTokenSelect={(address, token) => {
-                console.log('Token manually selected:', address, token?.symbol);
-
-                // Only reset duration if this is a user-initiated token change (not during initial loading)
-                if (fromToken && address !== fromToken) {
-                  console.log('Resetting duration due to token change');
-                  setSelectedDays(null);
-                  setTotalUsdAmount(null);
-                  setInsufficientFunds(false);
-                  setLiquidityError(false);
-                  setAggregatorDown(false);
-                  setIsPriceEstimating(false);
-                }
-
-                setFromToken(address);
-                setSelectedTokenInfo(token);
-              }}
+              onTokenSelect={handleTokenSelect}
               minBalanceUsd={MIN_TOKEN_BALANCE_USD}
               activeDropdown={activeDropdown}
               onOpenDropdown={handleOpenDropdown}

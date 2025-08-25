@@ -149,6 +149,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
   useEffect(() => {
     // Reset token selection when chain changes
     onTokenSelect('', null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChainId]);
 
   useEffect(() => {
@@ -164,6 +165,7 @@ const SearchableTokenDropdown: React.FC<TokenDropdownProps> = ({
         onTokenSelect(firstTokenData.address, firstToken);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableTokensList, selectedTokenInfo, selectedChainId, isConnected]);
 
   useEffect(() => {
