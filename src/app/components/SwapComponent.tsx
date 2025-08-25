@@ -221,7 +221,7 @@ const SwapComponent: React.FC = () => {
       console.log('Fetching tokens with chain ID:', selectedChainId);
       fetchTokensAndBalances(selectedChainId);
     }
-  }, [selectedChainId, isInitialized, isConnected, address]);
+  }, [selectedChainId, isInitialized, isConnected, address, fetchTokensAndBalances]);
 
   useEffect(() => {
     if (chainId && isInitialized) {
