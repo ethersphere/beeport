@@ -244,13 +244,7 @@ const SwapComponent: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainId, isInitialized, resetTokens]);
 
-  useEffect(() => {
-    if (isConnected && publicClient && walletClient) {
-      // Reinitialize LiFi whenever the wallet changes
-      initializeLiFi();
-    } else {
-    }
-  }, [isConnected, publicClient, walletClient, address]);
+  // This useEffect will be moved after initializeLiFi declaration
 
   useEffect(() => {
     const fetchChains = async () => {
@@ -443,7 +437,7 @@ const SwapComponent: React.FC = () => {
   }, [swarmConfig.swarmBatchTotal]);
 
   // Initialize LiFi function
-  const initializeLiFi = () => {
+  const initializeLiFi = useCallback(() => {
     // Create new config instead of modifying existing one
     createConfig({
       integrator: 'Swarm',
@@ -478,7 +472,15 @@ const SwapComponent: React.FC = () => {
         }),
       ],
     });
-  };
+  }, [switchChain]);
+
+  useEffect(() => {
+    if (isConnected && publicClient && walletClient) {
+      // Reinitialize LiFi whenever the wallet changes
+      initializeLiFi();
+    } else {
+    }
+  }, [isConnected, publicClient, walletClient, address, initializeLiFi]);
 
   const fetchAndSetNodeWalletAddress = useCallback(async () => {
     const address = await fetchNodeWalletAddress(beeApiUrl, DEFAULT_NODE_ADDRESS);
@@ -495,7 +497,11 @@ const SwapComponent: React.FC = () => {
   // This useEffect will be moved after fetchCurrentPrice declaration
 
   const fetchCurrentPrice = useCallback(async () => {
-    const price = await fetchCurrentPriceFromOracle(publicClient);
+    const price = await fetchCurrentPriceFromOracle(
+      publicClient,
+      GNOSIS_PRICE_ORACLE_ADDRESS,
+      GNOSIS_PRICE_ORACLE_ABI
+    );
     setCurrentPrice(price);
   }, [publicClient]);
 

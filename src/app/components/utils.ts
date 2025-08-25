@@ -340,6 +340,8 @@ export const fetchNodeWalletAddress = async (
 /**
  * Fetches current price from Gnosis price oracle
  * @param publicClient Optional public client to use, if not provided uses getGnosisPublicClient
+ * @param priceOracleAddress Optional oracle address, if not provided uses default
+ * @param priceOracleAbi Optional oracle ABI, if not provided uses default
  * @returns Promise<bigint> The current price, or 28000n as fallback
  */
 export const fetchCurrentPriceFromOracle = async (
@@ -348,19 +350,21 @@ export const fetchCurrentPriceFromOracle = async (
   priceOracleAbi?: any
 ): Promise<bigint> => {
   try {
-    // Import constants here to avoid circular dependencies
-    const { GNOSIS_PRICE_ORACLE_ADDRESS, GNOSIS_PRICE_ORACLE_ABI } = await import('./constants');
-
+    // Use getGnosisPublicClient directly to ensure we have the right client
     const client = publicClient || getGnosisPublicClient();
-    const oracleAddress = priceOracleAddress || GNOSIS_PRICE_ORACLE_ADDRESS;
-    const oracleAbi = priceOracleAbi || GNOSIS_PRICE_ORACLE_ABI;
-
+    
+    // If no address/abi provided, we'll need them from the calling component
+    // to avoid circular dependencies
+    if (!priceOracleAddress || !priceOracleAbi) {
+      throw new Error('Price oracle address and ABI must be provided to avoid circular dependencies');
+    }
+    
     const price = await client.readContract({
-      address: oracleAddress as `0x${string}`,
-      abi: oracleAbi,
+      address: priceOracleAddress as `0x${string}`,
+      abi: priceOracleAbi,
       functionName: 'currentPrice',
     });
-
+    
     console.log('Price fetched from oracle:', price);
     return BigInt(price);
   } catch (error) {

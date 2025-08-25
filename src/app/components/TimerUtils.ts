@@ -83,7 +83,9 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
         timerIntervalRef.current = null;
       }
     };
-  }, [estimatedTime, statusMessage.step]);
+    // remainingTime is intentionally omitted to avoid infinite loops
+    // The effect only reads remainingTime to check if it's null for initialization
+  }, [estimatedTime, statusMessage.step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     estimatedTime,
