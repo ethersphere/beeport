@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   useAccount,
   usePublicClient,
@@ -297,7 +297,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   >('input');
 
   // Function to switch to Ethereum mainnet
-  const switchToEthereum = async () => {
+  const switchToEthereum = useCallback(async () => {
     if (!switchChain) return false;
 
     try {
@@ -311,7 +311,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
     } finally {
       setIsSwitchingNetwork(false);
     }
-  };
+  }, [switchChain]);
 
   // Check and switch to Ethereum when component mounts
   useEffect(() => {
@@ -319,7 +319,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
       console.log('🔄 ENS requires Ethereum mainnet, switching...');
       switchToEthereum();
     }
-  }, [address, chainId]);
+  }, [address, chainId, switchToEthereum]);
 
   // Function to ensure we're on Ethereum before ENS operations
   const ensureEthereumNetwork = async (): Promise<boolean> => {
@@ -374,53 +374,56 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   };
 
   // Check domain availability for registration
-  const checkDomainAvailability = async (domainName: string) => {
-    if (!domainName || !publicClient) return;
+  const checkDomainAvailability = useCallback(
+    async (domainName: string) => {
+      if (!domainName || !publicClient) return;
 
-    // Only check .eth domains for registration
-    if (!domainName.endsWith('.eth')) {
-      setIsAvailable(false);
-      return;
-    }
+      // Only check .eth domains for registration
+      if (!domainName.endsWith('.eth')) {
+        setIsAvailable(false);
+        return;
+      }
 
-    setIsCheckingAvailability(true);
-    try {
-      const name = domainName.replace('.eth', '');
-      console.log('🔍 Checking availability for:', name);
+      setIsCheckingAvailability(true);
+      try {
+        const name = domainName.replace('.eth', '');
+        console.log('🔍 Checking availability for:', name);
 
-      const available = (await publicClient.readContract({
-        address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
-        abi: ETH_REGISTRAR_CONTROLLER_ABI,
-        functionName: 'available',
-        args: [name],
-      })) as boolean;
-
-      console.log('✅ Domain availability:', available);
-      setIsAvailable(available);
-
-      if (available) {
-        // Get price for 1 year registration
-        const duration = BigInt(365 * 24 * 60 * 60); // 1 year in seconds
-        const price = (await publicClient.readContract({
+        const available = (await publicClient.readContract({
           address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
           abi: ETH_REGISTRAR_CONTROLLER_ABI,
-          functionName: 'rentPrice',
-          args: [name, duration],
-        })) as bigint;
+          functionName: 'available',
+          args: [name],
+        })) as boolean;
 
-        const priceInEth = (Number(price) / 1e18).toFixed(4);
-        setRegistrationPrice(priceInEth);
-        console.log('💰 Registration price:', priceInEth, 'ETH');
-      } else {
-        setRegistrationPrice('');
+        console.log('✅ Domain availability:', available);
+        setIsAvailable(available);
+
+        if (available) {
+          // Get price for 1 year registration
+          const duration = BigInt(365 * 24 * 60 * 60); // 1 year in seconds
+          const price = (await publicClient.readContract({
+            address: ETH_REGISTRAR_CONTROLLER_ADDRESS,
+            abi: ETH_REGISTRAR_CONTROLLER_ABI,
+            functionName: 'rentPrice',
+            args: [name, duration],
+          })) as bigint;
+
+          const priceInEth = (Number(price) / 1e18).toFixed(4);
+          setRegistrationPrice(priceInEth);
+          console.log('💰 Registration price:', priceInEth, 'ETH');
+        } else {
+          setRegistrationPrice('');
+        }
+      } catch (error) {
+        console.error('❌ Error checking availability:', error);
+        setIsAvailable(null);
+      } finally {
+        setIsCheckingAvailability(false);
       }
-    } catch (error) {
-      console.error('❌ Error checking availability:', error);
-      setIsAvailable(null);
-    } finally {
-      setIsCheckingAvailability(false);
-    }
-  };
+    },
+    [publicClient]
+  );
 
   // Handle domain registration process
   const handleDomainRegistration = async () => {
@@ -642,7 +645,7 @@ Your new ENS domain is now registered and ready to use:
 
       return () => clearTimeout(timeoutId);
     }
-  }, [selectedDomain, registrationMode]);
+  }, [selectedDomain, registrationMode, checkDomainAvailability]);
 
   // Handle waiting period countdown
   useEffect(() => {
@@ -664,80 +667,8 @@ Your new ENS domain is now registered and ready to use:
     }
   }, [registrationStep, commitmentTimestamp, selectedDomain]);
 
-  // Add useEffect to fetch contenthash when domain is validated
-  useEffect(() => {
-    const fetchCurrentContentHash = async () => {
-      if (!selectedDomain || !ensResolver || !publicClient) return;
-
-      try {
-        const normalizedDomain = normalize(selectedDomain);
-        const domainNode = namehash(normalizedDomain);
-
-        const contentHashBytes = (await publicClient.readContract({
-          address: ensResolver as `0x${string}`,
-          abi: ENS_RESOLVER_ABI,
-          functionName: 'contenthash',
-          args: [domainNode],
-        })) as `0x${string}`;
-
-        if (contentHashBytes === '0x') {
-          setCurrentContentHash('No content hash set');
-          setContentAlreadyAssociated(false);
-          return;
-        }
-
-        // Check if it's a Swarm hash (starts with e40101fa011b20)
-        const cleanHash = contentHashBytes.replace('0x', '').toLowerCase();
-        if (cleanHash.startsWith('e40101fa011b20')) {
-          // Extract the 32-byte hash (last 64 hex chars)
-          const swarmRef = cleanHash.slice(14);
-          setCurrentContentHash(`Swarm: bzz://${shortenHash(swarmRef)}`);
-
-          // Check if this matches the current swarmReference being set
-          const cleanSwarmReference = swarmReference.replace(/^0x/, '').toLowerCase();
-          if (swarmRef === cleanSwarmReference && address) {
-            setContentAlreadyAssociated(true);
-            // Save to history if not already saved with this domain
-            saveReferenceWithDomain(swarmReference, selectedDomain);
-          } else {
-            setContentAlreadyAssociated(false);
-          }
-        } else {
-          // For other types, display the full hex
-          setCurrentContentHash(`Content Hash: ${shortenHash(contentHashBytes, 6, 6)}`);
-          setContentAlreadyAssociated(false);
-        }
-      } catch (err) {
-        console.error('Error fetching current contenthash:', err);
-        setCurrentContentHash('Error fetching content hash');
-        setContentAlreadyAssociated(false);
-      }
-    };
-
-    if (ensAddress && !ensAddressLoading && !ensAddressError) {
-      fetchCurrentContentHash();
-    } else {
-      setCurrentContentHash('');
-      setContentAlreadyAssociated(false);
-    }
-  }, [
-    selectedDomain,
-    ensResolver,
-    publicClient,
-    ensAddress,
-    ensAddressLoading,
-    ensAddressError,
-    swarmReference,
-    address,
-  ]);
-
-  // Add useEffect to fetch owned domains when wallet is connected
-  useEffect(() => {
-    fetchOwnedDomains();
-  }, [address]);
-
   // Fetch owned domains function
-  const fetchOwnedDomains = async () => {
+  const fetchOwnedDomains = useCallback(async () => {
     if (!address || !publicClient) {
       setIsLoadingDomains(false);
       setHasAttemptedFetch(true);
@@ -932,7 +863,7 @@ Your new ENS domain is now registered and ready to use:
       setIsLoadingDomains(false);
       setHasAttemptedFetch(true);
     }
-  };
+  }, [address, publicClient]);
 
   // Function to refresh just the domain list (for after registration)
   const refreshDomainList = async () => {
@@ -941,49 +872,125 @@ Your new ENS domain is now registered and ready to use:
   };
 
   // Function to save reference with associated domain
-  const saveReferenceWithDomain = (reference: string, domain: string) => {
-    if (!address) return;
+  const saveReferenceWithDomain = useCallback(
+    (reference: string, domain: string) => {
+      if (!address) return;
 
-    const savedHistory = localStorage.getItem('uploadHistory');
-    const history = savedHistory ? JSON.parse(savedHistory) : {};
-    const addressHistory = history[address] || [];
+      const savedHistory = localStorage.getItem('uploadHistory');
+      const history = savedHistory ? JSON.parse(savedHistory) : {};
+      const addressHistory = history[address] || [];
 
-    // Find existing record with this reference
-    const existingRecord = addressHistory.find((record: any) => record.reference === reference);
+      // Find existing record with this reference
+      const existingRecord = addressHistory.find((record: any) => record.reference === reference);
 
-    if (existingRecord) {
-      // Check if domain is already associated
-      if (!existingRecord.associatedDomains) {
-        existingRecord.associatedDomains = [];
-      }
+      if (existingRecord) {
+        // Check if domain is already associated
+        if (!existingRecord.associatedDomains) {
+          existingRecord.associatedDomains = [];
+        }
 
-      if (!existingRecord.associatedDomains.includes(domain)) {
-        existingRecord.associatedDomains.push(domain);
+        if (!existingRecord.associatedDomains.includes(domain)) {
+          existingRecord.associatedDomains.push(domain);
 
-        // Save updated history
+          // Save updated history
+          history[address] = addressHistory;
+          localStorage.setItem('uploadHistory', JSON.stringify(history));
+
+          console.log(`Added domain ${domain} to existing reference ${reference}`);
+        }
+      } else {
+        // Create new record if reference doesn't exist
+        const newRecord = {
+          reference,
+          timestamp: Date.now(),
+          filename: `ENS-linked content for ${domain}`,
+          stampId: 'unknown', // We don't have stamp info for existing content
+          expiryDate: Date.now() + 30 * 24 * 60 * 60 * 1000, // Default 30 days
+          associatedDomains: [domain],
+        };
+
+        addressHistory.unshift(newRecord);
         history[address] = addressHistory;
         localStorage.setItem('uploadHistory', JSON.stringify(history));
 
-        console.log(`Added domain ${domain} to existing reference ${reference}`);
+        console.log(`Created new history record for reference ${reference} with domain ${domain}`);
       }
+    },
+    [address]
+  );
+
+  // Add useEffect to fetch owned domains when wallet is connected
+  useEffect(() => {
+    fetchOwnedDomains();
+  }, [fetchOwnedDomains]);
+
+  // Add useEffect to fetch contenthash when domain is validated
+  useEffect(() => {
+    const fetchCurrentContentHash = async () => {
+      if (!selectedDomain || !ensResolver || !publicClient) return;
+
+      try {
+        const normalizedDomain = normalize(selectedDomain);
+        const domainNode = namehash(normalizedDomain);
+
+        const contentHashBytes = (await publicClient.readContract({
+          address: ensResolver as `0x${string}`,
+          abi: ENS_RESOLVER_ABI,
+          functionName: 'contenthash',
+          args: [domainNode],
+        })) as `0x${string}`;
+
+        if (contentHashBytes === '0x') {
+          setCurrentContentHash('No content hash set');
+          setContentAlreadyAssociated(false);
+          return;
+        }
+
+        // Check if it's a Swarm hash (starts with e40101fa011b20)
+        const cleanHash = contentHashBytes.replace('0x', '').toLowerCase();
+        if (cleanHash.startsWith('e40101fa011b20')) {
+          // Extract the 32-byte hash (last 64 hex chars)
+          const swarmRef = cleanHash.slice(14);
+          setCurrentContentHash(`Swarm: bzz://${shortenHash(swarmRef)}`);
+
+          // Check if this matches the current swarmReference being set
+          const cleanSwarmReference = swarmReference.replace(/^0x/, '').toLowerCase();
+          if (swarmRef === cleanSwarmReference && address) {
+            setContentAlreadyAssociated(true);
+            // Save to history if not already saved with this domain
+            saveReferenceWithDomain(swarmReference, selectedDomain);
+          } else {
+            setContentAlreadyAssociated(false);
+          }
+        } else {
+          // For other types, display the full hex
+          setCurrentContentHash(`Content Hash: ${shortenHash(contentHashBytes, 6, 6)}`);
+          setContentAlreadyAssociated(false);
+        }
+      } catch (err) {
+        console.error('Error fetching current contenthash:', err);
+        setCurrentContentHash('Error fetching content hash');
+        setContentAlreadyAssociated(false);
+      }
+    };
+
+    if (ensAddress && !ensAddressLoading && !ensAddressError) {
+      fetchCurrentContentHash();
     } else {
-      // Create new record if reference doesn't exist
-      const newRecord = {
-        reference,
-        timestamp: Date.now(),
-        filename: `ENS-linked content for ${domain}`,
-        stampId: 'unknown', // We don't have stamp info for existing content
-        expiryDate: Date.now() + 30 * 24 * 60 * 60 * 1000, // Default 30 days
-        associatedDomains: [domain],
-      };
-
-      addressHistory.unshift(newRecord);
-      history[address] = addressHistory;
-      localStorage.setItem('uploadHistory', JSON.stringify(history));
-
-      console.log(`Created new history record for reference ${reference} with domain ${domain}`);
+      setCurrentContentHash('');
+      setContentAlreadyAssociated(false);
     }
-  };
+  }, [
+    selectedDomain,
+    ensResolver,
+    publicClient,
+    ensAddress,
+    ensAddressLoading,
+    ensAddressError,
+    swarmReference,
+    address,
+    saveReferenceWithDomain,
+  ]);
 
   const handleSetContentHash = async () => {
     console.log('🚀 Starting handleSetContentHash for domain:', selectedDomain);
