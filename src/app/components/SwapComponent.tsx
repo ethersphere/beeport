@@ -5,7 +5,16 @@ import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChai
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
-import { createConfig, EVM, executeRoute, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
+import {
+  createConfig,
+  EVM,
+  executeRoute,
+  ChainId,
+  ChainType,
+  getChains,
+  Chain,
+  convertQuoteToRoute,
+} from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
 import { parseAbi, formatUnits } from 'viem';
 import { getAddress } from 'viem';
@@ -54,7 +63,12 @@ import {
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
+import {
+  getGnosisQuote,
+  getCrossChainQuote,
+  getSafeCrossChainQuote,
+  getSwapQuotes,
+} from './CustomQuotes';
 import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
@@ -282,7 +296,7 @@ const SwapComponent: React.FC = () => {
     const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
-      if (!selectedChainId) return;
+      if (!selectedChainId || !address) return;
 
       // Reset insufficient funds state at the beginning of new price estimation
       setInsufficientFunds(false);
@@ -291,104 +305,50 @@ const SwapComponent: React.FC = () => {
 
       try {
         const bzzAmount = calculateTotalAmount().toString();
-        const gnosisSourceToken =
-          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
-        // Add detailed logging
-        console.log('BZZ amount needed:', formatUnits(BigInt(bzzAmount), 16));
-        console.log('Selected days:', selectedDays);
-        console.log(
-          'Selected stamps size:',
-          STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown'
-        );
+        console.log('🔍 Price estimation:', {
+          bzzAmount: formatUnits(BigInt(bzzAmount), 16),
+          selectedDays,
+          stampSize:
+            STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown',
+          selectedChainId,
+          fromToken,
+        });
 
-        const { gnosisContactCallsQuoteResponse } = await performWithRetry(
-          () =>
-            getGnosisQuote({
-              gnosisSourceToken,
-              address,
-              bzzAmount,
-              nodeAddress,
-              swarmConfig,
-              setEstimatedTime,
-              topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-            }),
-          'getGnosisQuote-execution',
-          undefined,
-          5, // 5 retries
-          500 // 500ms delay between retries
-        );
+        // Use the modular getSwapQuotes function for price estimation
+        const quoteResult = await getSwapQuotes({
+          selectedChainId,
+          fromToken,
+          address,
+          bzzAmount,
+          nodeAddress,
+          swarmConfig,
+          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+          setEstimatedTime: () => {}, // Don't override estimated time during price estimation
+          isForEstimation: true,
+        });
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
-          console.log('Price estimate aborted after Gnosis quote');
+          console.log('Price estimate aborted');
           return;
         }
 
-        let totalAmount = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
+        console.log(`💰 Price estimation complete: $${quoteResult.totalAmountUSD.toFixed(2)}`);
+        setTotalUsdAmount(quoteResult.totalAmountUSD.toString());
 
-        if (selectedChainId !== ChainId.DAI) {
-          const { crossChainContractQuoteResponse } = await performWithRetry(
-            () =>
-              getCrossChainQuote({
-                selectedChainId,
-                fromToken,
-                address,
-                toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
-                gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-                setEstimatedTime,
-              }),
-            'getCrossChainQuote',
-            undefined,
-            5,
-            300,
-            abortSignal
-          );
+        // Check if user has enough funds
+        if (selectedTokenInfo) {
+          const tokenBalanceInUsd =
+            Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
+            Number(selectedTokenInfo.priceUSD);
 
-          // If operation was aborted, don't continue
-          if (abortSignal.aborted) {
-            console.log('Price estimate aborted after cross-chain quote');
-            return;
-          }
+          console.log('User token balance in USD:', tokenBalanceInUsd);
+          console.log('Required amount in USD:', quoteResult.totalAmountUSD);
 
-          // Add to total amount bridge fees
-          const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
-            ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
-                (total, fee) => total + Number(fee.amountUSD || 0),
-                0
-              )
-            : 0;
-
-          console.log('Bridge fees:', bridgeFees);
-          console.log(
-            'Gas fees:',
-            crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD || '0'
-          );
-          console.log(
-            'Cross chain amount:',
-            crossChainContractQuoteResponse.estimate.fromAmountUSD
-          );
-
-          totalAmount = Number(crossChainContractQuoteResponse.estimate.fromAmountUSD || 0);
-        }
-
-        // One final check if aborted before updating state
-        if (!abortSignal.aborted) {
-          console.log('Total amount:', totalAmount);
-          setTotalUsdAmount(totalAmount.toString());
-
-          // Check if user has enough funds
-          if (selectedTokenInfo) {
-            const tokenBalanceInUsd =
-              Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
-              Number(selectedTokenInfo.priceUSD);
-
-            console.log('User token balance in USD:', tokenBalanceInUsd);
-            console.log('Required amount in USD:', totalAmount);
-
-            // Set insufficient funds flag if cost exceeds available balance
-            setInsufficientFunds(totalAmount > tokenBalanceInUsd);
-          }
+          // Set insufficient funds flag if cost exceeds available balance
+          setInsufficientFunds(quoteResult.totalAmountUSD > tokenBalanceInUsd);
         }
       } catch (error) {
         // Only update error state if not aborted
@@ -877,57 +837,54 @@ const SwapComponent: React.FC = () => {
 
   const handleCrossChainSwap = async (
     gnosisContractCallsRoute: any,
-    toAmount: any,
+    crossChainContractQuoteResponse: any,
+    safeQuoteData: any,
     updatedConfig: any
   ) => {
     if (!selectedChainId) return;
 
     setStatusMessage({
-      step: 'Quote',
-      message: 'Getting quote...',
+      step: 'Execute',
+      message: 'Executing cross-chain route...',
     });
 
-    const { crossChainContractCallsRoute } = await performWithRetry(
-      () =>
-        getCrossChainQuote({
-          selectedChainId,
-          fromToken,
-          address: address as string,
-          toAmount,
-          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-          setEstimatedTime,
-        }),
-      'getCrossChainQuote-execution',
-      undefined,
-      5, // 5 retries
-      500 // 500ms delay between retries
-    );
+    try {
+      console.log('🚀 Using pre-computed cross-chain quote for execution...');
 
-    const executedRoute = await executeRoute(crossChainContractCallsRoute, {
-      disableMessageSigning: DISABLE_MESSAGE_SIGNING,
-      acceptExchangeRateUpdateHook: params =>
-        handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
-      updateRouteHook: async crossChainContractCallsRoute => {
-        console.log('Updated Route 1:', crossChainContractCallsRoute);
-        const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
-        console.log(`Step 1 Status: ${step1Status}`);
+      // Convert the quote response to a route for execution
+      const crossChainContractCallsRoute = convertQuoteToRoute(crossChainContractQuoteResponse);
+      console.log('✅ Pre-computed quote data:', safeQuoteData);
 
-        setStatusMessage({
-          step: 'Route',
-          message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
-        });
+      // Execute the route
+      const executedRoute = await executeRoute(crossChainContractCallsRoute, {
+        disableMessageSigning: DISABLE_MESSAGE_SIGNING,
+        acceptExchangeRateUpdateHook: params =>
+          handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
+        updateRouteHook: async crossChainContractCallsRoute => {
+          console.log('Updated Route 1:', crossChainContractCallsRoute);
+          const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
+          console.log(`Step 1 Status: ${step1Status}`);
 
-        if (step1Status === 'DONE') {
-          console.log('Route 1 wallet client:', walletClient);
-          await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
-        } else if (step1Status === 'FAILED') {
-          // Add reset if the execution fails
-          resetTimer();
-        }
-      },
-    });
+          setStatusMessage({
+            step: 'Route',
+            message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
+          });
 
-    console.log('First route execution completed:', executedRoute);
+          if (step1Status === 'DONE') {
+            console.log('Route 1 wallet client:', walletClient);
+            await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
+          } else if (step1Status === 'FAILED') {
+            // Add reset if the execution fails
+            resetTimer();
+          }
+        },
+      });
+
+      console.log('Cross-chain route execution completed:', executedRoute);
+    } catch (error) {
+      console.error('❌ Pre-computed cross-chain swap failed:', error);
+      throw error; // Re-throw to be handled by the calling function
+    }
   };
 
   const handleChainSwitch = async (contractCallsRoute: any, updatedConfig: any) => {
@@ -1147,35 +1104,36 @@ const SwapComponent: React.FC = () => {
           message: 'Getting quote...',
         });
 
-        const gnosisSourceToken =
-          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
+        // Use the modular getSwapQuotes function for execution
+        const quoteResult = await getSwapQuotes({
+          selectedChainId,
+          fromToken,
+          address,
+          bzzAmount: updatedConfig.swarmBatchTotal,
+          nodeAddress,
+          swarmConfig: updatedConfig,
+          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+          setEstimatedTime,
+          isForEstimation: false,
+        });
 
-        // Pass topUpBatchId to getGnosisQuote when doing a top-up
-        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
-          await performWithRetry(
-            () =>
-              getGnosisQuote({
-                gnosisSourceToken,
-                address,
-                bzzAmount: updatedConfig.swarmBatchTotal,
-                nodeAddress,
-                swarmConfig: updatedConfig,
-                setEstimatedTime,
-                topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-              }),
-            'getGnosisQuote-execution',
-            undefined,
-            5, // 5 retries
-            500 // 500ms delay between retries
-          );
+        console.log('✅ Execution quotes ready:', {
+          totalUSD: `$${quoteResult.totalAmountUSD.toFixed(2)}`,
+          isGnosisOnly: quoteResult.isGnosisOnly,
+        });
 
         // Check are we solving Gnosis chain or other chain Swap
         if (selectedChainId === ChainId.DAI) {
-          await handleGnosisTokenSwap(gnosisContractCallsRoute, updatedConfig);
+          await handleGnosisTokenSwap(quoteResult.gnosisContractCallsRoute, updatedConfig);
         } else {
-          // This is gnosisSourceToken/gnosisDesatinationToken amount value
-          const toAmount = gnosisContactCallsQuoteResponse.estimate.fromAmount;
-          await handleCrossChainSwap(gnosisContractCallsRoute, toAmount, updatedConfig);
+          // Pass both route objects to avoid duplicate quote fetching
+          await handleCrossChainSwap(
+            quoteResult.gnosisContractCallsRoute,
+            quoteResult.crossChainContractQuoteResponse,
+            quoteResult.safeQuoteData,
+            updatedConfig
+          );
         }
       }
     } catch (error) {

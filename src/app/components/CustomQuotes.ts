@@ -20,6 +20,9 @@ import {
   MIN_BRIDGE_USD_VALUE,
 } from './constants';
 
+// Cross-chain safety buffer percentage
+const CROSS_CHAIN_SAFETY_BUFFER_PERCENT = 5;
+
 import { logTokenRoute, performWithRetry, getGnosisPublicClient } from './utils';
 
 /**
@@ -379,4 +382,270 @@ export const getToAmountContractQuote = async (params: ToAmountQuoteParams): Pro
     5, // 5 retries
     500 // 500ms delay between retries
   );
+};
+
+/**
+ * Gets a reliable cross-chain quote using single direction with safety buffer
+ * 1. Get quote for required amount (Remote -> Gnosis)
+ * 2. Add safety buffer to account for slippage and price movements
+ * 3. Get final quote with buffered amount
+ */
+export const getSafeCrossChainQuote = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  toAmount,
+  gnosisDestinationToken,
+  setEstimatedTime,
+}: GetCrossChainQuoteParams & { setEstimatedTime: (time: number) => void }) => {
+  console.log('🔄 Starting safe cross-chain quote with safety buffer...');
+  console.log('Input parameters:', {
+    selectedChainId,
+    fromToken,
+    address,
+    toAmount,
+    gnosisDestinationToken,
+    safetyBuffer: `${CROSS_CHAIN_SAFETY_BUFFER_PERCENT}%`,
+  });
+
+  // Validate input toAmount first
+  if (!toAmount || toAmount === '0' || toAmount === '') {
+    console.error('❌ Invalid toAmount input:', toAmount);
+    throw new Error('Invalid toAmount provided to cross-chain quote');
+  }
+
+  const toAmountBigInt = BigInt(toAmount);
+  console.log('Target amount on Gnosis:', toAmount, '(', toAmountBigInt.toString(), ')');
+
+  // Step 1: Get initial quote to determine required amount
+  console.log('🔄 Step 1: Getting base quote (Remote -> Gnosis) for target amount...');
+
+  const toAmountQuoteParams = {
+    fromChain: selectedChainId.toString(),
+    toChain: ChainId.DAI.toString(),
+    fromToken: fromToken,
+    toToken: gnosisDestinationToken,
+    fromAddress: address,
+    toAmount: toAmount,
+  };
+
+  let baseQuote;
+  try {
+    baseQuote = await getToAmountQuote(toAmountQuoteParams);
+    console.log('✅ Base quote successful:', {
+      requiredFromAmount: baseQuote.estimate.fromAmount,
+      targetToAmount: toAmount,
+    });
+  } catch (error) {
+    console.error('❌ Base quote failed:', error);
+    throw new Error('Failed to get base quote for target amount');
+  }
+
+  // Step 2: Apply safety buffer to the required amount
+  console.log('🔄 Step 2: Applying safety buffer...');
+
+  const baseFromAmountBigInt = BigInt(baseQuote.estimate.fromAmount);
+  const bufferAmountBigInt =
+    (baseFromAmountBigInt * BigInt(CROSS_CHAIN_SAFETY_BUFFER_PERCENT)) / 100n;
+  const bufferedFromAmountBigInt = baseFromAmountBigInt + bufferAmountBigInt;
+
+  console.log('🔍 Buffer calculation:', {
+    baseFromAmount: baseFromAmountBigInt.toString(),
+    bufferPercent: `${CROSS_CHAIN_SAFETY_BUFFER_PERCENT}%`,
+    bufferAmount: bufferAmountBigInt.toString(),
+    bufferedFromAmount: bufferedFromAmountBigInt.toString(),
+  });
+
+  // Step 3: Add gas forwarding
+  console.log('🔄 Step 3: Adding gas forwarding...');
+
+  const gasForwarding = await checkGasForwarding(address as string, selectedChainId, fromToken);
+  const totalRequiredAmountBigInt = bufferedFromAmountBigInt + BigInt(gasForwarding.toString());
+
+  console.log('🔍 Gas forwarding calculation:', {
+    bufferedAmount: bufferedFromAmountBigInt.toString(),
+    gasForwarding: gasForwarding.toString(),
+    totalWithGas: totalRequiredAmountBigInt.toString(),
+  });
+
+  // Step 4: Apply minimum bridge amount check (only if our amount is smaller)
+  console.log('🔄 Step 4: Checking minimum bridge amount...');
+
+  // For storage stamp purchases, we need a specific amount, not a minimum bridge amount
+  // Skip minimum bridge logic and use our calculated amount
+  let finalFromAmountBigInt = totalRequiredAmountBigInt;
+
+  console.log('🔍 Using calculated amount for storage stamps (bypassing minimum bridge logic):', {
+    calculatedAmount: totalRequiredAmountBigInt.toString(),
+    finalAmount: finalFromAmountBigInt.toString(),
+  });
+
+  console.log('🔄 Step 5: Getting final quote with safety buffer...');
+
+  const finalQuoteRequest = {
+    fromChain: selectedChainId.toString(),
+    fromToken: fromToken,
+    fromAddress: address.toString(),
+    fromAmount: finalFromAmountBigInt.toString(),
+    toChain: ChainId.DAI.toString(),
+    toToken: gnosisDestinationToken,
+    fromAmountForGas: gasForwarding as any, // Type assertion to work around SDK issue #239
+    slippage: DEFAULT_SLIPPAGE,
+    order: 'FASTEST' as const,
+  };
+
+  const finalQuote = await getQuote(finalQuoteRequest);
+
+  console.log('✅ Safe cross-chain quote complete:', {
+    finalFromAmount: finalQuote.estimate.fromAmount,
+    finalToAmount: finalQuote.estimate.toAmount,
+    executionDuration: finalQuote.estimate?.executionDuration,
+    safetyBuffer: `${CROSS_CHAIN_SAFETY_BUFFER_PERCENT}%`,
+  });
+
+  logTokenRoute(finalQuote.includedSteps, 'Safe Cross Chain Quote');
+
+  if (setEstimatedTime && finalQuote.estimate?.executionDuration) {
+    setEstimatedTime(finalQuote.estimate.executionDuration);
+  }
+
+  return {
+    crossChainContractQuoteResponse: finalQuote,
+    crossChainContractCallsRoute: convertQuoteToRoute(finalQuote),
+    safeQuoteData: {
+      baseFromAmount: baseQuote.estimate.fromAmount,
+      bufferedFromAmount: bufferedFromAmountBigInt.toString(),
+      safetyBufferPercent: CROSS_CHAIN_SAFETY_BUFFER_PERCENT,
+      gasForwarding: gasForwarding.toString(),
+      finalFromAmount: finalQuote.estimate.fromAmount,
+      targetToAmount: toAmount,
+    },
+  };
+};
+
+/**
+ * Modular function to get quotes for both price estimation and swap execution
+ * Returns both USD amounts (for display) and route objects (for execution)
+ */
+export const getSwapQuotes = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  bzzAmount,
+  nodeAddress,
+  swarmConfig,
+  gnosisDestinationToken,
+  topUpBatchId,
+  setEstimatedTime,
+  isForEstimation = false,
+}: {
+  selectedChainId: number;
+  fromToken: string;
+  address: string;
+  bzzAmount: string;
+  nodeAddress: string;
+  swarmConfig: any;
+  gnosisDestinationToken: string;
+  topUpBatchId?: string;
+  setEstimatedTime?: (time: number) => void;
+  isForEstimation?: boolean;
+}) => {
+  console.log(
+    `🔄 Getting quotes for ${isForEstimation ? 'price estimation' : 'swap execution'}...`
+  );
+
+  const gnosisSourceToken = selectedChainId === ChainId.DAI ? fromToken : gnosisDestinationToken;
+
+  // Step 1: Get Gnosis quote
+  const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } = await performWithRetry(
+    () =>
+      getGnosisQuote({
+        gnosisSourceToken,
+        address,
+        bzzAmount,
+        nodeAddress,
+        swarmConfig,
+        setEstimatedTime: setEstimatedTime || (() => {}),
+        topUpBatchId,
+      }),
+    `getGnosisQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    undefined,
+    5,
+    500
+  );
+
+  let totalAmountUSD = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
+  let crossChainContractQuoteResponse = null;
+  let crossChainContractCallsRoute = null;
+  let safeQuoteData = null;
+
+  // Step 2: Get cross-chain quote if needed
+  if (selectedChainId !== ChainId.DAI) {
+    console.log(
+      `🔄 ${isForEstimation ? 'Price estimation' : 'Execution'}: Getting safe cross-chain quote...`
+    );
+
+    const safeQuoteResult = await performWithRetry(
+      () =>
+        getSafeCrossChainQuote({
+          selectedChainId,
+          fromToken,
+          address: address as string,
+          toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
+          gnosisDestinationToken,
+          setEstimatedTime: isForEstimation ? () => {} : setEstimatedTime || (() => {}),
+        }),
+      `getSafeCrossChainQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+      undefined,
+      isForEstimation ? 3 : 5, // Fewer retries for estimation
+      500
+    );
+
+    crossChainContractQuoteResponse = safeQuoteResult.crossChainContractQuoteResponse;
+    crossChainContractCallsRoute = safeQuoteResult.crossChainContractCallsRoute;
+    safeQuoteData = safeQuoteResult.safeQuoteData;
+
+    console.log(`✅ ${isForEstimation ? 'Price estimation' : 'Execution'}: Safe quote successful`);
+    if (!isForEstimation) {
+      console.log('📊 Safe quote data:', safeQuoteData);
+    }
+
+    // Calculate total USD amount for cross-chain
+    totalAmountUSD = Number(crossChainContractQuoteResponse.estimate.fromAmountUSD || 0);
+
+    // Log bridge fees and gas fees
+    const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
+      ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
+          (total, fee) => total + Number(fee.amountUSD || 0),
+          0
+        )
+      : 0;
+
+    console.log('Bridge fees:', bridgeFees);
+    console.log(
+      'Gas fees:',
+      crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD || '0'
+    );
+    console.log('Cross chain amount:', crossChainContractQuoteResponse.estimate.fromAmountUSD);
+  }
+
+  console.log(
+    `✅ ${isForEstimation ? 'Price estimation' : 'Swap quotes'} complete. Total: $${totalAmountUSD.toFixed(2)}`
+  );
+
+  return {
+    // For price estimation
+    totalAmountUSD,
+
+    // For swap execution
+    gnosisContactCallsQuoteResponse,
+    gnosisContractCallsRoute,
+    crossChainContractQuoteResponse,
+    crossChainContractCallsRoute,
+    safeQuoteData,
+
+    // Metadata
+    isGnosisOnly: selectedChainId === ChainId.DAI,
+    selectedChainId,
+  };
 };
