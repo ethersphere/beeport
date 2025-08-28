@@ -1095,7 +1095,7 @@ const SwapComponent: React.FC = () => {
           message: 'Getting quote...',
         });
 
-        // Use the new Relay system for execution
+        // Use the new Relay system for execution (don't set timer yet)
         const relayQuoteResult = await getRelaySwapQuotes({
           selectedChainId,
           fromToken,
@@ -1104,7 +1104,7 @@ const SwapComponent: React.FC = () => {
           nodeAddress,
           swarmConfig: updatedConfig,
           topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          setEstimatedTime,
+          setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
           isForEstimation: false,
         });
 
@@ -1114,18 +1114,37 @@ const SwapComponent: React.FC = () => {
           estimatedTime: relayQuoteResult.estimatedTime,
         });
 
-        // Set status to start the timer for cross-chain execution
+        console.log(
+          '⏱️ Timer will be set to:',
+          relayQuoteResult.estimatedTime,
+          'seconds after transaction confirmation'
+        );
+
+        // Set initial status (timer will start after transaction confirmation)
         setStatusMessage({
-          step: 'Relay',
-          message: `Executing cross-chain swap...`,
+          step: 'Preparing',
+          message: `Preparing cross-chain swap...`,
         });
 
-        // Execute Relay steps
+        // Execute Relay steps with timer callback
         await executeRelaySteps(
           relayQuoteResult.relayQuoteResponse,
           walletClient,
           publicClient,
-          setStatusMessage
+          setStatusMessage,
+          () => {
+            // Start timer after transaction confirmation
+            console.log(
+              '🚀 Transaction confirmed! Starting timer with duration:',
+              relayQuoteResult.estimatedTime,
+              'seconds'
+            );
+            setEstimatedTime(relayQuoteResult.estimatedTime);
+            setStatusMessage({
+              step: 'Relay',
+              message: `Executing cross-chain swap...`,
+            });
+          }
         );
 
         console.log('🎉 Relay swap completed successfully!');
@@ -1811,7 +1830,7 @@ const SwapComponent: React.FC = () => {
                         (statusMessage.step === 'Route' ||
                           statusMessage.step === 'deposit' ||
                           statusMessage.step === 'Quoting' ||
-                          statusMessage.step.includes('Relay')) && (
+                          statusMessage.step === 'Relay') && (
                           <div className={styles.bridgeTimer}>
                             <p>Estimated time remaining: {formatTime(remainingTime)}</p>
                             <div className={styles.progressBarContainer}>

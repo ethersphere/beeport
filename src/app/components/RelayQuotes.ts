@@ -348,9 +348,12 @@ export const executeRelaySteps = async (
   relayQuoteResponse: RelayQuoteResponse,
   walletClient: any,
   publicClient: any,
-  setStatusMessage: (status: any) => void
+  setStatusMessage: (status: any) => void,
+  onTransactionConfirmed?: () => void
 ): Promise<void> => {
   console.log('🚀 Starting Relay step execution...');
+
+  let timerStarted = false; // Track if we've started the timer
 
   for (let i = 0; i < relayQuoteResponse.steps.length; i++) {
     const step = relayQuoteResponse.steps[i];
@@ -416,6 +419,12 @@ export const executeRelaySteps = async (
 
           if (receipt.status === 'success') {
             console.log(`✅ Transaction confirmed: ${txHash}`);
+
+            // Start timer after first transaction confirmation
+            if (!timerStarted && onTransactionConfirmed) {
+              onTransactionConfirmed();
+              timerStarted = true;
+            }
 
             // If there's a check endpoint, monitor the Relay status
             if (item.check) {

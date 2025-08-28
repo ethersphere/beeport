@@ -51,7 +51,7 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
       (statusMessage.step === 'Route' ||
         statusMessage.step === 'deposit' ||
         statusMessage.step === 'Quoting' ||
-        statusMessage.step.includes('Relay'))
+        statusMessage.step === 'Relay')
     ) {
       console.log('Starting timer with duration:', estimatedTime);
 
