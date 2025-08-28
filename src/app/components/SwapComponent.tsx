@@ -1123,6 +1123,57 @@ const SwapComponent: React.FC = () => {
         );
 
         console.log('🎉 Relay swap completed successfully!');
+
+        // Reset timer when done
+        resetTimer();
+
+        // Handle post-swap completion flow (same as original LiFi implementation)
+        try {
+          if (isTopUp && topUpBatchId) {
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId);
+
+            // Set top-up completion info
+            setTopUpCompleted(true);
+            setTopUpInfo({
+              batchId: topUpBatchId,
+              days: selectedDays || 0,
+              cost: totalUsdAmount || '0',
+            });
+
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Batch Topped Up Successfully',
+              isSuccess: true,
+            });
+          } else {
+            // Calculate the batch ID for new batch creation
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+
+            console.log('Batch created successfully with ID:', calculatedBatchId);
+            setPostageBatchId(calculatedBatchId);
+
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Storage Bought Successfully',
+              isSuccess: true,
+            });
+
+            // Transition to upload step - this was missing!
+            setUploadStep('ready');
+          }
+        } catch (error) {
+          console.error('Failed to process batch completion:', error);
+          setStatusMessage({
+            step: 'Error',
+            message: 'Failed to process batch completion',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            isError: true,
+          });
+        }
       }
     } catch (error) {
       console.error('An error occurred:', error);
