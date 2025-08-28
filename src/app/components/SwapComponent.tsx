@@ -1118,6 +1118,7 @@ const SwapComponent: React.FC = () => {
         await executeRelaySteps(
           relayQuoteResult.relayQuoteResponse,
           walletClient,
+          publicClient,
           setStatusMessage
         );
 
