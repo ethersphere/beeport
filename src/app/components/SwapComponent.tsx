@@ -576,11 +576,6 @@ const SwapComponent: React.FC = () => {
     }
 
     try {
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Approving Token...',
-      });
-
       // Calculate amount based on whether this is a top-up or new batch
       let totalAmount: bigint;
 
@@ -609,130 +604,170 @@ const SwapComponent: React.FC = () => {
           }...${topUpBatchId?.slice(-4)}`
         : 'Buying storage...';
 
-      // First approve the token transfer
-      const approveCallData = {
-        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: [
-          {
-            constant: false,
-            inputs: [
-              { name: '_spender', type: 'address' },
-              { name: '_value', type: 'uint256' },
-            ],
-            name: 'approve',
-            outputs: [{ name: 'success', type: 'bool' }],
-            type: 'function',
-          },
-        ],
-        functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, totalAmount],
-        account: address,
-      };
-
-      console.log('Sending approval tx with args:', approveCallData);
-
-      const approveTxHash = await walletClient.writeContract(approveCallData);
-      console.log('Approval transaction hash:', approveTxHash);
-
-      // Wait for approval transaction to be mined
-      const approveReceipt = await publicClient.waitForTransactionReceipt({
-        hash: approveTxHash,
+      // Check current BZZ allowance to see if we need approval
+      setStatusMessage({
+        step: 'Checking',
+        message: 'Checking token allowance...',
       });
 
-      if (approveReceipt.status === 'success') {
-        setStatusMessage({
-          step: 'Batch',
-          message: operationMsg,
+      let needsApproval = true;
+      try {
+        const allowance = await publicClient.readContract({
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: parseAbi([
+            'function allowance(address owner, address spender) external view returns (uint256)',
+          ]),
+          functionName: 'allowance',
+          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
         });
 
-        // Prepare contract write parameters - different based on operation type
-        let contractWriteParams;
+        const currentAllowance = BigInt(allowance.toString());
+        needsApproval = currentAllowance < totalAmount;
 
-        if (isTopUp && topUpBatchId) {
-          // Top up existing batch
-          contractWriteParams = {
-            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-            abi: parseAbi(updatedConfig.swarmContractAbi),
-            functionName: 'topUpBatch',
-            args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
-            account: address,
-          };
-        } else {
-          // Create new batch
-          contractWriteParams = {
-            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-            abi: parseAbi(updatedConfig.swarmContractAbi),
-            functionName: 'createBatchRegistry',
-            args: [
-              address,
-              nodeAddress,
-              updatedConfig.swarmBatchInitialBalance,
-              updatedConfig.swarmBatchDepth,
-              updatedConfig.swarmBatchBucketDepth,
-              updatedConfig.swarmBatchNonce,
-              updatedConfig.swarmBatchImmutable,
-            ],
-            account: address,
-          };
+        console.log('🔍 BZZ Allowance Check:', {
+          currentAllowance: currentAllowance.toString(),
+          requiredAmount: totalAmount.toString(),
+          needsApproval,
+        });
+      } catch (error) {
+        console.error('Failed to check BZZ allowance:', error);
+        // Default to needing approval if check fails
+        needsApproval = true;
+      }
+
+      if (needsApproval) {
+        setStatusMessage({
+          step: 'Approval',
+          message: 'Approving Token...',
+        });
+
+        // Use infinite approval (max uint256) to avoid future approval transactions
+        const MAX_UINT256 =
+          '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+
+        const approveCallData = {
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: [
+            {
+              constant: false,
+              inputs: [
+                { name: '_spender', type: 'address' },
+                { name: '_value', type: 'uint256' },
+              ],
+              name: 'approve',
+              outputs: [{ name: 'success', type: 'bool' }],
+              type: 'function',
+            },
+          ],
+          functionName: 'approve',
+          args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, BigInt(MAX_UINT256)],
+          account: address,
+        };
+
+        console.log('🔐 Sending infinite approval tx for BZZ tokens...');
+
+        const approveTxHash = await walletClient.writeContract(approveCallData);
+        console.log('Approval transaction hash:', approveTxHash);
+
+        // Wait for approval transaction to be mined
+        const approveReceipt = await publicClient.waitForTransactionReceipt({
+          hash: approveTxHash,
+        });
+
+        if (approveReceipt.status !== 'success') {
+          throw new Error('Approval failed');
         }
 
-        console.log('Creating second transaction with params:', contractWriteParams);
+        console.log('✅ Infinite BZZ approval completed successfully');
+      } else {
+        console.log('✅ BZZ approval sufficient - skipping approval transaction');
+      }
 
-        // Execute the batch creation or top-up
-        const batchTxHash = await walletClient.writeContract(contractWriteParams);
-        console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+      // Prepare contract write parameters - different based on operation type
+      let contractWriteParams;
 
-        // Wait for batch transaction to be mined
-        const batchReceipt = await publicClient.waitForTransactionReceipt({
-          hash: batchTxHash,
-        });
+      if (isTopUp && topUpBatchId) {
+        // Top up existing batch
+        contractWriteParams = {
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          abi: parseAbi(updatedConfig.swarmContractAbi),
+          functionName: 'topUpBatch',
+          args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
+          account: address,
+        };
+      } else {
+        // Create new batch
+        contractWriteParams = {
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          abi: parseAbi(updatedConfig.swarmContractAbi),
+          functionName: 'createBatchRegistry',
+          args: [
+            address,
+            nodeAddress,
+            updatedConfig.swarmBatchInitialBalance,
+            updatedConfig.swarmBatchDepth,
+            updatedConfig.swarmBatchBucketDepth,
+            updatedConfig.swarmBatchNonce,
+            updatedConfig.swarmBatchImmutable,
+          ],
+          account: address,
+        };
+      }
 
-        if (batchReceipt.status === 'success') {
-          if (isTopUp) {
-            // For top-up, we already have the batch ID
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId as string);
+      console.log('Creating transaction with params:', contractWriteParams);
 
-            // Set top-up completion info
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId as string,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
+      // Execute the batch creation or top-up
+      const batchTxHash = await walletClient.writeContract(contractWriteParams);
+      console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+
+      // Wait for batch transaction to be mined
+      const batchReceipt = await publicClient.waitForTransactionReceipt({
+        hash: batchTxHash,
+      });
+
+      if (batchReceipt.status === 'success') {
+        if (isTopUp) {
+          // For top-up, we already have the batch ID
+          console.log('Successfully topped up batch ID:', topUpBatchId);
+          setPostageBatchId(topUpBatchId as string);
+
+          // Set top-up completion info
+          setTopUpCompleted(true);
+          setTopUpInfo({
+            batchId: topUpBatchId as string,
+            days: selectedDays || 0,
+            cost: totalUsdAmount || '0',
+          });
+
+          setStatusMessage({
+            step: 'Complete',
+            message: 'Batch Topped Up Successfully',
+            isSuccess: true,
+          });
+          // Don't set upload step for top-ups
+        } else {
+          try {
+            // Calculate the batch ID for logging
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+
+            console.log('Batch created successfully with ID:', calculatedBatchId);
 
             setStatusMessage({
               step: 'Complete',
-              message: 'Batch Topped Up Successfully',
+              message: 'Storage Bought Successfully',
               isSuccess: true,
             });
-            // Don't set upload step for top-ups
-          } else {
-            try {
-              // Calculate the batch ID for logging
-              const calculatedBatchId = readBatchId(
-                updatedConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS
-              );
-
-              console.log('Batch created successfully with ID:', calculatedBatchId);
-
-              setStatusMessage({
-                step: 'Complete',
-                message: 'Storage Bought Successfully',
-                isSuccess: true,
-              });
-              setUploadStep('ready');
-            } catch (error) {
-              console.error('Failed to process batch completion:', error);
-              throw new Error('Failed to process batch completion');
-            }
+            setUploadStep('ready');
+          } catch (error) {
+            console.error('Failed to process batch completion:', error);
+            throw new Error('Failed to process batch completion');
           }
-        } else {
-          throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
         }
       } else {
-        throw new Error('Approval failed');
+        throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
       }
     } catch (error) {
       console.error(`Error in direct BZZ transactions: ${error}`);

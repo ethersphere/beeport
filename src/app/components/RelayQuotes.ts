@@ -362,16 +362,18 @@ export const executeRelaySteps = async (
     // Use user-friendly messages instead of technical Relay descriptions
     const getUserFriendlyMessage = (stepId: string, description: string) => {
       const lowerDesc = description.toLowerCase();
-      
-      if (lowerDesc.includes('depositing funds to the relayer') || 
-          lowerDesc.includes('depositing') && lowerDesc.includes('relayer')) {
+
+      if (
+        lowerDesc.includes('depositing funds to the relayer') ||
+        (lowerDesc.includes('depositing') && lowerDesc.includes('relayer'))
+      ) {
         return 'Depositing funds';
       }
-      
+
       if (lowerDesc.includes('swap') && lowerDesc.includes('bzz')) {
         return 'Processing swap';
       }
-      
+
       // For other steps, use a generic message
       return 'Processing transaction';
     };
