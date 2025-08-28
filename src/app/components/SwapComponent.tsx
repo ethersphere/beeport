@@ -1092,7 +1092,7 @@ const SwapComponent: React.FC = () => {
       } else {
         setStatusMessage({
           step: 'Quoting',
-          message: 'Getting Relay quote...',
+          message: 'Getting quote...',
         });
 
         // Use the new Relay system for execution

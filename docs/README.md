@@ -21,6 +21,7 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 - **[Architecture](./architecture.md)** - Project architecture and third-party integrations
 - **[Postage Stamps](./postage-stamps.md)** - Understanding and managing storage stamps
 - **[ENS Integration](./ens-integration.md)** - Link your ENS domains to Swarm content
+- **[ENS Technical Reference](./ens-technical-reference.md)** - Detailed ENS implementation overview
 - **[File Formats & Limits](./file-formats-limits.md)** - Supported formats and size limitations
 - **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
 

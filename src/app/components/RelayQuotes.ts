@@ -301,7 +301,7 @@ export const getRelayQuote = async ({
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Relay API error! Status: ${response.status}, Details: ${errorText}`);
+        throw new Error(`Quote API error! Status: ${response.status}, Details: ${errorText}`);
       }
 
       const data = await response.json();
@@ -421,7 +421,7 @@ export const executeRelaySteps = async (
             if (item.check) {
               setStatusMessage({
                 step: step.id,
-                message: `Transaction confirmed, monitoring Relay status...`,
+                message: `Transaction confirmed, monitoring status...`,
               });
 
               await monitorRelayStatus(item.check.endpoint, setStatusMessage, step.id);
@@ -558,7 +558,7 @@ const monitorRelayStatus = async (
     }
   }
 
-  throw new Error(`Relay operation timed out for step ${stepId} after ${maxAttempts} attempts`);
+  throw new Error(`Operation timed out for step ${stepId} after ${maxAttempts} attempts`);
 };
 
 /**

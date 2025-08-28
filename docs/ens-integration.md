@@ -2,7 +2,7 @@
 
 ## Overview
 
-The ENS (Ethereum Name Service) integration allows you to link your ENS domains to your Swarm-hosted content. This enables users to access your content using human-readable domain names instead of complex Swarm reference hashes.
+The ENS (Ethereum Name Service) integration allows you to link your ENS domains to your Swarm-hosted content, enabling human-readable domain access instead of complex Swarm reference hashes.
 
 ## How It Works
 
@@ -11,6 +11,28 @@ When you set an ENS domain's content hash to point to your Swarm content, users 
 - `yourname.eth` (in ENS-compatible browsers)
 - `yourname.eth.limo` (via ENS gateway)
 - `yourname.eth.link` (via ENS gateway)
+
+## Key Features
+
+### ✅ **Complete Domain Management**
+
+- Automatic discovery of your owned domains
+- Support for .eth domains, DNS domains, and subdomains
+- Real-time domain ownership verification
+- Domain registration directly from the interface
+
+### ✅ **Smart Content Linking**
+
+- Automatic content hash encoding (ENSIP-7 compliant)
+- One-click content hash setting
+- Support for all content types (websites, files, collections)
+
+### ✅ **Seamless User Experience**
+
+- Automatic network switching to Ethereum Mainnet
+- Searchable domain dropdown for large collections
+- Real-time validation and error handling
+- Integration with upload history
 
 ## Prerequisites
 
@@ -25,6 +47,26 @@ Before using ENS integration, make sure you have:
 
 ENS domains are managed exclusively on **Ethereum Mainnet**. If you're connected to any other network (Polygon, Arbitrum, etc.), you'll need to switch to Ethereum Mainnet to manage ENS content hashes.
 
+## User Workflows
+
+### For Existing Domains
+
+1. **Upload Content** - Upload your content to Swarm
+2. **Access ENS Integration** - Go to Upload History and click the ENS button
+3. **Select Domain** - Choose from your owned domains dropdown or enter manually
+4. **Set Content Hash** - Confirm the transaction to link your domain
+5. **Access Content** - Visit `yourname.eth.limo` to view your content
+
+### For New Domain Registration
+
+1. **Switch to Registration Mode** - Click "Register Domain" in the ENS modal
+2. **Enter Domain Name** - Type your desired domain (e.g., `myname.eth`)
+3. **Check Availability** - View real-time availability and pricing
+4. **Complete Registration** - Follow the two-step process:
+   - **Commit Phase** - Prevents front-running attacks
+   - **Registration Phase** - Wait 60 seconds, then complete registration
+5. **Link Content** - Switch back to "Set Content Hash" mode and link your content
+
 ## Step-by-Step Guide
 
 ### 1. Upload Your Content
@@ -35,13 +77,22 @@ First, upload your content to Swarm using the upload interface. This will give y
 
 1. Go to the **Upload History** section
 2. Find the upload you want to link to an ENS domain
-3. Click the **ENS** button next to the reference hash
+3. Click the **ENS** button next to website uploads
 
-### 3. Enter Your Domain
+### 3. Choose Your Approach
 
-1. In the modal that opens, enter your ENS domain name (e.g., `myname.eth`)
-2. Make sure you own this domain
-3. Verify that your domain has a resolver set
+**Option A: Use Existing Domain**
+
+1. Select from your owned domains dropdown
+2. Use the search function for large domain collections
+3. Verify domain ownership automatically
+
+**Option B: Register New Domain**
+
+1. Switch to "Register Domain" mode
+2. Enter desired domain name
+3. Check availability and view 1-year pricing in ETH
+4. Complete the secure two-step registration process
 
 ### 4. Set Content Hash
 
@@ -225,29 +276,16 @@ This error means the domain doesn't exist or resolve to an address in the ENS re
 
 ## Technical Details
 
-### Content Hash Format
+### Automatic Content Hash Encoding
 
-The system automatically encodes your Swarm reference into the proper ENS content hash format:
+The system automatically converts your Swarm reference into the proper ENS content hash format (ENSIP-7 compliant). You don't need to worry about the technical details - just provide your domain and the system handles the rest.
 
-```
-Swarm Reference: abc123...
-ENS Content Hash: 0xe40101abc123...
-```
-
-### Contract Interactions
-
-The integration interacts with:
-
-- **ENS Registry** - To verify domain ownership
-- **Domain Resolver** - To set the content hash
-- **Ethereum Mainnet** - All transactions occur on mainnet
-
-### Security
+### Security & Privacy
 
 - All transactions are signed by your wallet
-- Domain ownership is verified on-chain
+- Domain ownership is verified on-chain before allowing changes
 - Content hashes are stored on the blockchain
-- No private keys are transmitted or stored
+- No private keys are transmitted or stored by the application
 
 ## Cost Considerations
 
@@ -281,6 +319,12 @@ To update your content:
 2. Use ENS integration to update the content hash
 3. Your domain will now point to the new content
 
+## Related Documentation
+
+- **[ENS Technical Reference](./ens-technical-reference.md)** - Detailed implementation overview
+- **[ENS Official Documentation](https://docs.ens.domains/)** - Complete ENS protocol documentation
+- **[Upload History Guide](./single-file-upload.md#upload-history)** - Managing your uploaded content
+
 ---
 
-For more information about ENS, visit the [ENS Documentation](https://docs.ens.domains/).
+_For technical implementation details, see the [ENS Technical Reference](./ens-technical-reference.md)._
