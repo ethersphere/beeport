@@ -502,7 +502,7 @@ const monitorRelayStatus = async (
           console.log(`✅ Relay operation completed successfully for step ${stepId}`);
           setStatusMessage({
             step: stepId,
-            message: 'Relay operation completed successfully',
+            message: 'Cross-chain swap completed successfully',
           });
           return;
 
@@ -510,7 +510,7 @@ const monitorRelayStatus = async (
           console.log(`⏳ Deposit transaction for ${stepId} is yet to be indexed`);
           setStatusMessage({
             step: stepId,
-            message: 'Waiting for transaction to be indexed...',
+            message: 'Confirming your transaction...',
           });
           break;
 
@@ -518,23 +518,23 @@ const monitorRelayStatus = async (
           console.log(`🔄 Deposit transaction for ${stepId} was indexed, fill is pending`);
           setStatusMessage({
             step: stepId,
-            message: 'Transaction indexed, processing fill...',
+            message: 'Processing cross-chain transfer...',
           });
           break;
 
         case 'failure':
           console.error(`❌ Relay operation failed for step ${stepId}, attempting refund`);
-          throw new Error(`Relay operation failed for step ${stepId}, attempting refund`);
+          throw new Error(`Cross-chain swap failed, attempting refund`);
 
         case 'refund':
           console.error(`💸 Funds were refunded due to failure for step ${stepId}`);
-          throw new Error(`Relay operation failed and funds were refunded for step ${stepId}`);
+          throw new Error(`Swap failed and funds were refunded`);
 
         default:
           console.log(`🔄 Unknown status '${statusData.status}' for step ${stepId}, continuing...`);
           setStatusMessage({
             step: stepId,
-            message: `Processing... (status: ${statusData.status})`,
+            message: 'Processing your swap...',
           });
       }
 

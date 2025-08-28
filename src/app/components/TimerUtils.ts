@@ -45,8 +45,14 @@ export const useTimer = (statusMessage: ExecutionStatus) => {
       timerIntervalRef.current = null;
     }
 
-    // Start a new timer if we have an estimated time and we're in the Route step
-    if (estimatedTime !== null && statusMessage.step === 'Route') {
+    // Start a new timer if we have an estimated time and we're in a relevant step
+    if (
+      estimatedTime !== null &&
+      (statusMessage.step === 'Route' ||
+        statusMessage.step === 'deposit' ||
+        statusMessage.step === 'Quoting' ||
+        statusMessage.step.includes('Relay'))
+    ) {
       console.log('Starting timer with duration:', estimatedTime);
 
       // Initialize the remaining time if it's not set

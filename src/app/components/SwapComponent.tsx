@@ -1114,6 +1114,12 @@ const SwapComponent: React.FC = () => {
           estimatedTime: relayQuoteResult.estimatedTime,
         });
 
+        // Set status to start the timer for cross-chain execution
+        setStatusMessage({
+          step: 'Relay',
+          message: `Executing cross-chain swap...`,
+        });
+
         // Execute Relay steps
         await executeRelaySteps(
           relayQuoteResult.relayQuoteResponse,
@@ -1802,7 +1808,10 @@ const SwapComponent: React.FC = () => {
 
                       {remainingTime !== null &&
                         estimatedTime !== null &&
-                        statusMessage.step === 'Route' && (
+                        (statusMessage.step === 'Route' ||
+                          statusMessage.step === 'deposit' ||
+                          statusMessage.step === 'Quoting' ||
+                          statusMessage.step.includes('Relay')) && (
                           <div className={styles.bridgeTimer}>
                             <p>Estimated time remaining: {formatTime(remainingTime)}</p>
                             <div className={styles.progressBarContainer}>
@@ -2001,7 +2010,7 @@ const SwapComponent: React.FC = () => {
                             <>
                               <div className={styles.smallSpinner}></div>
                               {statusMessage.step === '404'
-                                ? 'Searching for batch ID...'
+                                ? 'Waiting for batch ID to be usable...'
                                 : statusMessage.step === '422'
                                   ? 'Waiting for batch to be usable...'
                                   : statusMessage.step === 'Uploading'

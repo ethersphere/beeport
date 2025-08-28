@@ -372,7 +372,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           console.log(`Checking batch existence, attempt ${attempt404}/${maxRetries404}`);
           setStatusMessage({
             step: '404',
-            message: 'Searching for storage ID...',
+            message: 'Waiting for batch ID to be usable...',
           });
 
           const stampStatus = await checkStampStatus(postageBatchId);
@@ -763,7 +763,7 @@ export const handleMultiFileUpload = async (
           console.log(`Checking batch existence, attempt ${attempt404}/${maxRetries404}`);
           setStatusMessage({
             step: '404',
-            message: 'Searching for storage ID...',
+            message: 'Waiting for batch ID to be usable...',
           });
 
           const stampStatus = await checkStampStatus(postageBatchId);
