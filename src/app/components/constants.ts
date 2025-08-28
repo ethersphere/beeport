@@ -25,7 +25,16 @@ export const GNOSIS_STAMP_ADDRESS =
 export const DEFAULT_BEE_API_URL =
   process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://swarming.site';
 
-export const BEE_GATEWAY_URL = `https://bzz.link/bzz/`;
+// Check if we're running on production domains
+const isProductionDomain =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'app.ethswarm.org' ||
+    window.location.hostname === 'beeport.eth.limo');
+
+// BEE Gateway URL - use swarming.site for development, bzz.link for production
+export const BEE_GATEWAY_URL =
+  process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
+  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://swarming.site/bzz/');
 
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
@@ -85,9 +94,8 @@ export const FILE_SIZE_CONFIG = {
   enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
 } as const;
 
-// Check if we're running on the production domain
-const isProduction =
-  typeof window !== 'undefined' && window.location.hostname === 'app.ethswarm.org';
+// Use the same production check for other features
+const isProduction = isProductionDomain;
 
 // Define all time options
 const ALL_TIME_OPTIONS = [
