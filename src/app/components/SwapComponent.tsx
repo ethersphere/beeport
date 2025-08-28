@@ -1825,9 +1825,9 @@ const SwapComponent: React.FC = () => {
                             <>
                               <div className={styles.smallSpinner}></div>
                               {statusMessage.step === '404'
-                                ? 'Waiting for batch ID to be usable...'
+                                ? 'Waiting for storage to be usable...'
                                 : statusMessage.step === '422'
-                                  ? 'Waiting for batch to be usable...'
+                                  ? 'Waiting for storage to be usable...'
                                   : statusMessage.step === 'Uploading'
                                     ? isDistributing
                                       ? 'Distributing file chunks...'
