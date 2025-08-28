@@ -359,9 +359,26 @@ export const executeRelaySteps = async (
     const step = relayQuoteResponse.steps[i];
     console.log(`📋 Executing step ${i + 1}/${relayQuoteResponse.steps.length}: ${step.id}`);
 
+    // Use user-friendly messages instead of technical Relay descriptions
+    const getUserFriendlyMessage = (stepId: string, description: string) => {
+      const lowerDesc = description.toLowerCase();
+      
+      if (lowerDesc.includes('depositing funds to the relayer') || 
+          lowerDesc.includes('depositing') && lowerDesc.includes('relayer')) {
+        return 'Depositing funds';
+      }
+      
+      if (lowerDesc.includes('swap') && lowerDesc.includes('bzz')) {
+        return 'Processing swap';
+      }
+      
+      // For other steps, use a generic message
+      return 'Processing transaction';
+    };
+
     setStatusMessage({
       step: step.id,
-      message: step.description,
+      message: getUserFriendlyMessage(step.id, step.description),
     });
 
     // Skip steps with no items or empty items array
