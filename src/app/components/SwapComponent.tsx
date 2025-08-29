@@ -1064,7 +1064,8 @@ const SwapComponent: React.FC = () => {
     postageBatchId: string,
     expiryDate: number,
     filename?: string,
-    isWebpageUpload?: boolean
+    isWebpageUpload?: boolean,
+    fileSize?: number
   ) => {
     if (!address) return;
 
@@ -1079,6 +1080,7 @@ const SwapComponent: React.FC = () => {
       stampId: postageBatchId,
       expiryDate,
       isWebpageUpload,
+      fileSize,
     });
 
     history[address] = addressHistory;
@@ -1087,20 +1089,27 @@ const SwapComponent: React.FC = () => {
 
   // Helper function to format file size
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    // Round to 1 decimal place for MB and above, no decimals for B and KB
+    const rounded = unitIndex >= 2 ? Math.round(size * 10) / 10 : Math.round(size);
+    return `${rounded} ${units[unitIndex]}`;
   };
 
   // Helper function to get total size of selected files
   const getTotalFileSize = (): number => {
     if (isMultipleFiles) {
       return selectedFiles.reduce((total, file) => total + file.size, 0);
-    } else {
-      return selectedFile?.size || 0;
     }
+    return selectedFile?.size || 0;
   };
 
   // Helper function to check if files are very large
@@ -1158,14 +1167,16 @@ const SwapComponent: React.FC = () => {
           postageBatchId,
           expiryDate,
           'images.tar',
-          false
+          false,
+          selectedFile.size
         );
         saveUploadReference(
           result.metadataReference,
           postageBatchId,
           expiryDate,
           'metadata.tar',
-          false
+          false,
+          selectedFile.size
         );
 
         setStatusMessage({
