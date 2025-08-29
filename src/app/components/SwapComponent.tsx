@@ -54,7 +54,12 @@ import {
 import { useTimer } from './TimerUtils';
 
 // Note: LiFi quote functions removed - now using Relay API via RelayQuotes.ts
-import { getRelaySwapQuotes, executeRelaySteps, RelayQuoteResponse } from './RelayQuotes';
+import {
+  getRelaySwapQuotes,
+  executeRelaySteps,
+  RelayQuoteResponse,
+  parseRelayError,
+} from './RelayQuotes';
 import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
@@ -349,19 +354,47 @@ const SwapComponent: React.FC = () => {
           console.error('Error estimating price:', error);
           setTotalUsdAmount(null);
 
-          // Check if this is a LI.FI aggregator 404 error
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const isLiFiNotFoundError =
-            errorMessage.includes('404') ||
-            errorMessage.includes('Not Found') ||
-            errorMessage.includes('No available quotes for the requested transfer') ||
-            errorMessage.includes('NotFoundError');
+          // Parse Relay-specific errors for better error categorization
+          const { userMessage, errorCode } = parseRelayError(error);
 
-          if (isLiFiNotFoundError) {
-            console.log('LI.FI aggregator appears to be down or no quotes available');
+          if (errorCode) {
+            console.error('🚨 Relay Price Estimation Error:', {
+              errorCode,
+              userMessage,
+              originalError: error,
+            });
+          }
+
+          // Check for specific error types
+          const isNoRoutesError =
+            errorCode === 'NO_SWAP_ROUTES_FOUND' ||
+            errorCode === 'NO_QUOTES' ||
+            errorCode === 'NO_INTERNAL_SWAP_ROUTES_FOUND';
+
+          const isLiquidityError =
+            errorCode === 'INSUFFICIENT_LIQUIDITY' || errorCode === 'SWAP_IMPACT_TOO_HIGH';
+
+          if (isNoRoutesError) {
+            console.log('No routes available for this swap');
             setAggregatorDown(true);
-          } else {
+          } else if (isLiquidityError) {
+            console.log('Liquidity issue detected');
             setLiquidityError(true);
+          } else {
+            // Fallback to checking error message for legacy compatibility
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const isLegacyNotFoundError =
+              errorMessage.includes('404') ||
+              errorMessage.includes('Not Found') ||
+              errorMessage.includes('No available quotes for the requested transfer') ||
+              errorMessage.includes('NotFoundError');
+
+            if (isLegacyNotFoundError) {
+              console.log('Legacy: No quotes available');
+              setAggregatorDown(true);
+            } else {
+              setLiquidityError(true);
+            }
           }
         }
       } finally {
@@ -998,10 +1031,23 @@ const SwapComponent: React.FC = () => {
       }
     } catch (error) {
       console.error('An error occurred:', error);
+
+      // Parse Relay-specific errors for better user experience
+      const { userMessage, errorCode } = parseRelayError(error);
+
+      // Log detailed error information for debugging
+      if (errorCode) {
+        console.error('🚨 Relay Error Details:', {
+          errorCode,
+          userMessage,
+          originalError: error,
+        });
+      }
+
       setStatusMessage({
         step: 'Error',
         message: 'Execution failed',
-        error: formatErrorMessage(error),
+        error: userMessage || formatErrorMessage(error),
         isError: true,
       });
     }

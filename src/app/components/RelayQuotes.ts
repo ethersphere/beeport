@@ -3,6 +3,141 @@ import { ChainId } from '@lifi/sdk';
 import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, GNOSIS_BZZ_ADDRESS, DEFAULT_SLIPPAGE } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
 
+// Relay API Error Codes and Messages
+// Based on: https://docs.relay.link/references/api/handling-errors
+export interface RelayError {
+  message: string;
+  errorCode: string;
+  errorData?: string;
+}
+
+export const RELAY_ERROR_MESSAGES: Record<string, string> = {
+  // Expected Errors - User/Request Issues
+  AMOUNT_TOO_LOW: 'The swap amount is too small. Please increase the amount and try again.',
+  CHAIN_DISABLED: 'This blockchain is currently unavailable. Please try a different chain.',
+  EXTRA_TXS_NOT_SUPPORTED: 'Additional transactions are not supported for this swap type.',
+  FORBIDDEN: 'You do not have permission to perform this action.',
+  INSUFFICIENT_FUNDS: 'Insufficient balance in your wallet. Please add funds and try again.',
+  INSUFFICIENT_LIQUIDITY:
+    'Not enough liquidity available for this swap. Try a smaller amount or different tokens.',
+  INVALID_ADDRESS: 'Invalid wallet address. Please check your wallet connection.',
+  INVALID_EXTRA_TXS: 'Transaction configuration error. Please try again.',
+  INVALID_GAS_LIMIT_FOR_DEPOSIT_SPECIFIED_TXS:
+    'Gas limit configuration error for this transaction type.',
+  INVALID_INPUT_CURRENCY:
+    'The selected input token is not supported. Please choose a different token.',
+  INVALID_OUTPUT_CURRENCY:
+    'The selected output token is not supported. Please choose a different token.',
+  INVALID_SLIPPAGE_TOLERANCE: 'Invalid slippage tolerance setting. Please try again.',
+  NO_INTERNAL_SWAP_ROUTES_FOUND:
+    'No swap route available for these tokens. Try different tokens or amounts.',
+  NO_QUOTES: 'No quotes available for this swap. Please try different parameters.',
+  NO_SWAP_ROUTES_FOUND: 'No route found for this swap. Try different tokens, amounts, or chains.',
+  ROUTE_TEMPORARILY_RESTRICTED:
+    'This route is temporarily unavailable due to high traffic. Please try again later.',
+  SANCTIONED_CURRENCY: 'This token is restricted and cannot be traded.',
+  SANCTIONED_WALLET_ADDRESS: 'This wallet address is restricted from trading.',
+  SWAP_IMPACT_TOO_HIGH: 'Price impact is too high for this swap. Try a smaller amount.',
+  UNAUTHORIZED: 'Authentication required. Please connect your wallet.',
+  UNSUPPORTED_CHAIN: 'This blockchain is not supported. Please select a different chain.',
+  UNSUPPORTED_CURRENCY: 'This token is not supported. Please select a different token.',
+  UNSUPPORTED_EXECUTION_TYPE: 'This transaction type is not supported.',
+  UNSUPPORTED_ROUTE: 'This swap combination is not supported.',
+  USER_RECIPIENT_MISMATCH: 'Sender and recipient addresses must match for this swap type.',
+
+  // Unexpected Errors - Infrastructure Issues
+  DESTINATION_TX_FAILED: 'Transaction failed on the destination chain. Please try again.',
+  ERC20_ROUTER_ADDRESS_NOT_FOUND: 'Token router not found. Please try again or contact support.',
+  UNKNOWN_ERROR: 'An unexpected error occurred. Please try again.',
+  SWAP_QUOTE_FAILED: 'Failed to calculate swap price. Please try again.',
+  PERMIT_FAILED: 'Token approval failed. Please try the transaction again.',
+
+  // User Action Errors
+  USER_REJECTED: 'Transaction was cancelled by user.',
+};
+
+/**
+ * Parses Relay API error response and returns user-friendly message
+ */
+export const parseRelayError = (error: any): { userMessage: string; errorCode?: string } => {
+  try {
+    // Check for user rejection errors first (most common case)
+    const errorMessage = error?.message || error?.toString() || '';
+
+    // Handle user rejection cases
+    if (
+      errorMessage.includes('User rejected') ||
+      errorMessage.includes('User denied') ||
+      errorMessage.includes('user rejected') ||
+      errorMessage.includes('rejected the request') ||
+      errorMessage.includes('User cancelled') ||
+      errorMessage.includes('Transaction was rejected')
+    ) {
+      return {
+        userMessage: 'Transaction was cancelled by user.',
+        errorCode: 'USER_REJECTED',
+      };
+    }
+
+    // Handle insufficient funds errors
+    if (
+      errorMessage.includes('insufficient funds') ||
+      errorMessage.includes('Insufficient funds') ||
+      errorMessage.includes('insufficient balance')
+    ) {
+      return {
+        userMessage: 'Insufficient balance in your wallet. Please add funds and try again.',
+        errorCode: 'INSUFFICIENT_FUNDS',
+      };
+    }
+
+    // Try to parse JSON error response for Relay API errors
+    let errorData: RelayError;
+
+    if (typeof error === 'string') {
+      try {
+        errorData = JSON.parse(error);
+      } catch {
+        // If it's a string but not JSON, check for common error patterns
+        if (errorMessage.includes('Network Error') || errorMessage.includes('fetch')) {
+          return {
+            userMessage: 'Network error occurred. Please check your connection and try again.',
+          };
+        }
+        return { userMessage: 'An error occurred. Please try again.' };
+      }
+    } else if (error?.message) {
+      try {
+        errorData = JSON.parse(error.message);
+      } catch {
+        // Not a JSON error, return the original message if it's user-friendly
+        if (errorMessage.length < 100 && !errorMessage.includes('0x')) {
+          return { userMessage: errorMessage };
+        }
+        return { userMessage: 'An error occurred. Please try again.' };
+      }
+    } else {
+      return { userMessage: 'An unexpected error occurred. Please try again.' };
+    }
+
+    // Handle structured Relay API errors
+    if (errorData?.errorCode && RELAY_ERROR_MESSAGES[errorData.errorCode]) {
+      return {
+        userMessage: RELAY_ERROR_MESSAGES[errorData.errorCode],
+        errorCode: errorData.errorCode,
+      };
+    }
+
+    // Fallback to original message if error code not found
+    return {
+      userMessage: errorData.message || 'An error occurred. Please try again.',
+      errorCode: errorData.errorCode,
+    };
+  } catch {
+    return { userMessage: 'An unexpected error occurred. Please try again.' };
+  }
+};
+
 /**
  * Checks the current BZZ token allowance for the Swarm registry contract
  */
@@ -301,7 +436,18 @@ export const getRelayQuote = async ({
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Quote API error! Status: ${response.status}, Details: ${errorText}`);
+        console.error('❌ Relay API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        });
+
+        // Parse and throw structured error for better handling
+        const { userMessage, errorCode } = parseRelayError(errorText);
+        const error = new Error(userMessage);
+        (error as any).relayErrorCode = errorCode;
+        (error as any).originalError = errorText;
+        throw error;
       }
 
       const data = await response.json();
