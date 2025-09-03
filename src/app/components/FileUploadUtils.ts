@@ -7,6 +7,7 @@ import {
   UPLOAD_RETRY_CONFIG,
   FILE_SIZE_CONFIG,
   UPLOAD_TIMEOUT_CONFIG,
+  SWARM_DEFERRED_UPLOAD,
 } from './constants';
 
 /**
@@ -346,7 +347,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         serveUncompressed && (isTarFile || isArchive) ? 'application/x-tar' : processedFile.type,
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
-      'swarm-deferred-upload': 'false',
+      'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
       'swarm-collection': serveUncompressed && (isTarFile || isArchive) ? 'true' : 'false',
     };
 
@@ -592,7 +593,7 @@ export const handleMultiFileUpload = async (
         'Content-Type': serveUncompressed && isArchive ? 'application/x-tar' : processedFile.type,
         'swarm-postage-batch-id': postageBatchId,
         'swarm-pin': 'false',
-        'swarm-deferred-upload': 'false',
+        'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
         'swarm-collection': serveUncompressed && isArchive ? 'true' : 'false',
       };
 

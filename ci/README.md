@@ -1,7 +1,7 @@
 ## CI scripts
 
 ```
-chmod +x /var/www/multichain/ci/deploy.sh
+chmod +x /var/www/beeport/ci/deploy.sh
 ```
 
 so it can be run by webhook

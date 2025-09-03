@@ -1,15 +1,15 @@
 #!/bin/bash
-# /var/www/multichain/deploy.sh
+# /var/www/beeport/deploy.sh
 
 # Log function
 log_message() {
-  echo "[$(date -Iseconds)] $1" >> /var/www/multichain/deploy-log.txt
+  echo "[$(date -Iseconds)] $1" >> /var/www/beeport/deploy-log.txt
 }
 
 log_message "Starting deployment"
 
 # Navigate to app directory
-cd /var/www/multichain
+cd /var/www/beeport
 log_message "Pulling latest changes"
 git pull
 
@@ -21,15 +21,15 @@ npm run build
 
 # Restart the application
 log_message "Stopping existing screen session"
-screen -S multichain -X quit > /dev/null 2>&1 || true
+screen -S beeport -X quit > /dev/null 2>&1 || true
 log_message "Starting new screen session"
-screen -dmS multichain bash -c "cd /var/www/multichain/backend && node index.js > backend.log 2>&1"
+screen -dmS beeport bash -c "cd /var/www/beeport/backend && node index.js > backend.log 2>&1"
 
 # Check if screen session was created
-if screen -list | grep -q "multichain"; then
-  log_message "Screen session 'multichain' started successfully"
+if screen -list | grep -q "beeport"; then
+  log_message "Screen session 'beeport' started successfully"
 else
-  log_message "ERROR: Failed to start screen session 'multichain'"
+  log_message "ERROR: Failed to start screen session 'beeport'"
 fi
 
 log_message "Deployment completed"

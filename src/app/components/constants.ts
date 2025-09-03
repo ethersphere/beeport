@@ -69,6 +69,9 @@ export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status 
 export const RELAY_STATUS_MAX_ATTEMPTS = 60; // Maximum status check attempts (5 minutes)
 export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
+// Swarm upload configuration
+export const SWARM_DEFERRED_UPLOAD = 'false'; // Use direct upload to Swarm network for better performance
+
 // Disable message signing for executeRoute calls
 export const DISABLE_MESSAGE_SIGNING = true;
 
