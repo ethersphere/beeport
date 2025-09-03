@@ -59,6 +59,10 @@ export const MIN_BRIDGE_USD_VALUE = 0.1;
 
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
+// Gas top-up configuration for cross-chain swaps
+export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum xDAI balance to skip gas top-up
+export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in USD decimal format (1000000 = $1)
+
 // Disable message signing for executeRoute calls
 export const DISABLE_MESSAGE_SIGNING = true;
 

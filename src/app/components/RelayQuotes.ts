@@ -1,6 +1,12 @@
 import { parseAbi, encodeFunctionData, formatEther } from 'viem';
 import { ChainId } from '@lifi/sdk';
-import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, GNOSIS_BZZ_ADDRESS, DEFAULT_SLIPPAGE } from './constants';
+import {
+  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+  GNOSIS_BZZ_ADDRESS,
+  DEFAULT_SLIPPAGE,
+  GAS_TOPUP_THRESHOLD_XDAI,
+  GAS_TOPUP_AMOUNT_USD,
+} from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
 
 // Relay API Error Codes and Messages
@@ -141,7 +147,7 @@ export const parseRelayError = (error: any): { userMessage: string; errorCode?: 
 /**
  * Checks the gas balance on Gnosis chain
  * @param address The wallet address to check
- * @returns Promise<boolean> True if balance is >= 1 xDAI, false otherwise
+ * @returns Promise<boolean> True if balance is >= GAS_TOPUP_THRESHOLD_XDAI, false otherwise
  */
 const checkGnosisGasBalance = async (address: string): Promise<boolean> => {
   try {
@@ -155,9 +161,9 @@ const checkGnosisGasBalance = async (address: string): Promise<boolean> => {
 
     console.log(`💰 Gnosis balance: ${balanceInEther} xDAI`);
 
-    // Return true if balance is >= 1 xDAI
-    const hasEnoughGas = balanceInEther >= 1.0;
-    console.log(`⛽ Has enough gas (>=1 xDAI): ${hasEnoughGas}`);
+    // Return true if balance is >= threshold
+    const hasEnoughGas = balanceInEther >= GAS_TOPUP_THRESHOLD_XDAI;
+    console.log(`⛽ Has enough gas (>=${GAS_TOPUP_THRESHOLD_XDAI} xDAI): ${hasEnoughGas}`);
 
     return hasEnoughGas;
   } catch (error) {
@@ -440,7 +446,7 @@ export const getRelayQuote = async ({
   if (selectedChainId !== ChainId.DAI) {
     // Only check gas balance for cross-chain swaps
     const hasEnoughGas = await checkGnosisGasBalance(address);
-    shouldTopupGas = !hasEnoughGas; // Top up if balance < 1 xDAI
+    shouldTopupGas = !hasEnoughGas; // Top up if balance < GAS_TOPUP_THRESHOLD_XDAI
 
     console.log(
       `⛽ Gas top-up decision: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'} (cross-chain swap)`
@@ -463,7 +469,7 @@ export const getRelayQuote = async ({
     slippageTolerance: (DEFAULT_SLIPPAGE * 100).toString(), // Convert to integer percentage (5 for 5%)
     refundOnOrigin: true,
     topupGas: shouldTopupGas, // Conditionally enable gas forwarding
-    ...(shouldTopupGas && { topupGasAmount: '1000000' }), // $1 in USD decimal format (1000000 = $1)
+    ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }), // Gas top-up amount from constants
   };
 
   // Step 6: Make API request to Relay
