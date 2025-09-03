@@ -1,4 +1,4 @@
-import { parseAbi, encodeFunctionData } from 'viem';
+import { parseAbi, encodeFunctionData, formatEther } from 'viem';
 import { ChainId } from '@lifi/sdk';
 import { GNOSIS_CUSTOM_REGISTRY_ADDRESS, GNOSIS_BZZ_ADDRESS, DEFAULT_SLIPPAGE } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
@@ -139,6 +139,35 @@ export const parseRelayError = (error: any): { userMessage: string; errorCode?: 
 };
 
 /**
+ * Checks the gas balance on Gnosis chain
+ * @param address The wallet address to check
+ * @returns Promise<boolean> True if balance is >= 1 xDAI, false otherwise
+ */
+const checkGnosisGasBalance = async (address: string): Promise<boolean> => {
+  try {
+    console.log('🔍 Checking Gnosis gas balance for:', address);
+
+    const { client } = getGnosisPublicClient();
+    const balance = await client.getBalance({ address: address as `0x${string}` });
+
+    // Convert balance to ether (xDAI)
+    const balanceInEther = parseFloat(formatEther(balance));
+
+    console.log(`💰 Gnosis balance: ${balanceInEther} xDAI`);
+
+    // Return true if balance is >= 1 xDAI
+    const hasEnoughGas = balanceInEther >= 1.0;
+    console.log(`⛽ Has enough gas (>=1 xDAI): ${hasEnoughGas}`);
+
+    return hasEnoughGas;
+  } catch (error) {
+    console.error('❌ Error checking Gnosis gas balance:', error);
+    // If we can't check the balance, default to enabling gas top-up for safety
+    return false;
+  }
+};
+
+/**
  * Checks the current BZZ token allowance for the Swarm registry contract
  */
 const checkBzzAllowance = async (userAddress: string, requiredAmount: string): Promise<boolean> => {
@@ -189,6 +218,7 @@ export interface RelayQuoteRequest {
   slippageTolerance?: string;
   refundOnOrigin?: boolean;
   topupGas?: boolean;
+  topupGasAmount?: string;
 }
 
 export interface RelayQuoteResponse {
@@ -405,7 +435,21 @@ export const getRelayQuote = async ({
     includesContractCall: true,
   });
 
-  // Step 4: Create Relay quote request
+  // Step 4: Check gas balance on Gnosis chain for cross-chain swaps
+  let shouldTopupGas = false;
+  if (selectedChainId !== ChainId.DAI) {
+    // Only check gas balance for cross-chain swaps
+    const hasEnoughGas = await checkGnosisGasBalance(address);
+    shouldTopupGas = !hasEnoughGas; // Top up if balance < 1 xDAI
+
+    console.log(
+      `⛽ Gas top-up decision: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'} (cross-chain swap)`
+    );
+  } else {
+    console.log('⛽ Gas top-up: DISABLED (same-chain swap)');
+  }
+
+  // Step 5: Create Relay quote request
   const relayQuoteRequest: RelayQuoteRequest = {
     user: address,
     recipient: address,
@@ -418,10 +462,11 @@ export const getRelayQuote = async ({
     txs,
     slippageTolerance: (DEFAULT_SLIPPAGE * 100).toString(), // Convert to integer percentage (5 for 5%)
     refundOnOrigin: true,
-    topupGas: true, // Enable gas forwarding for cross-chain
+    topupGas: shouldTopupGas, // Conditionally enable gas forwarding
+    ...(shouldTopupGas && { topupGasAmount: '1000000' }), // $1 in USD decimal format (1000000 = $1)
   };
 
-  // Step 4: Make API request to Relay
+  // Step 6: Make API request to Relay
   const relayQuoteResponse = await performWithRetry(
     async () => {
       console.log('🌐 Calling Relay API with request:', relayQuoteRequest);
