@@ -25,7 +25,16 @@ export const GNOSIS_STAMP_ADDRESS =
 export const DEFAULT_BEE_API_URL =
   process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://swarming.site';
 
-export const BEE_GATEWAY_URL = `https://bzz.link/bzz/`;
+// Check if we're running on production domains
+const isProductionDomain =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'app.ethswarm.org' ||
+    window.location.hostname === 'beeport.eth.limo');
+
+// BEE Gateway URL - use swarming.site for development, bzz.link for production
+export const BEE_GATEWAY_URL =
+  process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
+  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://swarming.site/bzz/');
 
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
@@ -49,6 +58,16 @@ export const MIN_TOKEN_BALANCE_USD = 0.5;
 export const MIN_BRIDGE_USD_VALUE = 0.1;
 
 export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
+
+// Gas top-up configuration for cross-chain swaps
+export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum xDAI balance to skip gas top-up
+export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in USD decimal format (1000000 = $1)
+
+// Relay and timing configuration
+export const RELAY_TIMER_BUFFER_SECONDS = 5; // Buffer added to estimated time for timer display
+export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status checks
+export const RELAY_STATUS_MAX_ATTEMPTS = 60; // Maximum status check attempts (5 minutes)
+export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
 // Disable message signing for executeRoute calls
 export const DISABLE_MESSAGE_SIGNING = true;
@@ -85,9 +104,8 @@ export const FILE_SIZE_CONFIG = {
   enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
 } as const;
 
-// Check if we're running on the production domain
-const isProduction =
-  typeof window !== 'undefined' && window.location.hostname === 'app.ethswarm.org';
+// Use the same production check for other features
+const isProduction = isProductionDomain;
 
 // Define all time options
 const ALL_TIME_OPTIONS = [

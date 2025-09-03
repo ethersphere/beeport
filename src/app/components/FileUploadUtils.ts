@@ -35,7 +35,8 @@ export interface FileUploadParams {
     postageBatchId: string,
     expiryDate: number,
     filename?: string,
-    isWebpageUpload?: boolean
+    isWebpageUpload?: boolean,
+    fileSize?: number
   ) => void;
 }
 
@@ -63,7 +64,8 @@ export interface MultiFileUploadParams {
     postageBatchId: string,
     expiryDate: number,
     filename?: string,
-    isWebpageUpload?: boolean
+    isWebpageUpload?: boolean,
+    fileSize?: number
   ) => void;
   setMultiFileResults: React.Dispatch<React.SetStateAction<MultiFileResult[]>>;
 }
@@ -372,7 +374,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           console.log(`Checking batch existence, attempt ${attempt404}/${maxRetries404}`);
           setStatusMessage({
             step: '404',
-            message: 'Searching for storage ID...',
+            message: 'Waiting for storage to be usable...',
           });
 
           const stampStatus = await checkStampStatus(postageBatchId);
@@ -486,7 +488,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           postageBatchId,
           stamp.batchTTL,
           processedFile?.name,
-          isWebpageUpload
+          isWebpageUpload,
+          selectedFile.size
         );
 
         return parsedReference.reference;
@@ -763,7 +766,7 @@ export const handleMultiFileUpload = async (
           console.log(`Checking batch existence, attempt ${attempt404}/${maxRetries404}`);
           setStatusMessage({
             step: '404',
-            message: 'Searching for storage ID...',
+            message: 'Waiting for storage to be usable...',
           });
 
           const stampStatus = await checkStampStatus(postageBatchId);
@@ -894,7 +897,8 @@ export const handleMultiFileUpload = async (
               postageBatchId,
               expiryDate,
               result.filename,
-              false
+              false,
+              file.size
             );
 
             setUploadStampInfo({
@@ -916,7 +920,14 @@ export const handleMultiFileUpload = async (
           console.error('Error getting stamp info for history:', stampError);
           // Still save the reference even if we can't get stamp info
           const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // Default 30 days
-          saveUploadReference(result.reference, postageBatchId, expiryDate, result.filename, false);
+          saveUploadReference(
+            result.reference,
+            postageBatchId,
+            expiryDate,
+            result.filename,
+            false,
+            file.size
+          );
         }
       }
 

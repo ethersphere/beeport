@@ -1,9 +1,16 @@
 import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /** @type {import('next').NextConfig} */
 const config = {
-  output: 'export', // Ensures a static export is generated
-  assetPrefix: './',
+  // Only use static export for production builds
+  ...(process.env.NODE_ENV === 'production' && {
+    output: 'export',
+    assetPrefix: './',
+  }),
 
   // Optional: Change links `/me` -> `/me/` and emit `/me.html` -> `/me/index.html`
   // trailingSlash: true,
@@ -27,11 +34,30 @@ const config = {
     ignoreBuildErrors: true,
   },
 
-  webpack: config => {
+  webpack: (config, { dev }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
       encoding: fileURLToPath(new URL('encoding', import.meta.url)),
     };
+
+    // Development-specific optimizations
+    if (dev) {
+      // Improve file watching for better cache invalidation
+      config.watchOptions = {
+        poll: 1000, // Check for changes every second
+        aggregateTimeout: 300, // Delay before rebuilding
+        ignored: /node_modules/, // Don't watch node_modules
+      };
+
+      // Ensure proper cache invalidation
+      config.cache = {
+        type: 'filesystem',
+        buildDependencies: {
+          config: [__filename],
+        },
+      };
+    }
+
     return config;
   },
 };

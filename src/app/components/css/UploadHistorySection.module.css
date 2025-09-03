@@ -164,10 +164,28 @@
   flex-wrap: wrap;
 }
 
+.tagContainer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .fileType {
   font-size: 12px;
   color: #8b949e;
   background-color: rgba(48, 54, 61, 0.5);
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  width: fit-content;
+  font-weight: 500;
+}
+
+.fileSize {
+  font-size: 12px;
+  color: #f78166;
+  background-color: rgba(247, 129, 102, 0.1);
   padding: 2px 8px;
   border-radius: 12px;
   display: inline-block;

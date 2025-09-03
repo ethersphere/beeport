@@ -16,6 +16,7 @@ interface UploadRecord {
   expiryDate: number;
   associatedDomains?: string[]; // New field for ENS domains linked to this reference
   isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
+  fileSize?: number; // File size in bytes
 }
 
 interface UploadHistory {
@@ -23,6 +24,26 @@ interface UploadHistory {
 }
 
 type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
+
+/**
+ * Formats file size in bytes to human-readable format
+ */
+const formatFileSize = (bytes?: number): string => {
+  if (!bytes || bytes === 0) return '';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+
+  // Round to 1 decimal place for MB and above, no decimals for B and KB
+  const rounded = unitIndex >= 2 ? Math.round(size * 10) / 10 : Math.round(size);
+  return `${rounded} ${units[unitIndex]}`;
+};
 
 const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUploadHistory }) => {
   const [history, setHistory] = React.useState<UploadRecord[]>([]);
@@ -543,7 +564,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       </button>
                     )}
                   </div>
-                  <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
+                  <div className={styles.tagContainer}>
+                    <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
+                    {record.fileSize && (
+                      <span className={styles.fileSize}>{formatFileSize(record.fileSize)}</span>
+                    )}
+                  </div>
                 </div>
                 <span className={styles.date}>{formatDate(record.timestamp)}</span>
               </div>

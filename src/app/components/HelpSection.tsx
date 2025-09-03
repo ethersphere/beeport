@@ -151,7 +151,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               This app can also be run with remote node, hosted on a server and its endpoints
               exposed, you can use{' '}
               <a
-                href="https://github.com/ethersphere/multichain/blob/main/backend/index.js"
+                href="https://github.com/ethersphere/beeport/blob/main/backend/index.js"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.link}

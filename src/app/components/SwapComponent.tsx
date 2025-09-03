@@ -5,7 +5,7 @@ import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChai
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
-import { createConfig, EVM, executeRoute, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
+import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
 import { parseAbi, formatUnits } from 'viem';
 import { getAddress } from 'viem';
@@ -25,8 +25,7 @@ import {
   DEFAULT_BEE_API_URL,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
-  DISABLE_MESSAGE_SIGNING,
-  ACCEPT_EXCHANGE_RATE_UPDATES,
+  // Note: LiFi execution constants removed - now using Relay API
   UPLOAD_RETRY_CONFIG,
   FILE_SIZE_CONFIG,
   UPLOAD_TIMEOUT_CONFIG,
@@ -48,13 +47,19 @@ import {
   toChecksumAddress,
   getGnosisPublicClient,
   setGnosisRpcUrl,
-  handleExchangeRateUpdate,
+  // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-import { getGnosisQuote, getCrossChainQuote } from './CustomQuotes';
+// Note: LiFi quote functions removed - now using Relay API via RelayQuotes.ts
+import {
+  getRelaySwapQuotes,
+  executeRelaySteps,
+  RelayQuoteResponse,
+  parseRelayError,
+} from './RelayQuotes';
 import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
@@ -252,14 +257,20 @@ const SwapComponent: React.FC = () => {
         setIsChainsLoading(true);
         const chains = await getChains({ chainTypes: [ChainType.EVM] });
         setAvailableChains(chains);
+        console.log('✅ Loaded chains:', chains.length);
       } catch (error) {
-        console.error('Error fetching chains:', error);
+        console.error('❌ Error fetching chains:', error);
+        // Fallback: set some basic chains if LiFi fails
+        setAvailableChains([]);
       } finally {
         setIsChainsLoading(false);
       }
     };
 
-    fetchChains();
+    // Only fetch chains on client side
+    if (typeof window !== 'undefined') {
+      fetchChains();
+    }
   }, []);
 
   // This useEffect will be moved after updateSwarmBatchInitialBalance declaration
@@ -282,7 +293,7 @@ const SwapComponent: React.FC = () => {
     const abortSignal = priceEstimateAbortControllerRef.current.signal;
 
     const updatePriceEstimate = async () => {
-      if (!selectedChainId) return;
+      if (!selectedChainId || !address) return;
 
       // Reset insufficient funds state at the beginning of new price estimation
       setInsufficientFunds(false);
@@ -291,104 +302,51 @@ const SwapComponent: React.FC = () => {
 
       try {
         const bzzAmount = calculateTotalAmount().toString();
-        const gnosisSourceToken =
-          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
 
-        // Add detailed logging
-        console.log('BZZ amount needed:', formatUnits(BigInt(bzzAmount), 16));
-        console.log('Selected days:', selectedDays);
-        console.log(
-          'Selected stamps size:',
-          STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown'
-        );
+        console.log('🔍 Relay price estimation:', {
+          bzzAmount: formatUnits(BigInt(bzzAmount), 16),
+          selectedDays,
+          stampSize:
+            STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown',
+          selectedChainId,
+          fromToken,
+        });
 
-        const { gnosisContactCallsQuoteResponse } = await performWithRetry(
-          () =>
-            getGnosisQuote({
-              gnosisSourceToken,
-              address,
-              bzzAmount,
-              nodeAddress,
-              swarmConfig,
-              setEstimatedTime,
-              topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-            }),
-          'getGnosisQuote-execution',
-          undefined,
-          5, // 5 retries
-          500 // 500ms delay between retries
-        );
+        // Use the new Relay system for price estimation
+        const relayQuoteResult = await getRelaySwapQuotes({
+          selectedChainId,
+          fromToken,
+          address,
+          bzzAmount,
+          nodeAddress,
+          swarmConfig,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+          setEstimatedTime: () => {}, // Don't override estimated time during price estimation
+          isForEstimation: true,
+        });
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
-          console.log('Price estimate aborted after Gnosis quote');
+          console.log('Price estimate aborted');
           return;
         }
 
-        let totalAmount = Number(gnosisContactCallsQuoteResponse.estimate.fromAmountUSD || 0);
+        console.log(
+          `💰 Relay price estimation complete: $${relayQuoteResult.totalAmountUSD.toFixed(2)}`
+        );
+        setTotalUsdAmount(relayQuoteResult.totalAmountUSD.toString());
 
-        if (selectedChainId !== ChainId.DAI) {
-          const { crossChainContractQuoteResponse } = await performWithRetry(
-            () =>
-              getCrossChainQuote({
-                selectedChainId,
-                fromToken,
-                address,
-                toAmount: gnosisContactCallsQuoteResponse.estimate.fromAmount,
-                gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-                setEstimatedTime,
-              }),
-            'getCrossChainQuote',
-            undefined,
-            5,
-            300,
-            abortSignal
-          );
+        // Check if user has enough funds
+        if (selectedTokenInfo) {
+          const tokenBalanceInUsd =
+            Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
+            Number(selectedTokenInfo.priceUSD);
 
-          // If operation was aborted, don't continue
-          if (abortSignal.aborted) {
-            console.log('Price estimate aborted after cross-chain quote');
-            return;
-          }
+          console.log('User token balance in USD:', tokenBalanceInUsd);
+          console.log('Required amount in USD:', relayQuoteResult.totalAmountUSD);
 
-          // Add to total amount bridge fees
-          const bridgeFees = crossChainContractQuoteResponse.estimate.feeCosts
-            ? crossChainContractQuoteResponse.estimate.feeCosts.reduce(
-                (total, fee) => total + Number(fee.amountUSD || 0),
-                0
-              )
-            : 0;
-
-          console.log('Bridge fees:', bridgeFees);
-          console.log(
-            'Gas fees:',
-            crossChainContractQuoteResponse.estimate.gasCosts?.[0]?.amountUSD || '0'
-          );
-          console.log(
-            'Cross chain amount:',
-            crossChainContractQuoteResponse.estimate.fromAmountUSD
-          );
-
-          totalAmount = Number(crossChainContractQuoteResponse.estimate.fromAmountUSD || 0);
-        }
-
-        // One final check if aborted before updating state
-        if (!abortSignal.aborted) {
-          console.log('Total amount:', totalAmount);
-          setTotalUsdAmount(totalAmount.toString());
-
-          // Check if user has enough funds
-          if (selectedTokenInfo) {
-            const tokenBalanceInUsd =
-              Number(formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)) *
-              Number(selectedTokenInfo.priceUSD);
-
-            console.log('User token balance in USD:', tokenBalanceInUsd);
-            console.log('Required amount in USD:', totalAmount);
-
-            // Set insufficient funds flag if cost exceeds available balance
-            setInsufficientFunds(totalAmount > tokenBalanceInUsd);
-          }
+          // Set insufficient funds flag if cost exceeds available balance
+          setInsufficientFunds(relayQuoteResult.totalAmountUSD > tokenBalanceInUsd);
         }
       } catch (error) {
         // Only update error state if not aborted
@@ -396,19 +354,47 @@ const SwapComponent: React.FC = () => {
           console.error('Error estimating price:', error);
           setTotalUsdAmount(null);
 
-          // Check if this is a LI.FI aggregator 404 error
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const isLiFiNotFoundError =
-            errorMessage.includes('404') ||
-            errorMessage.includes('Not Found') ||
-            errorMessage.includes('No available quotes for the requested transfer') ||
-            errorMessage.includes('NotFoundError');
+          // Parse Relay-specific errors for better error categorization
+          const { userMessage, errorCode } = parseRelayError(error);
 
-          if (isLiFiNotFoundError) {
-            console.log('LI.FI aggregator appears to be down or no quotes available');
+          if (errorCode) {
+            console.error('🚨 Relay Price Estimation Error:', {
+              errorCode,
+              userMessage,
+              originalError: error,
+            });
+          }
+
+          // Check for specific error types
+          const isNoRoutesError =
+            errorCode === 'NO_SWAP_ROUTES_FOUND' ||
+            errorCode === 'NO_QUOTES' ||
+            errorCode === 'NO_INTERNAL_SWAP_ROUTES_FOUND';
+
+          const isLiquidityError =
+            errorCode === 'INSUFFICIENT_LIQUIDITY' || errorCode === 'SWAP_IMPACT_TOO_HIGH';
+
+          if (isNoRoutesError) {
+            console.log('No routes available for this swap');
             setAggregatorDown(true);
-          } else {
+          } else if (isLiquidityError) {
+            console.log('Liquidity issue detected');
             setLiquidityError(true);
+          } else {
+            // Fallback to checking error message for legacy compatibility
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const isLegacyNotFoundError =
+              errorMessage.includes('404') ||
+              errorMessage.includes('Not Found') ||
+              errorMessage.includes('No available quotes for the requested transfer') ||
+              errorMessage.includes('NotFoundError');
+
+            if (isLegacyNotFoundError) {
+              console.log('Legacy: No quotes available');
+              setAggregatorDown(true);
+            } else {
+              setLiquidityError(true);
+            }
           }
         }
       } finally {
@@ -628,11 +614,6 @@ const SwapComponent: React.FC = () => {
     }
 
     try {
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Approving Token...',
-      });
-
       // Calculate amount based on whether this is a top-up or new batch
       let totalAmount: bigint;
 
@@ -661,130 +642,170 @@ const SwapComponent: React.FC = () => {
           }...${topUpBatchId?.slice(-4)}`
         : 'Buying storage...';
 
-      // First approve the token transfer
-      const approveCallData = {
-        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: [
-          {
-            constant: false,
-            inputs: [
-              { name: '_spender', type: 'address' },
-              { name: '_value', type: 'uint256' },
-            ],
-            name: 'approve',
-            outputs: [{ name: 'success', type: 'bool' }],
-            type: 'function',
-          },
-        ],
-        functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, totalAmount],
-        account: address,
-      };
-
-      console.log('Sending approval tx with args:', approveCallData);
-
-      const approveTxHash = await walletClient.writeContract(approveCallData);
-      console.log('Approval transaction hash:', approveTxHash);
-
-      // Wait for approval transaction to be mined
-      const approveReceipt = await publicClient.waitForTransactionReceipt({
-        hash: approveTxHash,
+      // Check current BZZ allowance to see if we need approval
+      setStatusMessage({
+        step: 'Checking',
+        message: 'Checking token allowance...',
       });
 
-      if (approveReceipt.status === 'success') {
-        setStatusMessage({
-          step: 'Batch',
-          message: operationMsg,
+      let needsApproval = true;
+      try {
+        const allowance = await publicClient.readContract({
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: parseAbi([
+            'function allowance(address owner, address spender) external view returns (uint256)',
+          ]),
+          functionName: 'allowance',
+          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
         });
 
-        // Prepare contract write parameters - different based on operation type
-        let contractWriteParams;
+        const currentAllowance = BigInt(allowance.toString());
+        needsApproval = currentAllowance < totalAmount;
 
-        if (isTopUp && topUpBatchId) {
-          // Top up existing batch
-          contractWriteParams = {
-            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-            abi: parseAbi(updatedConfig.swarmContractAbi),
-            functionName: 'topUpBatch',
-            args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
-            account: address,
-          };
-        } else {
-          // Create new batch
-          contractWriteParams = {
-            address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-            abi: parseAbi(updatedConfig.swarmContractAbi),
-            functionName: 'createBatchRegistry',
-            args: [
-              address,
-              nodeAddress,
-              updatedConfig.swarmBatchInitialBalance,
-              updatedConfig.swarmBatchDepth,
-              updatedConfig.swarmBatchBucketDepth,
-              updatedConfig.swarmBatchNonce,
-              updatedConfig.swarmBatchImmutable,
-            ],
-            account: address,
-          };
+        console.log('🔍 BZZ Allowance Check:', {
+          currentAllowance: currentAllowance.toString(),
+          requiredAmount: totalAmount.toString(),
+          needsApproval,
+        });
+      } catch (error) {
+        console.error('Failed to check BZZ allowance:', error);
+        // Default to needing approval if check fails
+        needsApproval = true;
+      }
+
+      if (needsApproval) {
+        setStatusMessage({
+          step: 'Approval',
+          message: 'Approving Token...',
+        });
+
+        // Use infinite approval (max uint256) to avoid future approval transactions
+        const MAX_UINT256 =
+          '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+
+        const approveCallData = {
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: [
+            {
+              constant: false,
+              inputs: [
+                { name: '_spender', type: 'address' },
+                { name: '_value', type: 'uint256' },
+              ],
+              name: 'approve',
+              outputs: [{ name: 'success', type: 'bool' }],
+              type: 'function',
+            },
+          ],
+          functionName: 'approve',
+          args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, BigInt(MAX_UINT256)],
+          account: address,
+        };
+
+        console.log('🔐 Sending infinite approval tx for BZZ tokens...');
+
+        const approveTxHash = await walletClient.writeContract(approveCallData);
+        console.log('Approval transaction hash:', approveTxHash);
+
+        // Wait for approval transaction to be mined
+        const approveReceipt = await publicClient.waitForTransactionReceipt({
+          hash: approveTxHash,
+        });
+
+        if (approveReceipt.status !== 'success') {
+          throw new Error('Approval failed');
         }
 
-        console.log('Creating second transaction with params:', contractWriteParams);
+        console.log('✅ Infinite BZZ approval completed successfully');
+      } else {
+        console.log('✅ BZZ approval sufficient - skipping approval transaction');
+      }
 
-        // Execute the batch creation or top-up
-        const batchTxHash = await walletClient.writeContract(contractWriteParams);
-        console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+      // Prepare contract write parameters - different based on operation type
+      let contractWriteParams;
 
-        // Wait for batch transaction to be mined
-        const batchReceipt = await publicClient.waitForTransactionReceipt({
-          hash: batchTxHash,
-        });
+      if (isTopUp && topUpBatchId) {
+        // Top up existing batch
+        contractWriteParams = {
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          abi: parseAbi(updatedConfig.swarmContractAbi),
+          functionName: 'topUpBatch',
+          args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
+          account: address,
+        };
+      } else {
+        // Create new batch
+        contractWriteParams = {
+          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+          abi: parseAbi(updatedConfig.swarmContractAbi),
+          functionName: 'createBatchRegistry',
+          args: [
+            address,
+            nodeAddress,
+            updatedConfig.swarmBatchInitialBalance,
+            updatedConfig.swarmBatchDepth,
+            updatedConfig.swarmBatchBucketDepth,
+            updatedConfig.swarmBatchNonce,
+            updatedConfig.swarmBatchImmutable,
+          ],
+          account: address,
+        };
+      }
 
-        if (batchReceipt.status === 'success') {
-          if (isTopUp) {
-            // For top-up, we already have the batch ID
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId as string);
+      console.log('Creating transaction with params:', contractWriteParams);
 
-            // Set top-up completion info
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId as string,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
+      // Execute the batch creation or top-up
+      const batchTxHash = await walletClient.writeContract(contractWriteParams);
+      console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
+
+      // Wait for batch transaction to be mined
+      const batchReceipt = await publicClient.waitForTransactionReceipt({
+        hash: batchTxHash,
+      });
+
+      if (batchReceipt.status === 'success') {
+        if (isTopUp) {
+          // For top-up, we already have the batch ID
+          console.log('Successfully topped up batch ID:', topUpBatchId);
+          setPostageBatchId(topUpBatchId as string);
+
+          // Set top-up completion info
+          setTopUpCompleted(true);
+          setTopUpInfo({
+            batchId: topUpBatchId as string,
+            days: selectedDays || 0,
+            cost: totalUsdAmount || '0',
+          });
+
+          setStatusMessage({
+            step: 'Complete',
+            message: 'Batch Topped Up Successfully',
+            isSuccess: true,
+          });
+          // Don't set upload step for top-ups
+        } else {
+          try {
+            // Calculate the batch ID for logging
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+
+            console.log('Batch created successfully with ID:', calculatedBatchId);
 
             setStatusMessage({
               step: 'Complete',
-              message: 'Batch Topped Up Successfully',
+              message: 'Storage Bought Successfully',
               isSuccess: true,
             });
-            // Don't set upload step for top-ups
-          } else {
-            try {
-              // Calculate the batch ID for logging
-              const calculatedBatchId = readBatchId(
-                updatedConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS
-              );
-
-              console.log('Batch created successfully with ID:', calculatedBatchId);
-
-              setStatusMessage({
-                step: 'Complete',
-                message: 'Storage Bought Successfully',
-                isSuccess: true,
-              });
-              setUploadStep('ready');
-            } catch (error) {
-              console.error('Failed to process batch completion:', error);
-              throw new Error('Failed to process batch completion');
-            }
+            setUploadStep('ready');
+          } catch (error) {
+            console.error('Failed to process batch completion:', error);
+            throw new Error('Failed to process batch completion');
           }
-        } else {
-          throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
         }
       } else {
-        throw new Error('Approval failed');
+        throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
       }
     } catch (error) {
       console.error(`Error in direct BZZ transactions: ${error}`);
@@ -797,252 +818,8 @@ const SwapComponent: React.FC = () => {
     }
   };
 
-  const handleGnosisTokenSwap = async (contractCallsRoute: any, currentConfig: any) => {
-    if (!selectedChainId) return;
-
-    setStatusMessage({
-      step: 'Route',
-      message: 'Executing contract calls...',
-    });
-
-    const executedRoute = await executeRoute(contractCallsRoute, {
-      disableMessageSigning: DISABLE_MESSAGE_SIGNING,
-      acceptExchangeRateUpdateHook: params =>
-        handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
-      updateRouteHook: async updatedRoute => {
-        console.log('Updated Route:', updatedRoute);
-        const status = updatedRoute.steps[0]?.execution?.status;
-        console.log(`Status: ${status}`);
-
-        setStatusMessage({
-          step: 'Route',
-          message: `Status update: ${status?.replace(/_/g, ' ')}`,
-        });
-
-        if (status === 'DONE') {
-          // Reset timer when done
-          resetTimer();
-
-          const txHash = updatedRoute.steps[0]?.execution?.process[0]?.txHash;
-          console.log('Created new Batch at trx', txHash);
-
-          try {
-            if (isTopUp && topUpBatchId) {
-              console.log('Successfully topped up batch ID:', topUpBatchId);
-              // Set top-up completion info
-              setTopUpCompleted(true);
-              setTopUpInfo({
-                batchId: topUpBatchId,
-                days: selectedDays || 0,
-                cost: totalUsdAmount || '0',
-              });
-
-              setStatusMessage({
-                step: 'Complete',
-                message: 'Batch Topped Up Successfully',
-                isSuccess: true,
-              });
-            } else {
-              // Calculate the batch ID for logging
-              const calculatedBatchId = readBatchId(
-                currentConfig.swarmBatchNonce,
-                GNOSIS_CUSTOM_REGISTRY_ADDRESS
-              );
-
-              console.log('Batch created successfully with ID:', calculatedBatchId);
-
-              setStatusMessage({
-                step: 'Complete',
-                message: 'Storage Bought Successfully',
-                isSuccess: true,
-              });
-              setUploadStep('ready');
-            }
-          } catch (error) {
-            console.error('Failed to create batch ID:', error);
-          }
-        } else if (status === 'FAILED') {
-          // Use the utility function to generate and update the nonce
-          generateAndUpdateNonce(currentConfig, setSwarmConfig);
-
-          console.log('Transaction failed, regenerated nonce for recovery');
-
-          // Reset timer if failed
-          resetTimer();
-        }
-      },
-    });
-    console.log('Contract calls execution completed:', executedRoute);
-  };
-
-  const handleCrossChainSwap = async (
-    gnosisContractCallsRoute: any,
-    toAmount: any,
-    updatedConfig: any
-  ) => {
-    if (!selectedChainId) return;
-
-    setStatusMessage({
-      step: 'Quote',
-      message: 'Getting quote...',
-    });
-
-    const { crossChainContractCallsRoute } = await performWithRetry(
-      () =>
-        getCrossChainQuote({
-          selectedChainId,
-          fromToken,
-          address: address as string,
-          toAmount,
-          gnosisDestinationToken: GNOSIS_DESTINATION_TOKEN,
-          setEstimatedTime,
-        }),
-      'getCrossChainQuote-execution',
-      undefined,
-      5, // 5 retries
-      500 // 500ms delay between retries
-    );
-
-    const executedRoute = await executeRoute(crossChainContractCallsRoute, {
-      disableMessageSigning: DISABLE_MESSAGE_SIGNING,
-      acceptExchangeRateUpdateHook: params =>
-        handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
-      updateRouteHook: async crossChainContractCallsRoute => {
-        console.log('Updated Route 1:', crossChainContractCallsRoute);
-        const step1Status = crossChainContractCallsRoute.steps[0]?.execution?.status;
-        console.log(`Step 1 Status: ${step1Status}`);
-
-        setStatusMessage({
-          step: 'Route',
-          message: `Bridging in progress: ${step1Status?.replace(/_/g, ' ')}.`,
-        });
-
-        if (step1Status === 'DONE') {
-          console.log('Route 1 wallet client:', walletClient);
-          await handleChainSwitch(gnosisContractCallsRoute, updatedConfig);
-        } else if (step1Status === 'FAILED') {
-          // Add reset if the execution fails
-          resetTimer();
-        }
-      },
-    });
-
-    console.log('First route execution completed:', executedRoute);
-  };
-
-  const handleChainSwitch = async (contractCallsRoute: any, updatedConfig: any) => {
-    console.log('First route completed, triggering chain switch to Gnosis...');
-
-    // Reset the timer when the action completes
-    resetTimer();
-
-    setStatusMessage({
-      step: 'Switch',
-      message: 'First route completed. Switching chain to Gnosis...',
-    });
-
-    const unwatch = watchChainId(config, {
-      onChange: async chainId => {
-        if (chainId === ChainId.DAI) {
-          console.log('Detected switch to Gnosis, executing second route...');
-          unwatch();
-
-          // Get a fresh wallet client for the new chain
-          try {
-            const newClient = await getWalletClient(config, { chainId });
-            console.log('Route 2 wallet client:', newClient);
-
-            // Update our ref
-            currentWalletClientRef.current = newClient;
-
-            await handleGnosisRoute(contractCallsRoute, updatedConfig);
-          } catch (error) {
-            console.error('Error getting new wallet client:', error);
-            // Fall back to using the current wallet client
-            await handleGnosisRoute(contractCallsRoute, updatedConfig);
-          }
-        }
-      },
-    });
-
-    switchChain({ chainId: ChainId.DAI });
-  };
-
-  const handleGnosisRoute = async (contractCallsRoute: any, updatedConfig: any) => {
-    setStatusMessage({
-      step: 'Route',
-      message: 'Chain switched. Executing second route...',
-    });
-
-    try {
-      const executedRoute2 = await executeRoute(contractCallsRoute, {
-        disableMessageSigning: DISABLE_MESSAGE_SIGNING,
-        acceptExchangeRateUpdateHook: params =>
-          handleExchangeRateUpdate(params, setStatusMessage, ACCEPT_EXCHANGE_RATE_UPDATES),
-        updateRouteHook: async contractCallsRoute => {
-          console.log('Updated Route 2:', contractCallsRoute);
-          const step2Status = contractCallsRoute.steps[0]?.execution?.status;
-          console.log(`Step 2 Status: ${step2Status}`);
-
-          setStatusMessage({
-            step: 'Route',
-            message: `Second route status: ${step2Status?.replace(/_/g, ' ')}`,
-          });
-
-          if (step2Status === 'DONE') {
-            const txHash =
-              contractCallsRoute.steps[0]?.execution?.process[1]?.txHash ||
-              contractCallsRoute.steps[0]?.execution?.process[0]?.txHash;
-            console.log('Created new Batch at trx', txHash);
-
-            try {
-              if (isTopUp && topUpBatchId) {
-                console.log('Successfully topped up batch ID:', topUpBatchId);
-                // Set top-up completion info
-                setTopUpCompleted(true);
-                setTopUpInfo({
-                  batchId: topUpBatchId,
-                  days: selectedDays || 0,
-                  cost: totalUsdAmount || '0',
-                });
-
-                setStatusMessage({
-                  step: 'Complete',
-                  message: 'Batch Topped Up Successfully',
-                  isSuccess: true,
-                });
-              } else {
-                // Calculate the batch ID for logging
-                const calculatedBatchId = readBatchId(
-                  updatedConfig.swarmBatchNonce,
-                  GNOSIS_CUSTOM_REGISTRY_ADDRESS
-                );
-                console.log('Batch created successfully with ID:', calculatedBatchId);
-
-                setStatusMessage({
-                  step: 'Complete',
-                  message: 'Storage Bought Successfully',
-                  isSuccess: true,
-                });
-                setUploadStep('ready');
-              }
-            } catch (error) {
-              console.error('Failed to create batch ID:', error);
-            }
-          }
-        },
-      });
-      console.log('Second route execution completed:', executedRoute2);
-    } catch (error) {
-      console.error('Error executing second route:', error);
-      setStatusMessage({
-        step: 'Error',
-        message: 'Error executing second route',
-        error: 'Second route execution failed. Check console for details.',
-        isError: true,
-      });
-    }
-  };
+  // Note: Old LiFi functions removed (handleGnosisTokenSwap, handleCrossChainSwap,
+  // handleChainSwitch, handleGnosisRoute) - now using Relay API via RelayQuotes.ts
 
   const handleSwap = async () => {
     if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
@@ -1147,43 +924,130 @@ const SwapComponent: React.FC = () => {
           message: 'Getting quote...',
         });
 
-        const gnosisSourceToken =
-          selectedChainId === ChainId.DAI ? fromToken : GNOSIS_DESTINATION_TOKEN;
+        // Use the new Relay system for execution (don't set timer yet)
+        const relayQuoteResult = await getRelaySwapQuotes({
+          selectedChainId,
+          fromToken,
+          address,
+          bzzAmount: updatedConfig.swarmBatchTotal,
+          nodeAddress,
+          swarmConfig: updatedConfig,
+          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+          setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
+          isForEstimation: false,
+        });
 
-        // Pass topUpBatchId to getGnosisQuote when doing a top-up
-        const { gnosisContactCallsQuoteResponse, gnosisContractCallsRoute } =
-          await performWithRetry(
-            () =>
-              getGnosisQuote({
-                gnosisSourceToken,
-                address,
-                bzzAmount: updatedConfig.swarmBatchTotal,
-                nodeAddress,
-                swarmConfig: updatedConfig,
-                setEstimatedTime,
-                topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined, // Only pass if it's a top-up
-              }),
-            'getGnosisQuote-execution',
-            undefined,
-            5, // 5 retries
-            500 // 500ms delay between retries
-          );
+        console.log('✅ Relay execution quotes ready:', {
+          totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
+          steps: relayQuoteResult.steps.length,
+          estimatedTime: relayQuoteResult.estimatedTime,
+        });
 
-        // Check are we solving Gnosis chain or other chain Swap
-        if (selectedChainId === ChainId.DAI) {
-          await handleGnosisTokenSwap(gnosisContractCallsRoute, updatedConfig);
-        } else {
-          // This is gnosisSourceToken/gnosisDesatinationToken amount value
-          const toAmount = gnosisContactCallsQuoteResponse.estimate.fromAmount;
-          await handleCrossChainSwap(gnosisContractCallsRoute, toAmount, updatedConfig);
+        console.log(
+          '⏱️ Timer will be set to:',
+          relayQuoteResult.estimatedTime,
+          'seconds after transaction confirmation'
+        );
+
+        // Set initial status (timer will start after transaction confirmation)
+        setStatusMessage({
+          step: 'Preparing',
+          message: `Preparing cross-chain swap...`,
+        });
+
+        // Execute Relay steps with timer callback
+        await executeRelaySteps(
+          relayQuoteResult.relayQuoteResponse,
+          walletClient,
+          publicClient,
+          setStatusMessage,
+          () => {
+            // Start timer after transaction confirmation
+            console.log(
+              '🚀 Transaction confirmed! Starting timer with duration:',
+              relayQuoteResult.estimatedTime,
+              'seconds'
+            );
+            setEstimatedTime(relayQuoteResult.estimatedTime);
+            setStatusMessage({
+              step: 'Relay',
+              message: `Executing cross-chain swap...`,
+            });
+          }
+        );
+
+        console.log('🎉 Relay swap completed successfully!');
+
+        // Reset timer when done
+        resetTimer();
+
+        // Handle post-swap completion flow (same as original LiFi implementation)
+        try {
+          if (isTopUp && topUpBatchId) {
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId);
+
+            // Set top-up completion info
+            setTopUpCompleted(true);
+            setTopUpInfo({
+              batchId: topUpBatchId,
+              days: selectedDays || 0,
+              cost: totalUsdAmount || '0',
+            });
+
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Batch Topped Up Successfully',
+              isSuccess: true,
+            });
+          } else {
+            // Calculate the batch ID for new batch creation
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+
+            console.log('Batch created successfully with ID:', calculatedBatchId);
+            setPostageBatchId(calculatedBatchId);
+
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Storage Bought Successfully',
+              isSuccess: true,
+            });
+
+            // Transition to upload step - this was missing!
+            setUploadStep('ready');
+          }
+        } catch (error) {
+          console.error('Failed to process batch completion:', error);
+          setStatusMessage({
+            step: 'Error',
+            message: 'Failed to process batch completion',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            isError: true,
+          });
         }
       }
     } catch (error) {
       console.error('An error occurred:', error);
+
+      // Parse Relay-specific errors for better user experience
+      const { userMessage, errorCode } = parseRelayError(error);
+
+      // Log detailed error information for debugging
+      if (errorCode) {
+        console.error('🚨 Relay Error Details:', {
+          errorCode,
+          userMessage,
+          originalError: error,
+        });
+      }
+
       setStatusMessage({
         step: 'Error',
         message: 'Execution failed',
-        error: formatErrorMessage(error),
+        error: userMessage || formatErrorMessage(error),
         isError: true,
       });
     }
@@ -1200,7 +1064,8 @@ const SwapComponent: React.FC = () => {
     postageBatchId: string,
     expiryDate: number,
     filename?: string,
-    isWebpageUpload?: boolean
+    isWebpageUpload?: boolean,
+    fileSize?: number
   ) => {
     if (!address) return;
 
@@ -1215,6 +1080,7 @@ const SwapComponent: React.FC = () => {
       stampId: postageBatchId,
       expiryDate,
       isWebpageUpload,
+      fileSize,
     });
 
     history[address] = addressHistory;
@@ -1223,20 +1089,27 @@ const SwapComponent: React.FC = () => {
 
   // Helper function to format file size
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    // Round to 1 decimal place for MB and above, no decimals for B and KB
+    const rounded = unitIndex >= 2 ? Math.round(size * 10) / 10 : Math.round(size);
+    return `${rounded} ${units[unitIndex]}`;
   };
 
   // Helper function to get total size of selected files
   const getTotalFileSize = (): number => {
     if (isMultipleFiles) {
       return selectedFiles.reduce((total, file) => total + file.size, 0);
-    } else {
-      return selectedFile?.size || 0;
     }
+    return selectedFile?.size || 0;
   };
 
   // Helper function to check if files are very large
@@ -1294,14 +1167,16 @@ const SwapComponent: React.FC = () => {
           postageBatchId,
           expiryDate,
           'images.tar',
-          false
+          false,
+          selectedFile.size
         );
         saveUploadReference(
           result.metadataReference,
           postageBatchId,
           expiryDate,
           'metadata.tar',
-          false
+          false,
+          selectedFile.size
         );
 
         setStatusMessage({
@@ -1805,7 +1680,10 @@ const SwapComponent: React.FC = () => {
 
                       {remainingTime !== null &&
                         estimatedTime !== null &&
-                        statusMessage.step === 'Route' && (
+                        (statusMessage.step === 'Route' ||
+                          statusMessage.step === 'deposit' ||
+                          statusMessage.step === 'Quoting' ||
+                          statusMessage.step === 'Relay') && (
                           <div className={styles.bridgeTimer}>
                             <p>Estimated time remaining: {formatTime(remainingTime)}</p>
                             <div className={styles.progressBarContainer}>
@@ -2004,9 +1882,9 @@ const SwapComponent: React.FC = () => {
                             <>
                               <div className={styles.smallSpinner}></div>
                               {statusMessage.step === '404'
-                                ? 'Searching for batch ID...'
+                                ? 'Waiting for storage to be usable...'
                                 : statusMessage.step === '422'
-                                  ? 'Waiting for batch to be usable...'
+                                  ? 'Waiting for storage to be usable...'
                                   : statusMessage.step === 'Uploading'
                                     ? isDistributing
                                       ? 'Distributing file chunks...'
