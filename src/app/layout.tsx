@@ -5,8 +5,8 @@ import Script from 'next/script';
 import { TrackJSAgent } from 'trackjs-nextjs';
 
 export const metadata = {
-  title: 'Swarm Storage',
-  description: 'Swarm storage uploader with multichain support',
+  title: 'Beeport',
+  description: 'Solutions for buying Bzz and obtaining postage stamps in multichain environment',
   icons: {
     icon: './favicon.png', // Standard favicon
     shortcut: './favicon.png', // Shortcut icon for iOS
