@@ -1,4 +1,10 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beeport
+
+**Beeport was built as Web2 rails for Swarm**
+
+Web3 will transform how the world operates, but today it still needs practical bridges for people to access it. Swarm is a leading decentralized storage solution, yet difficult for everyday users to reach. Beeport solves this by making Swarm accessible through familiar Web2 entry points—bringing the power of decentralized storage to anyone, right now.
+
+This is a [Next.js](https://nextjs.org) project that enables users to purchase BZZ tokens from any supported blockchain and upload files to the Swarm network with automatic postage stamp creation.
 
 ## Getting Started
 
@@ -25,25 +31,15 @@ to test NEXT JS EXPORT USE, serve to serve OUT directory
 npm install serve
 npx serve out
 
-## What needs to be done for this project or TODOs list
+## ✨ Key Features
 
-1. Remove config that skips typescript errors and lint errors, fix problems
-
-2. Add Gas on destination chain https://docs.li.fi/li.fi-api/li.fuel
-
-3. Upload folders directly or add more support for non tar uploads
-
-4. Check spending cap on BZZ, if its above, dont ask for approval
-
-5. Check do we really need a signing if we just enforce domain from where uploads can come from, maybe we just check signing but no need to check it through stamps ownership
-
-6. Enforce on server checking of origin of domain, where the upload came from
-
-7. How do we handle downloads of data, do we enforce gitcoin passport or leave it to ENS?
-
-## ✅ Recently Added Features
-
-- **ENS Integration**: Link your ENS domains to Swarm content! Users can now access uploaded content via human-readable domain names (e.g., `yourname.eth`) instead of complex Swarm reference hashes.
+- **🔗 Cross-Chain Swaps**: Buy BZZ tokens from any supported blockchain (Ethereum, Polygon, Arbitrum, etc.) using [Relay API](https://docs.relay.link/)
+- **⛽ Smart Gas Management**: Automatically checks destination chain balance and only tops up gas when needed (< 1 xDAI)
+- **📁 File Upload**: Upload single files, multiple files, or entire NFT collections to Swarm
+- **🏷️ Automatic Stamps**: Creates postage stamps automatically with optimal batch sizes
+- **🌐 ENS Integration**: Link your ENS domains to Swarm content for human-readable access
+- **📊 Upload History**: Track all your uploads with file sizes and timestamps
+- **💰 Cost Optimization**: Infinite approvals and smart gas top-ups minimize transaction costs
 
 ## How to run locally
 
@@ -75,13 +71,13 @@ the hash through https resolver.
 Sugges to do it in specific way, go to /out directory and then run
 
 ```
-tar -cf swap_uploader.tar .
+tar -cf beeport.tar .
 ```
 
 or
 
 ```
-tar -C out -cf swap_uploader.tar .
+tar -C out -cf beeport.tar .
 ```
 
 so you get TAR archive of static files export and there is no subdirectory when its uploaded to Swarm
@@ -104,14 +100,45 @@ Use below to create 1GB bin file on linux, to make it 2GB put count to 32 etc
 dd if=/dev/urandom of=1GB.bin bs=64M count=16 iflag=fullblock
 ```
 
-## Check LIFI API endpoints
+## API Documentation
 
-Go to https://apidocs.li.fi/reference
+- **Relay API**: [https://docs.relay.link/](https://docs.relay.link/) - Cross-chain swap and execution
+- **LiFi SDK**: [https://apidocs.li.fi/reference](https://apidocs.li.fi/reference) - Chain and token information (metadata only)
+- **Swarm API**: [https://docs.ethswarm.org/](https://docs.ethswarm.org/) - File upload and postage stamps
 
-## Design choices
+## Architecture
+
+### Cross-Chain Integration
+
+- **Relay API**: Handles all cross-chain swaps and gas forwarding
+- **Smart Contracts**: Direct interaction with Swarm postage stamp registry on Gnosis chain
+- **Gas Optimization**: Conditional gas top-up based on destination chain balance
+
+### File Upload Strategy
 
 "By default your bee instance will handle uploads in a deferred manner, meaning that the data will be completely uploaded to your node locally before being then being uploaded to the Swarm network.
 
 In contrast, for a direct upload, the data will be completely uploaded to the Swarm network directly."
 
-We are using non deferred upload, because we want to be able to upload to the Swarm network directly.
+We are using **non-deferred upload** because we want to upload directly to the Swarm network for better performance and reliability.
+
+## Recent Changes
+
+### v0.2.x - Relay Integration
+
+- ✅ **Replaced LiFi execution** with Relay API for better reliability
+- ✅ **Smart gas management** - only top up when destination balance < 1 xDAI
+- ✅ **Improved error handling** - user-friendly messages for all failure scenarios
+- ✅ **Performance optimization** - reduced timer buffer from 10s to 5s
+- ✅ **File size tracking** - display file sizes in upload history
+- ✅ **Code cleanup** - removed ~149 lines of unused LiFi execution code
+
+### Configuration
+
+All timing and gas parameters are now configurable via constants:
+
+```typescript
+export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum balance to skip gas top-up
+export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 top-up amount
+export const RELAY_TIMER_BUFFER_SECONDS = 5; // Timer buffer
+```

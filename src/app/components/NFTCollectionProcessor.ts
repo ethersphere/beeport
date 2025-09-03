@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import Tar from 'tar-js';
+import { SWARM_DEFERRED_UPLOAD } from './constants';
 
 export interface NFTCollectionResult {
   imagesReference: string;
@@ -219,7 +220,7 @@ const uploadFile = async (
     'Content-Type': 'application/x-tar',
     'swarm-postage-batch-id': postageBatchId,
     'swarm-pin': 'false',
-    'swarm-deferred-upload': 'false',
+    'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
     'swarm-collection': 'true',
   };
 

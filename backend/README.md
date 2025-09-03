@@ -37,8 +37,8 @@ server_name swarming.site www.swarming.site;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    # Serve Static Website (Frontend) from multichain/out
-    root /var/www/multichain/out/;
+    # Serve Static Website (Frontend) from beeport/out
+    root /var/www/beeport/out/;
     index index.html;
 
     location / {

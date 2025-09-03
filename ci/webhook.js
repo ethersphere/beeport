@@ -8,7 +8,7 @@ require('dotenv').config();
 // Configuration
 const SECRET = process.env.WEBHOOK_SECRET;
 const PORT = 9001;
-const APP_PATH = '/var/www/multichain';
+const APP_PATH = '/var/www/beeport';
 const LOG_PATH = path.join(APP_PATH, '/ci/webhook-logs.txt');
 
 // Create a simple logging function
