@@ -6,6 +6,9 @@ import {
   DEFAULT_SLIPPAGE,
   GAS_TOPUP_THRESHOLD_XDAI,
   GAS_TOPUP_AMOUNT_USD,
+  RELAY_STATUS_CHECK_INTERVAL_MS,
+  RELAY_STATUS_MAX_ATTEMPTS,
+  TRANSACTION_TIMEOUT_MS,
 } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
 
@@ -630,7 +633,7 @@ export const executeRelaySteps = async (
 
           const receipt = await publicClient.waitForTransactionReceipt({
             hash: txHash,
-            timeout: 300000, // 5 minutes timeout
+            timeout: TRANSACTION_TIMEOUT_MS,
           });
 
           if (receipt.status === 'success') {
@@ -697,7 +700,7 @@ const monitorRelayStatus = async (
   setStatusMessage: (status: any) => void,
   stepId: string
 ): Promise<void> => {
-  const maxAttempts = 120; // 10 minutes with 5-second intervals
+  const maxAttempts = RELAY_STATUS_MAX_ATTEMPTS;
   let attempts = 0;
 
   console.log(`🔍 Starting status monitoring for step ${stepId}: ${statusEndpoint}`);
@@ -714,7 +717,7 @@ const monitorRelayStatus = async (
       if (!response.ok) {
         console.warn(`⚠️ Status check failed with ${response.status}, retrying...`);
         attempts++;
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
         continue;
       }
 
@@ -763,8 +766,8 @@ const monitorRelayStatus = async (
           });
       }
 
-      // Wait 5 seconds before next check
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
       attempts++;
     } catch (error) {
       if (error instanceof Error && error.message.includes('Relay operation failed')) {
@@ -779,7 +782,7 @@ const monitorRelayStatus = async (
         throw new Error(`Status monitoring timed out for step ${stepId}`);
       }
 
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
     }
   }
 
