@@ -228,6 +228,7 @@ export interface RelayQuoteRequest {
   refundOnOrigin?: boolean;
   topupGas?: boolean;
   topupGasAmount?: string;
+  usePermit?: boolean;
 }
 
 export interface RelayQuoteResponse {
@@ -471,6 +472,7 @@ export const getRelayQuote = async ({
     txs,
     slippageTolerance: (DEFAULT_SLIPPAGE * 100).toString(), // Convert to integer percentage (5 for 5%)
     refundOnOrigin: true,
+    usePermit: true,
     topupGas: shouldTopupGas, // Conditionally enable gas forwarding
     ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }), // Gas top-up amount from constants
   };
