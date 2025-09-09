@@ -72,6 +72,12 @@ export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 
 // Swarm upload configuration
 export const SWARM_DEFERRED_UPLOAD = 'false'; // Use direct upload to Swarm network for better performance
 
+// Stamp optimization constants
+export const STAMP_API_BATCH_SIZE = 5; // Process 5 stamps at a time
+export const STAMP_API_BATCH_DELAY_MS = 100; // Delay between batches
+export const STAMP_API_TIMEOUT_MS = 10000; // 10 second timeout for stamp API calls
+// Note: Expired stamps are cached permanently since they cannot be reactivated
+
 // Disable message signing for executeRoute calls
 export const DISABLE_MESSAGE_SIGNING = true;
 
