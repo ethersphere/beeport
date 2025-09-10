@@ -66,7 +66,7 @@ export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in USD decimal format (1000
 // Relay and timing configuration
 export const RELAY_TIMER_BUFFER_SECONDS = 5; // Buffer added to estimated time for timer display
 export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status checks
-export const RELAY_STATUS_MAX_ATTEMPTS = 60; // Maximum status check attempts (5 minutes)
+export const RELAY_STATUS_MAX_ATTEMPTS = 12; // Maximum status check attempts (1 minute)
 export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
 // Swarm upload configuration
