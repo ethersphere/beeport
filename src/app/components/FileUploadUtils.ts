@@ -250,10 +250,56 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         }
       };
 
-      xhr.onload = () => {
+      xhr.onload = async () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadProgress(100);
           console.log('Upload completed successfully');
+
+          // Start distribution phase immediately when upload reaches 100%
+          setUploadStep('distributing');
+          setIsDistributing(true);
+
+          // Calculate distribution time based on file size
+          const { calculateDistributionTime, formatFileSize } = await import('./utils');
+          const distributionTimeSeconds = calculateDistributionTime(selectedFile.size);
+          const fileSizeFormatted = formatFileSize(selectedFile.size);
+
+          console.log(
+            `📡 Starting distribution phase: ${distributionTimeSeconds}s for ${fileSizeFormatted}`
+          );
+
+          setStatusMessage({
+            step: 'Distributing',
+            message: `File uploaded successfully! Distributing ${fileSizeFormatted} across Swarm network...`,
+            distributionTime: distributionTimeSeconds,
+          });
+
+          // Start the distribution timer immediately
+          let remainingTime = distributionTimeSeconds;
+
+          const updateTimer = () => {
+            if (remainingTime <= 0) {
+              return;
+            }
+
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = remainingTime % 60;
+            const timeDisplay = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+            setStatusMessage({
+              step: 'Distributing',
+              message: `Distributing ${fileSizeFormatted} across Swarm network... (${timeDisplay} remaining)`,
+              distributionTime: distributionTimeSeconds,
+              remainingTime,
+            });
+
+            remainingTime--;
+            if (remainingTime >= 0) {
+              setTimeout(updateTimer, 1000);
+            }
+          };
+
+          updateTimer();
         } else {
           console.error(`Upload failed with status: ${xhr.status}`);
         }
@@ -438,15 +484,23 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
     console.log('Upload successful, reference:', parsedReference);
 
+    // Wait for distribution to complete (timer already started in xhr.onload)
+    const { calculateDistributionTime } = await import('./utils');
+    const distributionTimeSeconds = calculateDistributionTime(selectedFile.size);
+
+    await new Promise(resolve => setTimeout(resolve, distributionTimeSeconds * 1000));
+
+    // Distribution complete
     setStatusMessage({
       step: 'Complete',
-      message: `Upload Successful. Reference: ${parsedReference.reference.slice(
+      message: `Upload Complete! File is now distributed across Swarm network. Reference: ${parsedReference.reference.slice(
         0,
         6
       )}...${parsedReference.reference.slice(-4)}`,
       isSuccess: true,
       reference: parsedReference.reference,
       filename: processedFile?.name,
+      canClose: true,
     });
 
     setUploadStep('complete');
@@ -937,17 +991,63 @@ export const handleMultiFileUpload = async (
 
     // Final progress and status updates
     setUploadProgress(100);
-    setIsDistributing(false);
 
+    // Start distribution phase immediately when multi-file upload reaches 100%
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.length - successCount;
 
     if (failureCount === 0) {
+      setUploadStep('distributing');
+      setIsDistributing(true);
+
+      // Calculate total size and distribution time
+      const { calculateDistributionTime, formatFileSize } = await import('./utils');
+      const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+      const distributionTimeSeconds = calculateDistributionTime(totalSize);
+      const totalSizeFormatted = formatFileSize(totalSize);
+
+      console.log(
+        `📡 Starting multi-file distribution phase: ${distributionTimeSeconds}s for ${totalSizeFormatted}`
+      );
+
       setStatusMessage({
-        step: 'Complete',
-        message: `All ${results.length} files uploaded successfully!`,
+        step: 'Distributing',
+        message: `All ${results.length} files uploaded! Distributing ${totalSizeFormatted} across Swarm network...`,
+        distributionTime: distributionTimeSeconds,
       });
-      setUploadStep('complete');
+
+      // Start the distribution timer immediately
+      let remainingTime = distributionTimeSeconds;
+
+      const updateTimer = () => {
+        if (remainingTime <= 0) {
+          // Distribution complete
+          setStatusMessage({
+            step: 'Complete',
+            message: `All ${results.length} files uploaded and distributed successfully!`,
+            isSuccess: true,
+            canClose: true,
+          });
+          setUploadStep('complete');
+          return;
+        }
+
+        const minutes = Math.floor(remainingTime / 60);
+        const seconds = remainingTime % 60;
+        const timeDisplay = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        setStatusMessage({
+          step: 'Distributing',
+          message: `Distributing ${totalSizeFormatted} across Swarm network... (${timeDisplay} remaining)`,
+          distributionTime: distributionTimeSeconds,
+          remainingTime,
+        });
+
+        remainingTime--;
+        setTimeout(updateTimer, 1000);
+      };
+
+      updateTimer();
     } else if (successCount === 0) {
       setStatusMessage({
         step: 'Error',

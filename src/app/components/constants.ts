@@ -72,6 +72,12 @@ export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 
 // Swarm upload configuration
 export const SWARM_DEFERRED_UPLOAD = 'false'; // Use direct upload to Swarm network for better performance
 
+// Swarm distribution timing constants
+export const DISTRIBUTION_BASE_TIME_SECONDS = 30; // Base time for 100MB distribution
+export const DISTRIBUTION_BASE_SIZE_MB = 100; // Base size for timing calculation
+export const DISTRIBUTION_MIN_TIME_SECONDS = 10; // Minimum distribution time
+export const DISTRIBUTION_MAX_TIME_SECONDS = 300; // Maximum distribution time (5 minutes)
+
 // Disable message signing for executeRoute calls
 export const DISABLE_MESSAGE_SIGNING = true;
 

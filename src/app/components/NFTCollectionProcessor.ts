@@ -182,7 +182,7 @@ export const processNFTCollection = async (
   console.log('Metadata uploaded with reference:', metadataReference);
 
   setProgress(100);
-  setStatusMessage('NFT collection upload complete!');
+  setStatusMessage('NFT collection uploaded! Starting distribution...');
 
   return {
     imagesReference,

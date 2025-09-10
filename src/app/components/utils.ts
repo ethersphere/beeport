@@ -420,3 +420,52 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
     return null;
   }
 };
+
+/**
+ * Calculate distribution time based on file size
+ * Conservative estimate: 100MB takes 30 seconds
+ * @param fileSizeBytes File size in bytes
+ * @returns Distribution time in seconds
+ */
+export const calculateDistributionTime = (fileSizeBytes: number): number => {
+  const {
+    DISTRIBUTION_BASE_TIME_SECONDS,
+    DISTRIBUTION_BASE_SIZE_MB,
+    DISTRIBUTION_MIN_TIME_SECONDS,
+    DISTRIBUTION_MAX_TIME_SECONDS,
+  } = require('./constants');
+
+  const fileSizeMB = fileSizeBytes / (1024 * 1024);
+
+  // Linear calculation: (fileSize / baseSize) * baseTime
+  const calculatedTime = (fileSizeMB / DISTRIBUTION_BASE_SIZE_MB) * DISTRIBUTION_BASE_TIME_SECONDS;
+
+  // Apply min/max bounds
+  const distributionTime = Math.max(
+    DISTRIBUTION_MIN_TIME_SECONDS,
+    Math.min(DISTRIBUTION_MAX_TIME_SECONDS, Math.round(calculatedTime))
+  );
+
+  console.log(`📊 Distribution time calculation:`, {
+    fileSizeMB: fileSizeMB.toFixed(2),
+    calculatedTime: calculatedTime.toFixed(1),
+    finalTime: distributionTime,
+  });
+
+  return distributionTime;
+};
+
+/**
+ * Format file size in human readable format
+ * @param bytes File size in bytes
+ * @returns Formatted string (e.g., "1.5 MB")
+ */
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+};

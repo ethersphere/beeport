@@ -1179,15 +1179,63 @@ const SwapComponent: React.FC = () => {
           selectedFile.size
         );
 
+        // Start distribution phase immediately after NFT collection upload completes
+        setUploadStep('distributing');
+        setIsDistributing(true);
+
+        // Calculate distribution time based on file size
+        const { calculateDistributionTime, formatFileSize } = await import('./utils');
+        const distributionTimeSeconds = calculateDistributionTime(selectedFile.size);
+        const fileSizeFormatted = formatFileSize(selectedFile.size);
+
+        console.log(
+          `📡 Starting NFT collection distribution phase: ${distributionTimeSeconds}s for ${fileSizeFormatted}`
+        );
+
         setStatusMessage({
-          step: 'Complete',
-          message: `NFT Collection uploaded successfully! ${result.totalImages} images and ${result.totalMetadata} metadata files processed.`,
-          isSuccess: true,
+          step: 'Distributing',
+          message: `NFT Collection uploaded! Distributing ${fileSizeFormatted} across Swarm network...`,
+          distributionTime: distributionTimeSeconds,
           reference: result.metadataReference,
           filename: selectedFile.name,
         });
 
-        setUploadStep('complete');
+        // Start the distribution timer immediately
+        let remainingTime = distributionTimeSeconds;
+
+        const updateTimer = () => {
+          if (remainingTime <= 0) {
+            // Distribution complete
+            setStatusMessage({
+              step: 'Complete',
+              message: `NFT Collection uploaded and distributed successfully! ${result.totalImages} images and ${result.totalMetadata} metadata files processed.`,
+              isSuccess: true,
+              reference: result.metadataReference,
+              filename: selectedFile.name,
+              canClose: true,
+            });
+            setUploadStep('complete');
+            return;
+          }
+
+          const minutes = Math.floor(remainingTime / 60);
+          const seconds = remainingTime % 60;
+          const timeDisplay = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+          setStatusMessage({
+            step: 'Distributing',
+            message: `Distributing NFT Collection ${fileSizeFormatted} across Swarm network... (${timeDisplay} remaining)`,
+            distributionTime: distributionTimeSeconds,
+            remainingTime,
+            reference: result.metadataReference,
+            filename: selectedFile.name,
+          });
+
+          remainingTime--;
+          setTimeout(updateTimer, 1000);
+        };
+
+        updateTimer();
         setSelectedDays(null);
         setTimeout(() => {
           setUploadStep('idle');
@@ -1699,6 +1747,53 @@ const SwapComponent: React.FC = () => {
                             </div>
                           </div>
                         )}
+
+                      {statusMessage.step === 'Distributing' && statusMessage.distributionTime && (
+                        <div className={styles.distributionTimer}>
+                          {statusMessage.remainingTime !== undefined ? (
+                            <>
+                              <p>
+                                Distribution time remaining:{' '}
+                                {Math.floor(statusMessage.remainingTime / 60)}m{' '}
+                                {statusMessage.remainingTime % 60}s
+                              </p>
+                              <div className={styles.progressBarContainer}>
+                                <div
+                                  className={styles.progressBar}
+                                  style={{
+                                    width: `${Math.max(
+                                      0,
+                                      Math.min(
+                                        100,
+                                        (1 -
+                                          statusMessage.remainingTime /
+                                            statusMessage.distributionTime) *
+                                          100
+                                      )
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                              <div className={styles.canCloseMessage}>
+                                <p>
+                                  💡 You can safely close this window. The upload will complete in
+                                  the background and appear in your upload history.
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <p>Calculating distribution time...</p>
+                          )}
+                        </div>
+                      )}
+
+                      {statusMessage.canClose && (
+                        <div className={styles.canCloseMessage}>
+                          <p>
+                            ✅ Upload completed! Your file is now available in the upload history.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

@@ -807,6 +807,37 @@
   background-color: #3fb950; /* Green color for the bridge timer */
 }
 
+.distributionTimer {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: rgba(63, 185, 80, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.distributionTimer p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #3fb950;
+  font-weight: 500;
+}
+
+.canCloseMessage {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(63, 185, 80, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(63, 185, 80, 0.2);
+}
+
+.canCloseMessage p {
+  margin: 0;
+  color: #3fb950;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.4;
+}
+
 @keyframes moveChunk1 {
   0% {
     opacity: 1;

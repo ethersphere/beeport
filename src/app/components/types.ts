@@ -7,9 +7,12 @@ export type ExecutionStatus = {
   isSuccess?: boolean;
   reference?: string;
   filename?: string;
+  distributionTime?: number;
+  remainingTime?: number;
+  canClose?: boolean;
 };
 
-export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';
+export type UploadStep = 'idle' | 'ready' | 'uploading' | 'distributing' | 'complete';
 
 export type SwarmConfigType = {
   toChain: number;
