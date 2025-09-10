@@ -20,13 +20,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Login to Quay.io
-        uses: docker/login-action@v3
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-
       - name: Extract tag
         id: get_tag
         run: |
@@ -40,7 +33,6 @@ jobs:
           push: true
           tags: |
             ethersphere/beeport-proxy:${{ steps.get_tag.outputs.TAG }}
-            quay.io/ethersphere/beeport-proxy:${{ steps.get_tag.outputs.TAG }}
 
       - name: Build and push UI image
         uses: docker/build-push-action@v5
@@ -49,4 +41,3 @@ jobs:
           push: true
           tags: |
             ethersphere/beeport-ui:${{ steps.get_tag.outputs.TAG }}
-            quay.io/ethersphere/beeport-ui:${{ steps.get_tag.outputs.TAG }}
