@@ -581,9 +581,9 @@ export const handleMultiFileUpload = async (
       const messageToSign = `${processedFile.name}:${postageBatchId}`;
       console.log('Message to sign:', messageToSign);
 
-      // Only sign message for first file or if no session token exists
+      // Only sign message for the very first file
       let signedMessage = '';
-      if (fileIndex === 0 || !sessionToken) {
+      if (fileIndex === 0) {
         signedMessage = await walletClient.signMessage({
           message: messageToSign,
         });
@@ -604,11 +604,24 @@ export const handleMultiFileUpload = async (
         baseHeaders['x-file-name'] = processedFile.name;
         baseHeaders['x-message-content'] = messageToSign;
 
-        // Add session token if we have one (for subsequent files)
-        if (sessionToken) {
+        if (fileIndex === 0) {
+          // First file needs signature to create session
+          console.log(`🔐 File ${fileIndex + 1}: Using signature to create session`);
+          baseHeaders['x-upload-signed-message'] = signedMessage;
+        } else if (sessionToken) {
+          // Subsequent files use session token
+          console.log(
+            `🎫 File ${fileIndex + 1}: Using session token ${sessionToken.substring(0, 8)}...`
+          );
           baseHeaders['x-upload-session-token'] = sessionToken;
         } else {
-          // First file needs signature
+          // This shouldn't happen, but fallback to signature
+          console.warn(
+            `❌ File ${fileIndex + 1}: No session token available, falling back to signature (this should not happen)`
+          );
+          signedMessage = await walletClient.signMessage({
+            message: messageToSign,
+          });
           baseHeaders['x-upload-signed-message'] = signedMessage;
         }
       }
@@ -669,12 +682,26 @@ export const handleMultiFileUpload = async (
           if (fileIndex === 0) {
             const newSessionToken = xhr.getResponseHeader('x-session-token');
             const sessionCreated = xhr.getResponseHeader('x-session-created');
+            const sessionValid = xhr.getResponseHeader('x-session-valid');
+
+            console.log('Response headers for first file:', {
+              sessionToken: newSessionToken ? `${newSessionToken.substring(0, 8)}...` : 'none',
+              sessionCreated,
+              sessionValid,
+            });
+
             if (newSessionToken && sessionCreated === 'true') {
               sessionToken = newSessionToken;
               console.log(
-                `Session token received for multi-file upload: ${sessionToken.substring(0, 8)}...`
+                `✅ Session token created for multi-file upload: ${sessionToken.substring(0, 8)}...`
               );
+            } else {
+              console.warn('❌ No session token received from server for first file');
             }
+          } else {
+            console.log(
+              `File ${fileIndex + 1} uploaded using session token: ${sessionToken ? `${sessionToken.substring(0, 8)}...` : 'none'}`
+            );
           }
 
           resolve({

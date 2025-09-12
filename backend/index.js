@@ -101,7 +101,9 @@ const verifySignature = async (req, res, next) => {
     if (sessionToken && uploaderAddress && batchId) {
       const existingSession = checkExistingSession(uploaderAddress, batchId, sessionToken);
       if (existingSession) {
-        console.log('Valid session found, skipping detailed verification');
+        console.log(
+          `🎫 Valid session found for ${uploaderAddress}, file #${existingSession.fileCount + 1}, skipping detailed verification`
+        );
         // Update session last used time
         existingSession.lastUsed = Date.now();
         existingSession.fileCount += 1;
@@ -111,7 +113,9 @@ const verifySignature = async (req, res, next) => {
         res.setHeader('x-session-valid', 'true');
         return next();
       } else {
-        console.log('Invalid or expired session token provided');
+        console.log(
+          `❌ Invalid or expired session token provided: ${sessionToken.substring(0, 8)}...`
+        );
       }
     }
 
@@ -199,12 +203,13 @@ const verifySignature = async (req, res, next) => {
         });
 
         console.log(
-          `Created new session token for multi-file upload: ${newSessionToken.substring(0, 8)}...`
+          `✅ Created new session token for multi-file upload: ${newSessionToken.substring(0, 8)}... for ${uploaderAddress}`
         );
 
         // Add session token to response headers
         res.setHeader('x-session-token', newSessionToken);
         res.setHeader('x-session-created', 'true');
+        console.log('✅ Session headers set in response');
       }
 
       next();
