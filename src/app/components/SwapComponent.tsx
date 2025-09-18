@@ -66,6 +66,7 @@ import {
   isArchiveFile,
   MultiFileResult,
 } from './FileUploadUtils';
+import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
 import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
 import { useTokenManagement } from './TokenUtils';
@@ -107,6 +108,7 @@ const SwapComponent: React.FC = () => {
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
+  const [isFolderUpload, setIsFolderUpload] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
@@ -1065,7 +1067,8 @@ const SwapComponent: React.FC = () => {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => {
     if (!address) return;
 
@@ -1081,6 +1084,7 @@ const SwapComponent: React.FC = () => {
       expiryDate,
       isWebpageUpload,
       fileSize,
+      isFolderUpload,
     });
 
     history[address] = addressHistory;
@@ -1228,6 +1232,7 @@ const SwapComponent: React.FC = () => {
           serveUncompressed,
           isTarFile,
           isWebpageUpload,
+          isFolderUpload,
           setUploadProgress,
           setStatusMessage,
           setIsDistributing,
@@ -1735,21 +1740,62 @@ const SwapComponent: React.FC = () => {
                               // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
+                              setIsFolderUpload(false);
                             }}
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
                           />
                           <label htmlFor="multiple-files" className={styles.checkboxLabel}>
-                            Upload multiple files
+                            Upload multiple files separately
+                          </label>
+                        </div>
+
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="folder-upload"
+                            checked={isFolderUpload}
+                            onChange={e => {
+                              setIsFolderUpload(e.target.checked);
+                              // Reset selections when switching modes
+                              setSelectedFile(null);
+                              setSelectedFiles([]);
+                              setIsMultipleFiles(false);
+                            }}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label htmlFor="folder-upload" className={styles.checkboxLabel}>
+                            Upload folder as archive
                           </label>
                         </div>
 
                         <div className={styles.fileInputWrapper}>
                           <input
                             type="file"
-                            multiple={isMultipleFiles}
-                            onChange={e => {
-                              if (isMultipleFiles) {
+                            multiple={isMultipleFiles || isFolderUpload}
+                            {...(isFolderUpload && { webkitdirectory: 'true' })}
+                            onChange={async e => {
+                              if (isFolderUpload) {
+                                try {
+                                  const archiveFile = await handleFolderSelection(e.target, {
+                                    setUploadProgress,
+                                    setStatusMessage,
+                                  });
+                                  if (archiveFile) {
+                                    setSelectedFile(archiveFile);
+                                    setSelectedFiles([]);
+                                    setIsTarFile(true); // Folder archives are treated as tar files
+                                    setServeUncompressed(true); // Folder archives should be served uncompressed
+                                  }
+                                } catch (error) {
+                                  console.error('Folder upload error:', error);
+                                  setStatusMessage({
+                                    step: 'error',
+                                    message: `Folder upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                                  });
+                                }
+                              } else if (isMultipleFiles) {
                                 const files = Array.from(e.target.files || []);
                                 setSelectedFiles(files);
                                 setSelectedFile(null);
@@ -1770,13 +1816,17 @@ const SwapComponent: React.FC = () => {
                             id="file-upload"
                           />
                           <label htmlFor="file-upload" className={styles.fileInputLabel}>
-                            {isMultipleFiles
-                              ? selectedFiles.length > 0
-                                ? `${selectedFiles.length} files selected`
-                                : 'Choose files'
-                              : selectedFile
-                                ? selectedFile.name
-                                : 'Choose file'}
+                            {isFolderUpload
+                              ? selectedFile
+                                ? `Folder: ${selectedFile.name}`
+                                : 'Choose folder'
+                              : isMultipleFiles
+                                ? selectedFiles.length > 0
+                                  ? `${selectedFiles.length} files selected`
+                                  : 'Choose files'
+                                : selectedFile
+                                  ? selectedFile.name
+                                  : 'Choose file'}
                           </label>
                         </div>
 
