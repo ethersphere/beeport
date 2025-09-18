@@ -1471,7 +1471,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(false);
           }}
         >
-          Stamps
+          Upload
         </button>
         <button
           className={`${styles.tabButton} ${showUploadHistory ? styles.activeTab : ''}`}
