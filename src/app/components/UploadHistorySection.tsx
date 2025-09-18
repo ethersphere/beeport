@@ -51,6 +51,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   const [selectedFilter, setSelectedFilter] = React.useState<FileType>('all');
   const [showENSModal, setShowENSModal] = React.useState(false);
   const [selectedReference, setSelectedReference] = React.useState<string>('');
+  const [editingFilename, setEditingFilename] = React.useState<string | null>(null);
+  const [tempFilename, setTempFilename] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -409,6 +411,53 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
+  const startEditingFilename = (reference: string, currentFilename: string) => {
+    setEditingFilename(reference);
+    setTempFilename(currentFilename || 'Unnamed upload');
+  };
+
+  const cancelEditingFilename = () => {
+    setEditingFilename(null);
+    setTempFilename('');
+  };
+
+  const saveFilename = (reference: string) => {
+    if (!tempFilename.trim()) {
+      cancelEditingFilename();
+      return;
+    }
+
+    // Update the history state
+    const updatedHistory = history.map(record =>
+      record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+    );
+    setHistory(updatedHistory);
+
+    // Update localStorage
+    const savedHistory = localStorage.getItem('uploadHistory');
+    if (savedHistory) {
+      const allHistory: UploadHistory = JSON.parse(savedHistory);
+      if (allHistory[address]) {
+        allHistory[address] = allHistory[address].map(record =>
+          record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+        );
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+    }
+
+    // Reset editing state
+    setEditingFilename(null);
+    setTempFilename('');
+  };
+
+  const handleFilenameKeyPress = (e: React.KeyboardEvent, reference: string) => {
+    if (e.key === 'Enter') {
+      saveFilename(reference);
+    } else if (e.key === 'Escape') {
+      cancelEditingFilename();
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.titleContainer}>
@@ -562,7 +611,44 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
-                    <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                    {editingFilename === record.reference ? (
+                      <div className={styles.filenameEdit}>
+                        <input
+                          type="text"
+                          value={tempFilename}
+                          onChange={e => setTempFilename(e.target.value)}
+                          onKeyDown={e => handleFilenameKeyPress(e, record.reference)}
+                          onBlur={() => saveFilename(record.reference)}
+                          className={styles.filenameInput}
+                          autoFocus
+                          placeholder="Enter filename..."
+                        />
+                        <button
+                          onClick={() => saveFilename(record.reference)}
+                          className={styles.saveButton}
+                          title="Save"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={cancelEditingFilename}
+                          className={styles.cancelButton}
+                          title="Cancel"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        className={styles.filename}
+                        onClick={() =>
+                          startEditingFilename(record.reference, record.filename || '')
+                        }
+                        title="Click to rename"
+                      >
+                        {record.filename || 'Unnamed upload'}
+                      </span>
+                    )}
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}

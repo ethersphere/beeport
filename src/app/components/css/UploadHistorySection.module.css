@@ -155,6 +155,15 @@
   font-size: 18px;
   color: #ffffff;
   word-break: break-all;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.filename:hover {
+  color: #58a6ff;
+  background-color: rgba(88, 166, 255, 0.1);
 }
 
 .filenameRow {
@@ -162,6 +171,62 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.filenameEdit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.filenameInput {
+  flex: 1;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.filenameInput:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.saveButton,
+.cancelButton {
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+}
+
+.saveButton:hover {
+  background-color: rgba(46, 160, 67, 0.2);
+  border-color: #2ea043;
+  color: #2ea043;
+}
+
+.cancelButton:hover {
+  background-color: rgba(248, 81, 73, 0.2);
+  border-color: #f85149;
+  color: #f85149;
 }
 
 .tagContainer {
