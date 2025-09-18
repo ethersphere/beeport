@@ -16,6 +16,7 @@ interface UploadRecord {
   expiryDate: number;
   associatedDomains?: string[]; // New field for ENS domains linked to this reference
   isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
+  isFolderUpload?: boolean; // Flag to indicate this was uploaded as a folder
   fileSize?: number; // File size in bytes
 }
 
@@ -50,6 +51,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   const [selectedFilter, setSelectedFilter] = React.useState<FileType>('all');
   const [showENSModal, setShowENSModal] = React.useState(false);
   const [selectedReference, setSelectedReference] = React.useState<string>('');
+  const [editingFilename, setEditingFilename] = React.useState<string | null>(null);
+  const [tempFilename, setTempFilename] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -95,12 +98,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // Handle both filename string and UploadRecord input
     let filename: string | undefined;
     let isWebpageUpload = false;
+    let isFolderUpload = false;
 
     if (typeof input === 'string') {
       filename = input;
     } else if (input && typeof input === 'object') {
       filename = input.filename;
       isWebpageUpload = input.isWebpageUpload || false;
+      isFolderUpload = input.isFolderUpload || false;
     }
 
     if (!filename) return 'all';
@@ -108,6 +113,11 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // Check if this was uploaded as a webpage first (overrides file extension)
     if (isWebpageUpload) {
       return 'websites';
+    }
+
+    // Check if this was uploaded as a folder (treat as archive)
+    if (isFolderUpload) {
+      return 'archives';
     }
 
     const extension = filename.toLowerCase();
@@ -241,6 +251,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Filename',
       'File Type',
       'Is Webpage',
+      'Is Folder',
       'Associated Domains', // New column
       'Full Link',
     ];
@@ -254,6 +265,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record),
       record.isWebpageUpload ? 'Yes' : 'No',
+      record.isFolderUpload ? 'Yes' : 'No',
       record.associatedDomains?.join(', ') || '', // New field
       getReferenceUrl(record),
     ]);
@@ -310,6 +322,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               filename,
               fileType,
               isWebpage,
+              isFolder,
               associatedDomainsStr,
               fullLink,
             ] = fields;
@@ -332,6 +345,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 filename: filename === 'Unnamed upload' ? undefined : filename,
                 expiryDate: expiryInSeconds,
                 isWebpageUpload: isWebpage === 'Yes',
+                isFolderUpload: isFolder === 'Yes',
               };
 
               // Parse associated domains if present
@@ -394,6 +408,53 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         delete allHistory[address];
         localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
       }
+    }
+  };
+
+  const startEditingFilename = (reference: string, currentFilename: string) => {
+    setEditingFilename(reference);
+    setTempFilename(currentFilename || 'Unnamed upload');
+  };
+
+  const cancelEditingFilename = () => {
+    setEditingFilename(null);
+    setTempFilename('');
+  };
+
+  const saveFilename = (reference: string) => {
+    if (!tempFilename.trim()) {
+      cancelEditingFilename();
+      return;
+    }
+
+    // Update the history state
+    const updatedHistory = history.map(record =>
+      record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+    );
+    setHistory(updatedHistory);
+
+    // Update localStorage
+    const savedHistory = localStorage.getItem('uploadHistory');
+    if (savedHistory) {
+      const allHistory: UploadHistory = JSON.parse(savedHistory);
+      if (allHistory[address]) {
+        allHistory[address] = allHistory[address].map(record =>
+          record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+        );
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+    }
+
+    // Reset editing state
+    setEditingFilename(null);
+    setTempFilename('');
+  };
+
+  const handleFilenameKeyPress = (e: React.KeyboardEvent, reference: string) => {
+    if (e.key === 'Enter') {
+      saveFilename(reference);
+    } else if (e.key === 'Escape') {
+      cancelEditingFilename();
     }
   };
 
@@ -550,7 +611,44 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
-                    <span className={styles.filename}>{record.filename || 'Unnamed upload'}</span>
+                    {editingFilename === record.reference ? (
+                      <div className={styles.filenameEdit}>
+                        <input
+                          type="text"
+                          value={tempFilename}
+                          onChange={e => setTempFilename(e.target.value)}
+                          onKeyDown={e => handleFilenameKeyPress(e, record.reference)}
+                          onBlur={() => saveFilename(record.reference)}
+                          className={styles.filenameInput}
+                          autoFocus
+                          placeholder="Enter filename..."
+                        />
+                        <button
+                          onClick={() => saveFilename(record.reference)}
+                          className={styles.saveButton}
+                          title="Save"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={cancelEditingFilename}
+                          className={styles.cancelButton}
+                          title="Cancel"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        className={styles.filename}
+                        onClick={() =>
+                          startEditingFilename(record.reference, record.filename || '')
+                        }
+                        title="Click to rename"
+                      >
+                        {record.filename || 'Unnamed upload'}
+                      </span>
+                    )}
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}

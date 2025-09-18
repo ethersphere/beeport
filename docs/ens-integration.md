@@ -52,7 +52,7 @@ ENS domains are managed exclusively on **Ethereum Mainnet**. If you're connected
 ### For Existing Domains
 
 1. **Upload Content** - Upload your content to Swarm
-2. **Access ENS Integration** - Go to Upload History and click the ENS button
+2. **Access ENS Integration** - Go to History tab and click the ENS button
 3. **Select Domain** - Choose from your owned domains dropdown or enter manually
 4. **Set Content Hash** - Confirm the transaction to link your domain
 5. **Access Content** - Visit `yourname.eth.limo` to view your content
@@ -71,11 +71,11 @@ ENS domains are managed exclusively on **Ethereum Mainnet**. If you're connected
 
 ### 1. Upload Your Content
 
-First, upload your content to Swarm using the upload interface. This will give you a Swarm reference hash.
+First, upload your content to Swarm using the Upload tab. This will give you a Swarm reference hash.
 
 ### 2. Access ENS Integration
 
-1. Go to the **Upload History** section
+1. Go to the **History** tab
 2. Find the upload you want to link to an ENS domain
 3. Click the **ENS** button next to website uploads
 
