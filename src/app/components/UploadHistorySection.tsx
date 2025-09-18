@@ -16,6 +16,7 @@ interface UploadRecord {
   expiryDate: number;
   associatedDomains?: string[]; // New field for ENS domains linked to this reference
   isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
+  isFolderUpload?: boolean; // Flag to indicate this was uploaded as a folder
   fileSize?: number; // File size in bytes
 }
 
@@ -95,12 +96,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // Handle both filename string and UploadRecord input
     let filename: string | undefined;
     let isWebpageUpload = false;
+    let isFolderUpload = false;
 
     if (typeof input === 'string') {
       filename = input;
     } else if (input && typeof input === 'object') {
       filename = input.filename;
       isWebpageUpload = input.isWebpageUpload || false;
+      isFolderUpload = input.isFolderUpload || false;
     }
 
     if (!filename) return 'all';
@@ -108,6 +111,11 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // Check if this was uploaded as a webpage first (overrides file extension)
     if (isWebpageUpload) {
       return 'websites';
+    }
+
+    // Check if this was uploaded as a folder (treat as archive)
+    if (isFolderUpload) {
+      return 'archives';
     }
 
     const extension = filename.toLowerCase();
@@ -241,6 +249,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Filename',
       'File Type',
       'Is Webpage',
+      'Is Folder',
       'Associated Domains', // New column
       'Full Link',
     ];
@@ -254,6 +263,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record),
       record.isWebpageUpload ? 'Yes' : 'No',
+      record.isFolderUpload ? 'Yes' : 'No',
       record.associatedDomains?.join(', ') || '', // New field
       getReferenceUrl(record),
     ]);
@@ -310,6 +320,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               filename,
               fileType,
               isWebpage,
+              isFolder,
               associatedDomainsStr,
               fullLink,
             ] = fields;
@@ -332,6 +343,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 filename: filename === 'Unnamed upload' ? undefined : filename,
                 expiryDate: expiryInSeconds,
                 isWebpageUpload: isWebpage === 'Yes',
+                isFolderUpload: isFolder === 'Yes',
               };
 
               // Parse associated domains if present

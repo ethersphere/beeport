@@ -17,7 +17,7 @@ Single file upload is the most basic upload feature, allowing you to upload indi
 ### Step 2: Access Upload Interface
 
 1. Connect your wallet
-2. Navigate to the Upload section
+2. Navigate to the Upload tab
 3. Ensure "Upload multiple files" is **unchecked**
 
 ### Step 3: Select Your File
