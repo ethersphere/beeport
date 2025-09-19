@@ -37,6 +37,7 @@ import UploadHistorySection from './UploadHistorySection';
 import SearchableChainDropdown from './SearchableChainDropdown';
 import SearchableTokenDropdown from './SearchableTokenDropdown';
 import StorageStampsDropdown from './StorageStampsDropdown';
+import ErasureCodingDropdown from './ErasureCodingDropdown';
 import StorageDurationDropdown from './StorageDurationDropdown';
 
 import {
@@ -107,6 +108,7 @@ const SwapComponent: React.FC = () => {
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
+  const [redundancyLevel, setRedundancyLevel] = useState<number>(0);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
@@ -1228,6 +1230,7 @@ const SwapComponent: React.FC = () => {
           serveUncompressed,
           isTarFile,
           isWebpageUpload,
+          redundancyLevel,
           setUploadProgress,
           setStatusMessage,
           setIsDistributing,
@@ -1845,6 +1848,25 @@ const SwapComponent: React.FC = () => {
                             <label htmlFor="webpage-upload" className={styles.checkboxLabel}>
                               Upload as webpage
                             </label>
+                          </div>
+                        )}
+
+                        {!isMultipleFiles && selectedFile && (
+                          <div className={styles.dropdownWrapper}>
+                            <label className={styles.dropdownLabel}>
+                              Erasure Coding
+                              <span
+                                className={styles.tooltip}
+                                title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
+                              >
+                                ℹ️
+                              </span>
+                            </label>
+                            <ErasureCodingDropdown
+                              selectedLevel={redundancyLevel}
+                              onLevelChange={setRedundancyLevel}
+                              disabled={uploadStep === 'uploading'}
+                            />
                           </div>
                         )}
 
