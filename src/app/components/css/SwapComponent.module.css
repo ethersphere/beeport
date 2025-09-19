@@ -371,12 +371,24 @@
 .tooltip {
   cursor: help;
   font-size: 12px;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
+  font-weight: bold;
+  color: #8b949e;
+  background: none;
+  border: 1px solid #8b949e;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  line-height: 1;
 }
 
 .tooltip:hover {
-  opacity: 1;
+  color: #ff7a00;
+  border-color: #ff7a00;
+  background-color: rgba(255, 122, 0, 0.1);
 }
 
 .checkboxLabel {

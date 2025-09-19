@@ -1859,7 +1859,7 @@ const SwapComponent: React.FC = () => {
                                 className={styles.tooltip}
                                 title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
                               >
-                                ℹ️
+                                ?
                               </span>
                             </label>
                             <ErasureCodingDropdown
