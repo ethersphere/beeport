@@ -32,8 +32,8 @@ map $http_origin $cors_origin {
 
 # Define CORS headers once to avoid duplication
 map $request_method $cors_allow_headers {
-    default "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload";
-    OPTIONS "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload";
+    default "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload,swarm-redundancy-level";
+    OPTIONS "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload,swarm-redundancy-level";
 }
 
 map $request_method $cors_expose_headers {
