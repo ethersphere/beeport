@@ -9,6 +9,7 @@ import {
   UPLOAD_TIMEOUT_CONFIG,
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
+import { processTarFile } from './FolderUploadUtils';
 
 /**
  * Interface for parameters needed for file upload function
@@ -54,6 +55,7 @@ export interface MultiFileUploadParams {
   address: `0x${string}` | undefined;
   beeApiUrl: string;
   serveUncompressed: boolean;
+  isWebpageUpload: boolean;
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -331,12 +333,29 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       selectedFile.type === 'application/gzip' ||
       selectedFile.name.toLowerCase().endsWith('.gz');
 
-    // Only process if it's an archive AND serveUncompressed is checked
-    if (isArchive && serveUncompressed) {
+    const isTarArchive =
+      selectedFile.type === 'application/x-tar' || selectedFile.name.toLowerCase().endsWith('.tar');
+
+    // Process TAR files - always upload as website with index.html check
+    let shouldUploadAsWebsite = isWebpageUpload;
+    if (isTarArchive) {
       setUploadProgress(0);
-      console.log('Processing archive file before upload');
+      console.log('Processing TAR file to check/add index.html - will upload as website');
+      processedFile = await processTarFile({
+        tarFile: selectedFile,
+        setUploadProgress,
+        setStatusMessage,
+      });
+      console.log('TAR file processed, will upload as website');
+      shouldUploadAsWebsite = true;
+    }
+    // Process ZIP/GZ archives when serveUncompressed is enabled
+    else if (isArchive && serveUncompressed) {
+      setUploadProgress(0);
+      console.log('Processing archive file before upload - will upload as website');
       processedFile = await processArchiveFile(selectedFile);
-      console.log('Archive processed, starting upload...');
+      console.log('Archive processed, will upload as website');
+      shouldUploadAsWebsite = true;
     }
 
     const messageToSign = `${processedFile.name}:${postageBatchId}`;
@@ -362,7 +381,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       baseHeaders['x-message-content'] = messageToSign; // Send the original message for verification
     }
 
-    if (isWebpageUpload && isTarFile) {
+    if (shouldUploadAsWebsite) {
       baseHeaders['Swarm-Index-Document'] = 'index.html';
       baseHeaders['Swarm-Error-Document'] = 'error.html';
     }
@@ -537,6 +556,7 @@ export const handleMultiFileUpload = async (
     address,
     beeApiUrl,
     serveUncompressed,
+    isWebpageUpload,
     setUploadProgress,
     setStatusMessage,
     setIsDistributing,
@@ -576,11 +596,31 @@ export const handleMultiFileUpload = async (
         file.type === 'application/gzip' ||
         file.name.toLowerCase().endsWith('.gz');
 
-      // Only process if it's an archive AND serveUncompressed is checked
-      if (isArchive && serveUncompressed) {
-        console.log('Processing archive file before upload');
+      const isTarArchive =
+        file.type === 'application/x-tar' || file.name.toLowerCase().endsWith('.tar');
+
+      // Process TAR files - always upload as website with index.html check
+      let shouldUploadAsWebsite = isWebpageUpload;
+      if (isTarArchive) {
+        console.log('Processing TAR file to check/add index.html - will upload as website');
+        processedFile = await processTarFile({
+          tarFile: file,
+          setUploadProgress: progress => {
+            // For multi-file, we need to calculate the overall progress
+            const overallProgress = (fileIndex / totalFiles + progress / 100 / totalFiles) * 100;
+            setUploadProgress(overallProgress);
+          },
+          setStatusMessage,
+        });
+        console.log('TAR file processed, will upload as website');
+        shouldUploadAsWebsite = true;
+      }
+      // Process ZIP/GZ archives when serveUncompressed is enabled
+      else if (isArchive && serveUncompressed) {
+        console.log('Processing archive file before upload - will upload as website');
         processedFile = await processArchiveFile(file);
-        console.log('Archive processed, starting upload...');
+        console.log('Archive processed, will upload as website');
+        shouldUploadAsWebsite = true;
       }
 
       const messageToSign = `${processedFile.name}:${postageBatchId}`;
@@ -601,6 +641,12 @@ export const handleMultiFileUpload = async (
         'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
         'swarm-collection': serveUncompressed && isArchive ? 'true' : 'false',
       };
+
+      // Add webpage headers if this should be uploaded as a website
+      if (shouldUploadAsWebsite) {
+        baseHeaders['Swarm-Index-Document'] = 'index.html';
+        baseHeaders['Swarm-Error-Document'] = 'error.html';
+      }
 
       if (!isLocalhost) {
         // For multi-file uploads, add session-related headers

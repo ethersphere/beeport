@@ -1301,6 +1301,7 @@ const SwapComponent: React.FC = () => {
         address,
         beeApiUrl,
         serveUncompressed,
+        isWebpageUpload,
         setUploadProgress,
         setStatusMessage,
         setIsDistributing,
@@ -1747,7 +1748,7 @@ const SwapComponent: React.FC = () => {
                             disabled={uploadStep === 'uploading'}
                           />
                           <label htmlFor="multiple-files" className={styles.checkboxLabel}>
-                            Upload multiple files separately
+                            Multiple files separately (separate hashes)
                           </label>
                         </div>
 
@@ -1782,7 +1783,7 @@ const SwapComponent: React.FC = () => {
                                 : ''
                             }
                           >
-                            Upload muliple files/folder as webpage archive
+                            Muliple files/folder as webpage (one hash)
                           </label>
                         </div>
 
@@ -1897,22 +1898,6 @@ const SwapComponent: React.FC = () => {
                               </label>
                             </div>
                           )}
-
-                        {!isMultipleFiles && isTarFile && !isFolderUpload && (
-                          <div className={styles.checkboxWrapper}>
-                            <input
-                              type="checkbox"
-                              id="webpage-upload"
-                              checked={isWebpageUpload}
-                              onChange={e => setIsWebpageUpload(e.target.checked)}
-                              className={styles.checkbox}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                            <label htmlFor="webpage-upload" className={styles.checkboxLabel}>
-                              Upload as webpage
-                            </label>
-                          </div>
-                        )}
 
                         {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
                           <div className={styles.checkboxWrapper}>
