@@ -1757,6 +1757,13 @@ const SwapComponent: React.FC = () => {
                             checked={isFolderUpload}
                             onChange={e => {
                               setIsFolderUpload(e.target.checked);
+                              // Automatically enable webpage upload for folders
+                              if (e.target.checked) {
+                                setIsWebpageUpload(true);
+                              } else {
+                                // Reset webpage upload when folder upload is disabled
+                                setIsWebpageUpload(false);
+                              }
                               // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
@@ -1765,8 +1772,16 @@ const SwapComponent: React.FC = () => {
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
                           />
-                          <label htmlFor="folder-upload" className={styles.checkboxLabel}>
-                            Upload muliple files/folder as archive
+                          <label
+                            htmlFor="folder-upload"
+                            className={styles.checkboxLabel}
+                            title={
+                              isFolderUpload
+                                ? '📁 An index.html file will be automatically generated if not present'
+                                : ''
+                            }
+                          >
+                            Upload muliple files/folder as webpage archive
                           </label>
                         </div>
 
@@ -1882,7 +1897,7 @@ const SwapComponent: React.FC = () => {
                             </div>
                           )}
 
-                        {!isMultipleFiles && isTarFile && (
+                        {!isMultipleFiles && isTarFile && !isFolderUpload && (
                           <div className={styles.checkboxWrapper}>
                             <input
                               type="checkbox"
