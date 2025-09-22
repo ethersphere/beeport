@@ -23,6 +23,7 @@ export interface FileUploadParams {
   serveUncompressed: boolean;
   isTarFile: boolean;
   isWebpageUpload: boolean;
+  isFolderUpload?: boolean;
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -37,7 +38,8 @@ export interface FileUploadParams {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => void;
 }
 
@@ -66,7 +68,8 @@ export interface MultiFileUploadParams {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => void;
   setMultiFileResults: React.Dispatch<React.SetStateAction<MultiFileResult[]>>;
 }
@@ -132,6 +135,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     serveUncompressed,
     isTarFile,
     isWebpageUpload,
+    isFolderUpload = false,
     setUploadProgress,
     setStatusMessage,
     setIsDistributing,
@@ -490,7 +494,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           stamp.batchTTL,
           processedFile?.name,
           isWebpageUpload,
-          selectedFile.size
+          selectedFile.size,
+          isFolderUpload
         );
 
         return parsedReference.reference;

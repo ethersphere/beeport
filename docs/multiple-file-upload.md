@@ -9,7 +9,7 @@ Multiple file upload allows you to upload several files at once to the same post
 ### Step 1: Enable Multiple File Mode
 
 1. Connect your wallet
-2. Navigate to the Upload section
+2. Navigate to the Upload tab
 3. **Check** the "Upload multiple files" checkbox
 4. The interface will switch to multiple file mode
 
