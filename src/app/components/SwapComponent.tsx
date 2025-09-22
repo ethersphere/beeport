@@ -1766,7 +1766,7 @@ const SwapComponent: React.FC = () => {
                             disabled={uploadStep === 'uploading'}
                           />
                           <label htmlFor="folder-upload" className={styles.checkboxLabel}>
-                            Upload folder as archive
+                            Upload muliple files/folder as archive
                           </label>
                         </div>
 
