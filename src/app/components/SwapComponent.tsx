@@ -1664,6 +1664,7 @@ const SwapComponent: React.FC = () => {
                     setMultiFileResults([]);
                     setIsWebpageUpload(false);
                     setIsTarFile(false);
+                    setIsFolderUpload(false);
                     setIsDistributing(false);
                   }}
                 >
@@ -2278,6 +2279,7 @@ const SwapComponent: React.FC = () => {
                         setMultiFileResults([]);
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
+                        setIsFolderUpload(false);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
                         setIsNFTCollection(false);
