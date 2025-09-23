@@ -467,7 +467,7 @@ const extractTarFiles = (
     }
 
     // Extract filename (first 100 bytes, null-terminated)
-    let nameBytes = block.slice(0, 100);
+    const nameBytes = block.slice(0, 100);
     let nameEnd = nameBytes.indexOf(0);
     if (nameEnd === -1) nameEnd = 100;
     const name = new TextDecoder().decode(nameBytes.slice(0, nameEnd));
@@ -479,7 +479,7 @@ const extractTarFiles = (
 
     // Extract file size (bytes 124-135, octal string)
     const sizeBytes = block.slice(124, 136);
-    let sizeStr = new TextDecoder().decode(sizeBytes).replace(/\0/g, '').trim();
+    const sizeStr = new TextDecoder().decode(sizeBytes).replace(/\0/g, '').trim();
     const size = sizeStr ? parseInt(sizeStr, 8) : 0;
 
     // Extract file type (byte 156)
