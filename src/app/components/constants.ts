@@ -28,7 +28,7 @@ export const DEFAULT_BEE_API_URL =
 // Check if we're running on production domains
 const isProductionDomain =
   typeof window !== 'undefined' &&
-  (window.location.hostname === 'app.ethswarm.org' ||
+  (window.location.hostname === 'beeport.ethswarm.org' ||
     window.location.hostname === 'beeport.eth.limo');
 
 // BEE Gateway URL - use swarming.site for development, bzz.link for production
@@ -131,8 +131,8 @@ const ALL_TIME_OPTIONS = [
   { days: 365 * 10, display: '10 years' },
 ];
 
-// Define production-only time options
-const PRODUCTION_TIME_OPTIONS = [
+// Define conservative time options (for potential future use)
+const CONSERVATIVE_TIME_OPTIONS = [
   { days: 30, display: '30 days' },
   { days: 90, display: '90 days' },
   { days: 180, display: '180 days' },
@@ -142,8 +142,8 @@ const PRODUCTION_TIME_OPTIONS = [
   { days: 365 * 10, display: '10 years' },
 ];
 
-// Export the appropriate options based on environment
-export const TIME_OPTIONS = isProduction ? PRODUCTION_TIME_OPTIONS : ALL_TIME_OPTIONS;
+// Export all time options for both production and development
+export const TIME_OPTIONS = ALL_TIME_OPTIONS;
 
 // Define all storage options
 const ALL_STORAGE_OPTIONS: StorageOption[] = [
@@ -158,8 +158,8 @@ const ALL_STORAGE_OPTIONS: StorageOption[] = [
   { depth: 27, size: '476GB' },
 ];
 
-// Define production-only storage options
-const PRODUCTION_STORAGE_OPTIONS: StorageOption[] = [
+// Define conservative storage options (for potential future use)
+const CONSERVATIVE_STORAGE_OPTIONS: StorageOption[] = [
   { depth: 20, size: '680MB' },
   { depth: 21, size: '2.6GB' },
   { depth: 22, size: '7.7GB' },
@@ -170,10 +170,8 @@ const PRODUCTION_STORAGE_OPTIONS: StorageOption[] = [
   { depth: 27, size: '476GB' },
 ];
 
-// Export the appropriate options based on environment
-export const STORAGE_OPTIONS: StorageOption[] = isProduction
-  ? PRODUCTION_STORAGE_OPTIONS
-  : ALL_STORAGE_OPTIONS;
+// Export all storage options for both production and development
+export const STORAGE_OPTIONS: StorageOption[] = ALL_STORAGE_OPTIONS;
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,
