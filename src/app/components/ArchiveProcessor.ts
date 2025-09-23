@@ -119,7 +119,8 @@ const generateIndexHtml = (fileNames: string[], archiveName: string): string => 
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return `<!-- Swarm Directory Index -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
