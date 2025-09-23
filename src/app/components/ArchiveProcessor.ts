@@ -3,23 +3,54 @@ import JSZip from 'jszip';
 import Tar from 'tar-js';
 
 /**
+ * Check if a file should be filtered out (system/metadata files)
+ */
+const shouldFilterFile = (path: string): boolean => {
+  // Normalize path by removing leading ./ and /
+  const normalizedPath = path.replace(/^\.\/+/, '').replace(/^\/+/, '');
+
+  // Filter out macOS PAX headers
+  if (normalizedPath.startsWith('PaxHeader/')) return true;
+
+  // Filter out __MACOSX metadata folders and their contents
+  if (normalizedPath.startsWith('__MACOSX/') || normalizedPath === '__MACOSX') return true;
+
+  // Filter out common system metadata files
+  if (normalizedPath === '.DS_Store' || normalizedPath.includes('/.DS_Store')) return true;
+
+  // Filter out macOS resource forks (._filename)
+  if (normalizedPath.startsWith('._') || normalizedPath.includes('/._')) return true;
+
+  // Filter out Thumbs.db (Windows) and other system files
+  if (normalizedPath === 'Thumbs.db' || normalizedPath.includes('/Thumbs.db')) return true;
+
+  return false;
+};
+
+/**
  * Check if archive contains an index.html or index.htm file
  */
 const hasIndexFile = (fileNames: string[]): boolean => {
-  return fileNames.some(
-    name =>
-      name === 'index.html' ||
-      name === 'index.htm' ||
-      name.endsWith('/index.html') ||
-      name.endsWith('/index.htm')
-  );
+  return fileNames.some(name => {
+    if (shouldFilterFile(name)) return false;
+
+    const normalizedName = name.replace(/^\.\/+/, '').replace(/^\/+/, '');
+    return (
+      normalizedName === 'index.html' ||
+      normalizedName === 'index.htm' ||
+      normalizedName.endsWith('/index.html') ||
+      normalizedName.endsWith('/index.htm')
+    );
+  });
 };
 
 /**
  * Generate index.html content for archive files
  */
 const generateIndexHtml = (fileNames: string[], archiveName: string): string => {
-  const filteredFiles = fileNames.filter(name => !name.endsWith('/'));
+  const filteredFiles = fileNames
+    .filter(name => !name.endsWith('/') && !shouldFilterFile(name))
+    .map(name => name.replace(/^\.\/+/, '').replace(/^\/+/, ''));
 
   // Sort files alphabetically
   filteredFiles.sort();
@@ -285,14 +316,17 @@ const processZipFile = async (zipFile: File): Promise<File> => {
     const filePromises = Object.keys(zipContents.files).map(async filename => {
       const zipEntry = zipContents.files[filename];
 
-      // Skip directories
-      if (zipEntry.dir) return;
+      // Skip directories and metadata files
+      if (zipEntry.dir || shouldFilterFile(filename)) return;
+
+      // Normalize the filename
+      const normalizedFilename = filename.replace(/^\.\/+/, '').replace(/^\/+/, '');
 
       // Get file content as ArrayBuffer
       const content = await zipEntry.async('arraybuffer');
 
-      // Add to TAR
-      tarball.append(filename, new Uint8Array(content));
+      // Add to TAR with normalized filename
+      tarball.append(normalizedFilename, new Uint8Array(content));
     });
 
     // Wait for all files to be processed

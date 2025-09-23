@@ -505,6 +505,57 @@ const extractTarFiles = (
 };
 
 /**
+ * Normalize a file path by removing ./ prefixes and cleaning up the path
+ * @param path The file path to normalize
+ * @returns Normalized path
+ */
+const normalizePath = (path: string): string => {
+  // Remove leading ./ and ./
+  let normalized = path.replace(/^\.\/+/, '');
+
+  // Remove any remaining leading slashes
+  normalized = normalized.replace(/^\/+/, '');
+
+  return normalized;
+};
+
+/**
+ * Check if a file is a macOS PAX header or other metadata file that should be filtered out
+ * @param path The file path to check
+ * @returns boolean indicating if the file should be filtered out
+ */
+const shouldFilterFile = (path: string): boolean => {
+  const normalizedPath = normalizePath(path);
+
+  // Filter out macOS PAX headers
+  if (normalizedPath.startsWith('PaxHeader/')) {
+    return true;
+  }
+
+  // Filter out __MACOSX metadata folders and their contents
+  if (normalizedPath.startsWith('__MACOSX/') || normalizedPath === '__MACOSX') {
+    return true;
+  }
+
+  // Filter out other common macOS metadata files
+  if (normalizedPath === '.DS_Store' || normalizedPath.includes('/.DS_Store')) {
+    return true;
+  }
+
+  // Filter out macOS resource forks (._filename)
+  if (normalizedPath.startsWith('._') || normalizedPath.includes('/._')) {
+    return true;
+  }
+
+  // Filter out Thumbs.db (Windows) and other system files
+  if (normalizedPath === 'Thumbs.db' || normalizedPath.includes('/Thumbs.db')) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
  * Check if extracted TAR files contain an index.html or index.htm file
  * @param files Array of extracted files
  * @returns boolean indicating if an index file exists
@@ -512,14 +563,21 @@ const extractTarFiles = (
 const tarHasIndexFile = (
   files: Array<{ name: string; data: Uint8Array; isDirectory: boolean }>
 ): boolean => {
-  return files.some(
-    file =>
+  return files.some(file => {
+    // Skip PAX headers and metadata files
+    if (shouldFilterFile(file.name)) {
+      return false;
+    }
+
+    const normalizedName = normalizePath(file.name);
+    return (
       !file.isDirectory &&
-      (file.name === 'index.html' ||
-        file.name === 'index.htm' ||
-        file.name.endsWith('/index.html') ||
-        file.name.endsWith('/index.htm'))
-  );
+      (normalizedName === 'index.html' ||
+        normalizedName === 'index.htm' ||
+        normalizedName.endsWith('/index.html') ||
+        normalizedName.endsWith('/index.htm'))
+    );
+  });
 };
 
 /**
@@ -532,10 +590,18 @@ const generateIndexHtmlForTar = (
   files: Array<{ name: string; data: Uint8Array; isDirectory: boolean }>,
   filename: string
 ): string => {
-  // Filter out directories and get file list
+  // Filter out directories, PAX headers, and get file list with normalized paths
   const fileList = files
-    .filter(file => !file.isDirectory && file.name !== 'index.html' && file.name !== 'index.htm')
-    .map(file => file.name)
+    .filter(file => {
+      // Skip PAX headers and metadata files
+      if (shouldFilterFile(file.name)) {
+        return false;
+      }
+
+      const normalizedName = normalizePath(file.name);
+      return !file.isDirectory && normalizedName !== 'index.html' && normalizedName !== 'index.htm';
+    })
+    .map(file => normalizePath(file.name))
     .sort();
 
   const folderName = filename.replace(/\.(tar|zip|gz)$/i, '');
@@ -822,11 +888,12 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
       message: 'Re-packaging TAR with original files...',
     });
 
-    // Add all original files back to the TAR
+    // Add all original files back to the TAR with normalized paths, excluding PAX headers
     let processedFiles = 0;
     for (const file of extractedFiles) {
-      if (!file.isDirectory) {
-        newTar.append(file.name, file.data);
+      if (!file.isDirectory && !shouldFilterFile(file.name)) {
+        const normalizedPath = normalizePath(file.name);
+        newTar.append(normalizedPath, file.data);
       }
       processedFiles++;
       const progress = 60 + Math.round((processedFiles / extractedFiles.length) * 30);
