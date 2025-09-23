@@ -343,7 +343,8 @@ export const createFolderArchive = async (params: FolderUploadParams): Promise<F
 
     try {
       const fileData = await file.arrayBuffer();
-      tarball.append(relativePath, new Uint8Array(fileData));
+      const tarCompatiblePath = ensureTarCompatiblePath(relativePath);
+      tarball.append(tarCompatiblePath, new Uint8Array(fileData));
 
       processedFiles++;
       const progress = Math.round((processedFiles / totalFiles) * (needsIndexFile ? 90 : 95));
@@ -520,6 +521,54 @@ const normalizePath = (path: string): string => {
 };
 
 /**
+ * Truncate filename if it's too long for TAR format (100 char limit)
+ * @param path The file path
+ * @returns Truncated path if necessary
+ */
+const ensureTarCompatiblePath = (path: string): string => {
+  const TAR_FILENAME_LIMIT = 100;
+
+  if (path.length <= TAR_FILENAME_LIMIT) {
+    return path;
+  }
+
+  // Split path into directory and filename
+  const lastSlashIndex = path.lastIndexOf('/');
+  const directory = lastSlashIndex > 0 ? path.substring(0, lastSlashIndex + 1) : '';
+  const filename = lastSlashIndex > 0 ? path.substring(lastSlashIndex + 1) : path;
+
+  // Split filename into name and extension
+  const lastDotIndex = filename.lastIndexOf('.');
+  const name = lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
+  const extension = lastDotIndex > 0 ? filename.substring(lastDotIndex) : '';
+
+  // Calculate available space for name (accounting for directory and extension)
+  const availableSpace = TAR_FILENAME_LIMIT - directory.length - extension.length;
+
+  if (availableSpace <= 0) {
+    // If directory path itself is too long, just use a hash of the original name
+    const shortHash = Math.abs(
+      path.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+    ).toString(36);
+    return `file_${shortHash}${extension}`;
+  }
+
+  // Truncate the name part and add a hash to maintain uniqueness
+  const shortHash = Math.abs(
+    name.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+  ).toString(36);
+  const maxNameLength = availableSpace - shortHash.length - 1; // -1 for underscore
+
+  if (maxNameLength > 0) {
+    const truncatedName = name.substring(0, maxNameLength);
+    return `${directory}${truncatedName}_${shortHash}${extension}`;
+  } else {
+    // Fallback: just use hash with extension
+    return `${directory}${shortHash}${extension}`;
+  }
+};
+
+/**
  * Check if a file is a macOS PAX header or other metadata file that should be filtered out
  * @param path The file path to check
  * @returns boolean indicating if the file should be filtered out
@@ -590,7 +639,7 @@ const generateIndexHtmlForTar = (
   files: Array<{ name: string; data: Uint8Array; isDirectory: boolean }>,
   filename: string
 ): string => {
-  // Filter out directories, PAX headers, and get file list with normalized paths
+  // Filter out directories, PAX headers, and get file list with normalized and TAR-compatible paths
   const fileList = files
     .filter(file => {
       // Skip PAX headers and metadata files
@@ -601,7 +650,10 @@ const generateIndexHtmlForTar = (
       const normalizedName = normalizePath(file.name);
       return !file.isDirectory && normalizedName !== 'index.html' && normalizedName !== 'index.htm';
     })
-    .map(file => normalizePath(file.name))
+    .map(file => {
+      const normalizedPath = normalizePath(file.name);
+      return ensureTarCompatiblePath(normalizedPath);
+    })
     .sort();
 
   const folderName = filename.replace(/\.(tar|zip|gz)$/i, '');
@@ -888,12 +940,13 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
       message: 'Re-packaging TAR with original files...',
     });
 
-    // Add all original files back to the TAR with normalized paths, excluding PAX headers
+    // Add all original files back to the TAR with normalized and TAR-compatible paths, excluding PAX headers
     let processedFiles = 0;
     for (const file of extractedFiles) {
       if (!file.isDirectory && !shouldFilterFile(file.name)) {
         const normalizedPath = normalizePath(file.name);
-        newTar.append(normalizedPath, file.data);
+        const tarCompatiblePath = ensureTarCompatiblePath(normalizedPath);
+        newTar.append(tarCompatiblePath, file.data);
       }
       processedFiles++;
       const progress = 60 + Math.round((processedFiles / extractedFiles.length) * 30);

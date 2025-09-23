@@ -28,6 +28,54 @@ const shouldFilterFile = (path: string): boolean => {
 };
 
 /**
+ * Truncate filename if it's too long for TAR format (100 char limit)
+ * @param path The file path
+ * @returns Truncated path if necessary
+ */
+const ensureTarCompatiblePath = (path: string): string => {
+  const TAR_FILENAME_LIMIT = 100;
+
+  if (path.length <= TAR_FILENAME_LIMIT) {
+    return path;
+  }
+
+  // Split path into directory and filename
+  const lastSlashIndex = path.lastIndexOf('/');
+  const directory = lastSlashIndex > 0 ? path.substring(0, lastSlashIndex + 1) : '';
+  const filename = lastSlashIndex > 0 ? path.substring(lastSlashIndex + 1) : path;
+
+  // Split filename into name and extension
+  const lastDotIndex = filename.lastIndexOf('.');
+  const name = lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
+  const extension = lastDotIndex > 0 ? filename.substring(lastDotIndex) : '';
+
+  // Calculate available space for name (accounting for directory and extension)
+  const availableSpace = TAR_FILENAME_LIMIT - directory.length - extension.length;
+
+  if (availableSpace <= 0) {
+    // If directory path itself is too long, just use a hash of the original name
+    const shortHash = Math.abs(
+      path.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+    ).toString(36);
+    return `file_${shortHash}${extension}`;
+  }
+
+  // Truncate the name part and add a hash to maintain uniqueness
+  const shortHash = Math.abs(
+    name.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+  ).toString(36);
+  const maxNameLength = availableSpace - shortHash.length - 1; // -1 for underscore
+
+  if (maxNameLength > 0) {
+    const truncatedName = name.substring(0, maxNameLength);
+    return `${directory}${truncatedName}_${shortHash}${extension}`;
+  } else {
+    // Fallback: just use hash with extension
+    return `${directory}${shortHash}${extension}`;
+  }
+};
+
+/**
  * Check if archive contains an index.html or index.htm file
  */
 const hasIndexFile = (fileNames: string[]): boolean => {
@@ -50,7 +98,10 @@ const hasIndexFile = (fileNames: string[]): boolean => {
 const generateIndexHtml = (fileNames: string[], archiveName: string): string => {
   const filteredFiles = fileNames
     .filter(name => !name.endsWith('/') && !shouldFilterFile(name))
-    .map(name => name.replace(/^\.\/+/, '').replace(/^\/+/, ''));
+    .map(name => {
+      const normalizedName = name.replace(/^\.\/+/, '').replace(/^\/+/, '');
+      return ensureTarCompatiblePath(normalizedName);
+    });
 
   // Sort files alphabetically
   filteredFiles.sort();
@@ -319,14 +370,15 @@ const processZipFile = async (zipFile: File): Promise<File> => {
       // Skip directories and metadata files
       if (zipEntry.dir || shouldFilterFile(filename)) return;
 
-      // Normalize the filename
+      // Normalize and ensure TAR-compatible filename
       const normalizedFilename = filename.replace(/^\.\/+/, '').replace(/^\/+/, '');
+      const tarCompatibleFilename = ensureTarCompatiblePath(normalizedFilename);
 
       // Get file content as ArrayBuffer
       const content = await zipEntry.async('arraybuffer');
 
-      // Add to TAR with normalized filename
-      tarball.append(normalizedFilename, new Uint8Array(content));
+      // Add to TAR with TAR-compatible filename
+      tarball.append(tarCompatibleFilename, new Uint8Array(content));
     });
 
     // Wait for all files to be processed
