@@ -1301,6 +1301,7 @@ const SwapComponent: React.FC = () => {
         address,
         beeApiUrl,
         serveUncompressed,
+        isWebpageUpload,
         setUploadProgress,
         setStatusMessage,
         setIsDistributing,
@@ -1664,6 +1665,7 @@ const SwapComponent: React.FC = () => {
                     setMultiFileResults([]);
                     setIsWebpageUpload(false);
                     setIsTarFile(false);
+                    setIsFolderUpload(false);
                     setIsDistributing(false);
                   }}
                 >
@@ -1746,7 +1748,7 @@ const SwapComponent: React.FC = () => {
                             disabled={uploadStep === 'uploading'}
                           />
                           <label htmlFor="multiple-files" className={styles.checkboxLabel}>
-                            Upload multiple files separately
+                            Multiple files separately (separate hashes)
                           </label>
                         </div>
 
@@ -1757,6 +1759,13 @@ const SwapComponent: React.FC = () => {
                             checked={isFolderUpload}
                             onChange={e => {
                               setIsFolderUpload(e.target.checked);
+                              // Automatically enable webpage upload for folders
+                              if (e.target.checked) {
+                                setIsWebpageUpload(true);
+                              } else {
+                                // Reset webpage upload when folder upload is disabled
+                                setIsWebpageUpload(false);
+                              }
                               // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
@@ -1765,8 +1774,16 @@ const SwapComponent: React.FC = () => {
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
                           />
-                          <label htmlFor="folder-upload" className={styles.checkboxLabel}>
-                            Upload muliple files/folder as archive
+                          <label
+                            htmlFor="folder-upload"
+                            className={styles.checkboxLabel}
+                            title={
+                              isFolderUpload
+                                ? '📁 Select entire folders as websites. Browser will ask for permission to access folder contents - this is normal security behavior.'
+                                : ''
+                            }
+                          >
+                            Multiple files in a folder (one hash)
                           </label>
                         </div>
 
@@ -1819,7 +1836,7 @@ const SwapComponent: React.FC = () => {
                             {isFolderUpload
                               ? selectedFile
                                 ? `Folder: ${selectedFile.name}`
-                                : 'Choose folder'
+                                : 'Select Folder (auto-index)'
                               : isMultipleFiles
                                 ? selectedFiles.length > 0
                                   ? `${selectedFiles.length} files selected`
@@ -1881,22 +1898,6 @@ const SwapComponent: React.FC = () => {
                               </label>
                             </div>
                           )}
-
-                        {!isMultipleFiles && isTarFile && (
-                          <div className={styles.checkboxWrapper}>
-                            <input
-                              type="checkbox"
-                              id="webpage-upload"
-                              checked={isWebpageUpload}
-                              onChange={e => setIsWebpageUpload(e.target.checked)}
-                              className={styles.checkbox}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                            <label htmlFor="webpage-upload" className={styles.checkboxLabel}>
-                              Upload as webpage
-                            </label>
-                          </div>
-                        )}
 
                         {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
                           <div className={styles.checkboxWrapper}>
@@ -2263,6 +2264,7 @@ const SwapComponent: React.FC = () => {
                         setMultiFileResults([]);
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
+                        setIsFolderUpload(false);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
                         setIsNFTCollection(false);
