@@ -1779,11 +1779,11 @@ const SwapComponent: React.FC = () => {
                             className={styles.checkboxLabel}
                             title={
                               isFolderUpload
-                                ? '📁 An index.html file will be automatically generated if not present'
+                                ? '📁 Select entire folders as websites. Browser will ask for permission to access folder contents - this is normal security behavior.'
                                 : ''
                             }
                           >
-                            Muliple files/folder as webpage (one hash)
+                            Muliple files in a folder (one hash)
                           </label>
                         </div>
 
@@ -1836,7 +1836,7 @@ const SwapComponent: React.FC = () => {
                             {isFolderUpload
                               ? selectedFile
                                 ? `Folder: ${selectedFile.name}`
-                                : 'Choose folder'
+                                : 'Select Folder (auto-index)'
                               : isMultipleFiles
                                 ? selectedFiles.length > 0
                                   ? `${selectedFiles.length} files selected`
