@@ -1783,7 +1783,7 @@ const SwapComponent: React.FC = () => {
                                 : ''
                             }
                           >
-                            Muliple files in a folder (one hash)
+                            Multiple files in a folder (one hash)
                           </label>
                         </div>
 
