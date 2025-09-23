@@ -2,54 +2,52 @@
 
 ## Overview
 
-ZIP file upload provides special processing for ZIP archives, allowing you to extract and serve the contents as individual files or process them for specific use cases like websites or NFT collections.
+ZIP file upload provides intelligent processing for ZIP archives with automatic website creation, system file filtering, and optimized TAR conversion. The system can automatically generate index.html files and configure archives as browsable websites.
 
-## Upload Options for ZIP Files
+## Automatic Processing Features
 
-When you select a ZIP file, you'll see several checkbox options:
+When you upload a ZIP file, the system automatically:
 
-### 1. Serve Uncompressed ☐
+1. **Detects file type**: Recognizes ZIP archives for special processing
+2. **Smart extraction**: Converts to TAR format for better web serving
+3. **Auto-website mode**: Automatically uploads as website if uncompressed
+4. **Index generation**: Creates index.html if missing
+5. **System file filtering**: Removes macOS/Windows metadata files
+6. **Filename compatibility**: Handles long filenames for TAR format
 
-**What it does**: Extracts the ZIP file and converts it to TAR format for better web serving.
+## Upload Behavior (Simplified)
 
-- **Checked**: ZIP is extracted, files are accessible individually
-- **Unchecked**: ZIP file is uploaded as-is (single downloadable archive)
+### ZIP File Processing
 
-**Recommended**: ✅ Check this for most use cases
+**Compressed ZIP**: Uploaded as-is (single downloadable archive)
+**Uncompressed ZIP**: Automatically extracted → TAR → Website
 
-### 2. Upload NFT Collection ☐
+The system now automatically detects the best processing method:
 
-**What it does**: Processes ZIP as an NFT collection with automatic metadata processing.
+- **Upload NFT Collection ☐**: Available for NFT-structured ZIPs
+  - **Requirements**: ZIP must contain `images/` and `json/` folders
+  - **See**: [NFT Collection Upload Guide](./nft-collection-upload.md) for details
 
-- **Only appears**: When ZIP file is selected
-- **Requirements**: ZIP must contain `images/` and `json/` folders
-- **See**: [NFT Collection Upload Guide](./nft-collection-upload.md) for details
-
-### 3. Upload as Webpage ☐
-
-**What it does**: Configures the extracted files as a static website.
-
-- **Only appears**: When "Serve Uncompressed" is checked
-- **Requirements**: Must contain `index.html` file
-- **See**: [Webpage Upload Guide](./webpage-upload.md) for details
+_Note: "Upload as webpage" option has been removed as website mode is now automatically detected_
 
 ## Processing Workflow
 
-### Standard ZIP Upload (Serve Uncompressed ✓)
+### Uncompressed ZIP Processing
 
 ```
-ZIP File → Extract → Create TAR → Upload TAR → Individual File Access
+ZIP File → Extract → Filter System Files → Generate Index (if needed) → Create TAR → Upload as Website
 ```
 
-**Result**: Files accessible at:
+**Result**: Website accessible at:
 
 ```
-https://bzz.link/bzz/REFERENCE/filename1.txt
-https://bzz.link/bzz/REFERENCE/filename2.jpg
-https://bzz.link/bzz/REFERENCE/folder/file.html
+https://bzz.link/bzz/REFERENCE/                  → Auto-generated index.html
+https://bzz.link/bzz/REFERENCE/filename1.txt     → Individual files
+https://bzz.link/bzz/REFERENCE/filename2.jpg     → Individual files
+https://bzz.link/bzz/REFERENCE/folder/file.html  → Folder structure preserved
 ```
 
-### Raw ZIP Upload (Serve Uncompressed ✗)
+### Compressed ZIP Upload
 
 ```
 ZIP File → Upload as-is → Single Archive Download
@@ -60,6 +58,72 @@ ZIP File → Upload as-is → Single Archive Download
 ```
 https://bzz.link/bzz/REFERENCE/archive.zip
 ```
+
+## Automatic Index Generation
+
+### When Index is Created
+
+The system generates `index.html` when:
+
+- ZIP is uploaded uncompressed (extracted)
+- No existing `index.html` or `index.htm` found
+- Archive contains files that benefit from web navigation
+
+### Generated Index Features
+
+- **Professional branding**: Swarm color scheme and styling
+- **Complete file listing**: All files with clickable links
+- **Responsive design**: Works on desktop and mobile
+- **New tab links**: Files open in new tabs for better UX
+- **File type icons**: Visual indicators for different file types
+
+## System File Filtering
+
+### Automatic Cleanup
+
+The system automatically removes:
+
+#### macOS Metadata
+
+- **PAX Headers**: `PaxHeader/` directories and contents
+- **macOS Resource forks**: `__MACOSX/` folders and all contents
+- **Finder metadata**: `.DS_Store` files throughout archive
+- **Resource forks**: `._filename` files
+
+#### Windows Metadata
+
+- **Thumbnail cache**: `Thumbs.db` files
+- **System attributes**: Windows-specific metadata
+
+### Benefits
+
+- **Cleaner archives**: No system clutter in file listings
+- **Smaller uploads**: Reduced archive size
+- **Cross-platform**: Consistent behavior across operating systems
+- **Professional results**: Clean, organized file access
+
+## Long Filename Handling
+
+### TAR Compatibility
+
+TAR format has a 100-character filename limit. The system handles this automatically:
+
+#### Smart Filename Truncation
+
+```
+❌ Original long filename (120+ chars):
+zara808_beautiful_background_high_resolution_8k_blurred_deep_pur_d6102566-f5d5-4d43-ab94-3cc03d179613.png
+
+✅ Auto-shortened for TAR (≤100 chars):
+zara808_beautiful_background_high_resolution_8k_blurred_deep_pur_d610256_a1b2c3d4.png
+```
+
+#### Truncation Strategy
+
+1. **Preserve file extension**: Always maintained for proper file handling
+2. **Preserve directory structure**: Folder paths kept intact
+3. **Add unique hash**: Prevents filename collisions
+4. **Maintain readability**: Keeps meaningful part of filename
 
 ## File Structure Handling
 

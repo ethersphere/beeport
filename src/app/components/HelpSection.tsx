@@ -183,11 +183,22 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3>I get &quot;no routes available&quot;, why? </h3>
+            <h3>Upload history</h3>
             <p>
-              If messaged &quot;no routes available&quot;, this usually means that you choose too
-              low amount of USD value to be crossed between chains. For below $0.5 you should try to
-              swap and upload directly from Gnosis chain.
+              Upload history is kept in the browser&apos;s storage. Clearing the storage/cache of
+              the browser will irreversibly destroy the upload history. When switching browsers, you
+              can migrate this data manually using the IMPORT and EXPORT buttons, otherwise your
+              upload history will start empty.
+            </p>
+          </div>
+          <div className={styles.faqItem}>
+            <h3>Stamp persistence</h3>
+            <p>
+              Your storage stamps are linked to your wallet address, not to your browser. This means
+              when you connect the same wallet to Beeport on a different browser or machine, all
+              your previously purchased stamps will automatically be loaded and available for use.
+              You can seamlessly continue uploading files using your existing stamps from any device
+              where you connect your wallet.
             </p>
           </div>
           <div className={styles.faqItem}>

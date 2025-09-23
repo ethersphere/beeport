@@ -67,6 +67,7 @@ import {
   isArchiveFile,
   MultiFileResult,
 } from './FileUploadUtils';
+import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
 import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
 import { useTokenManagement } from './TokenUtils';
@@ -109,6 +110,7 @@ const SwapComponent: React.FC = () => {
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
   const [redundancyLevel, setRedundancyLevel] = useState<number>(0);
+  const [isFolderUpload, setIsFolderUpload] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
@@ -1067,7 +1069,8 @@ const SwapComponent: React.FC = () => {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => {
     if (!address) return;
 
@@ -1083,6 +1086,7 @@ const SwapComponent: React.FC = () => {
       expiryDate,
       isWebpageUpload,
       fileSize,
+      isFolderUpload,
     });
 
     history[address] = addressHistory;
@@ -1231,6 +1235,7 @@ const SwapComponent: React.FC = () => {
           isTarFile,
           isWebpageUpload,
           redundancyLevel,
+          isFolderUpload,
           setUploadProgress,
           setStatusMessage,
           setIsDistributing,
@@ -1299,6 +1304,7 @@ const SwapComponent: React.FC = () => {
         address,
         beeApiUrl,
         serveUncompressed,
+        isWebpageUpload,
         setUploadProgress,
         setStatusMessage,
         setIsDistributing,
@@ -1469,7 +1475,7 @@ const SwapComponent: React.FC = () => {
             setShowUploadHistory(false);
           }}
         >
-          Stamps
+          Upload
         </button>
         <button
           className={`${styles.tabButton} ${showUploadHistory ? styles.activeTab : ''}`}
@@ -1662,6 +1668,7 @@ const SwapComponent: React.FC = () => {
                     setMultiFileResults([]);
                     setIsWebpageUpload(false);
                     setIsTarFile(false);
+                    setIsFolderUpload(false);
                     setIsDistributing(false);
                   }}
                 >
@@ -1738,21 +1745,77 @@ const SwapComponent: React.FC = () => {
                               // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
+                              setIsFolderUpload(false);
                             }}
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
                           />
                           <label htmlFor="multiple-files" className={styles.checkboxLabel}>
-                            Upload multiple files
+                            Multiple files separately (separate hashes)
+                          </label>
+                        </div>
+
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="folder-upload"
+                            checked={isFolderUpload}
+                            onChange={e => {
+                              setIsFolderUpload(e.target.checked);
+                              // Automatically enable webpage upload for folders
+                              if (e.target.checked) {
+                                setIsWebpageUpload(true);
+                              } else {
+                                // Reset webpage upload when folder upload is disabled
+                                setIsWebpageUpload(false);
+                              }
+                              // Reset selections when switching modes
+                              setSelectedFile(null);
+                              setSelectedFiles([]);
+                              setIsMultipleFiles(false);
+                            }}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label
+                            htmlFor="folder-upload"
+                            className={styles.checkboxLabel}
+                            title={
+                              isFolderUpload
+                                ? '📁 Select entire folders as websites. Browser will ask for permission to access folder contents - this is normal security behavior.'
+                                : ''
+                            }
+                          >
+                            Multiple files in a folder (one hash)
                           </label>
                         </div>
 
                         <div className={styles.fileInputWrapper}>
                           <input
                             type="file"
-                            multiple={isMultipleFiles}
-                            onChange={e => {
-                              if (isMultipleFiles) {
+                            multiple={isMultipleFiles || isFolderUpload}
+                            {...(isFolderUpload && { webkitdirectory: 'true' })}
+                            onChange={async e => {
+                              if (isFolderUpload) {
+                                try {
+                                  const archiveFile = await handleFolderSelection(e.target, {
+                                    setUploadProgress,
+                                    setStatusMessage,
+                                  });
+                                  if (archiveFile) {
+                                    setSelectedFile(archiveFile);
+                                    setSelectedFiles([]);
+                                    setIsTarFile(true); // Folder archives are treated as tar files
+                                    setServeUncompressed(true); // Folder archives should be served uncompressed
+                                  }
+                                } catch (error) {
+                                  console.error('Folder upload error:', error);
+                                  setStatusMessage({
+                                    step: 'error',
+                                    message: `Folder upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                                  });
+                                }
+                              } else if (isMultipleFiles) {
                                 const files = Array.from(e.target.files || []);
                                 setSelectedFiles(files);
                                 setSelectedFile(null);
@@ -1773,13 +1836,17 @@ const SwapComponent: React.FC = () => {
                             id="file-upload"
                           />
                           <label htmlFor="file-upload" className={styles.fileInputLabel}>
-                            {isMultipleFiles
-                              ? selectedFiles.length > 0
-                                ? `${selectedFiles.length} files selected`
-                                : 'Choose files'
-                              : selectedFile
-                                ? selectedFile.name
-                                : 'Choose file'}
+                            {isFolderUpload
+                              ? selectedFile
+                                ? `Folder: ${selectedFile.name}`
+                                : 'Select Folder (auto-index)'
+                              : isMultipleFiles
+                                ? selectedFiles.length > 0
+                                  ? `${selectedFiles.length} files selected`
+                                  : 'Choose files'
+                                : selectedFile
+                                  ? selectedFile.name
+                                  : 'Choose file'}
                           </label>
                         </div>
 
@@ -1851,25 +1918,6 @@ const SwapComponent: React.FC = () => {
                           </div>
                         )}
 
-                        {!isMultipleFiles && selectedFile && (
-                          <div className={styles.dropdownWrapper}>
-                            <label className={styles.dropdownLabel}>
-                              Erasure Coding
-                              <span
-                                className={styles.tooltip}
-                                title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
-                              >
-                                ?
-                              </span>
-                            </label>
-                            <ErasureCodingDropdown
-                              selectedLevel={redundancyLevel}
-                              onLevelChange={setRedundancyLevel}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                          </div>
-                        )}
-
                         {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
                           <div className={styles.checkboxWrapper}>
                             <input
@@ -1889,6 +1937,25 @@ const SwapComponent: React.FC = () => {
                                 ?
                               </span>
                             </label>
+                          </div>
+                        )}
+
+                        {!isMultipleFiles && selectedFile && (
+                          <div className={styles.dropdownWrapper}>
+                            <label className={styles.dropdownLabel}>
+                              Erasure Coding
+                              <span
+                                className={styles.tooltip}
+                                title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
+                              >
+                                ?
+                              </span>
+                            </label>
+                            <ErasureCodingDropdown
+                              selectedLevel={redundancyLevel}
+                              onLevelChange={setRedundancyLevel}
+                              disabled={uploadStep === 'uploading'}
+                            />
                           </div>
                         )}
 
@@ -2235,6 +2302,7 @@ const SwapComponent: React.FC = () => {
                         setMultiFileResults([]);
                         setIsWebpageUpload(false);
                         setIsTarFile(false);
+                        setIsFolderUpload(false);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
                         setIsNFTCollection(false);

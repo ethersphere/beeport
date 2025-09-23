@@ -99,7 +99,7 @@ The ENS (Ethereum Name Service) integration provides a complete solution for lin
 ### For Existing Domains:
 
 1. Upload content to Swarm
-2. Access Upload History
+2. Access History tab
 3. Click ENS button on website uploads
 4. Select owned domain from dropdown
 5. Set content hash transaction

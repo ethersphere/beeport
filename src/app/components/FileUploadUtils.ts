@@ -9,6 +9,7 @@ import {
   UPLOAD_TIMEOUT_CONFIG,
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
+import { processTarFile } from './FolderUploadUtils';
 
 /**
  * Interface for parameters needed for file upload function
@@ -24,6 +25,7 @@ export interface FileUploadParams {
   isTarFile: boolean;
   isWebpageUpload: boolean;
   redundancyLevel?: number;
+  isFolderUpload?: boolean;
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -38,7 +40,8 @@ export interface FileUploadParams {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => void;
 }
 
@@ -53,6 +56,8 @@ export interface MultiFileUploadParams {
   address: `0x${string}` | undefined;
   beeApiUrl: string;
   serveUncompressed: boolean;
+  isWebpageUpload: boolean;
+>>>>>>> origin/main
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -67,7 +72,8 @@ export interface MultiFileUploadParams {
     expiryDate: number,
     filename?: string,
     isWebpageUpload?: boolean,
-    fileSize?: number
+    fileSize?: number,
+    isFolderUpload?: boolean
   ) => void;
   setMultiFileResults: React.Dispatch<React.SetStateAction<MultiFileResult[]>>;
 }
@@ -132,9 +138,10 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     beeApiUrl,
     serveUncompressed,
     isTarFile,
-    isWebpageUpload,
-    redundancyLevel = 0,
-    setUploadProgress,
+  isWebpageUpload,
+  redundancyLevel = 0,
+  isFolderUpload = false,
+  setUploadProgress,
     setStatusMessage,
     setIsDistributing,
     setUploadStep,
@@ -147,10 +154,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
   if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
     console.error('Missing file, postage batch ID, or wallet');
-    console.log('selectedFile', selectedFile);
-    console.log('postageBatchId', postageBatchId);
-    console.log('walletClient', walletClient);
-    console.log('publicClient', publicClient);
     return null;
   }
 
@@ -162,11 +165,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
    * Check the status of a postage stamp
    */
   const checkStampStatus = async (batchId: string): Promise<StampResponse> => {
-    console.log(`Checking stamps status for batch ${batchId}`);
     const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
-    const data = await response.json();
-    console.log('Stamp status response:', data);
-    return data;
+    return response.json();
   };
 
   /**
@@ -177,12 +177,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     headers: Record<string, string>,
     baseUrl: string
   ): Promise<XHRResponse> => {
-    console.log('Starting file upload...');
-    console.log(`File size: ${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`);
-
     // Add the filename as a query parameter
     const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
-    console.log('Upload URL with filename:', url);
 
     // Calculate dynamic timeout based on file size using configurable settings
     const fileSizeGB = file.size / (1024 * 1024 * 1024);
@@ -197,9 +193,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       )
     );
     const timeoutMs = estimatedTimeMinutes * 60 * 1000;
-
-    console.log(`Estimated upload time: ${estimatedTimeMinutes.toFixed(1)} minutes`);
-    console.log(`Setting timeout to: ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes`);
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -231,21 +224,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
           setUploadProgress(Math.min(99, percent));
 
-          // More detailed logging for large files
-          if (fileSizeGB > FILE_SIZE_CONFIG.enhancedLoggingThresholdGB) {
-            // Log more details for files > 500MB
-            const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
-            const totalMB = (event.total / (1024 * 1024)).toFixed(1);
-            const speed = event.loaded / ((currentTime - lastProgressTime + 1) / 1000); // bytes per second
-            const speedMBps = (speed / (1024 * 1024)).toFixed(2);
-
-            console.log(
-              `Upload progress: ${percent.toFixed(1)}% (${uploadedMB}/${totalMB} MB) at ${speedMBps} MB/s`
-            );
-          } else {
-            console.log(`Upload progress: ${percent.toFixed(1)}%`);
-          }
-
           if (percent >= 99) {
             setIsDistributing(true);
           }
@@ -255,7 +233,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadProgress(100);
-          console.log('Upload completed successfully');
         } else {
           console.error(`Upload failed with status: ${xhr.status}`);
         }
@@ -298,8 +275,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         reject(new Error('Upload was cancelled'));
       };
 
-      console.log(`Sending file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
-
       // For very large files, show additional warnings
       if (fileSizeGB > FILE_SIZE_CONFIG.largeFileThresholdGB) {
         console.warn(
@@ -329,16 +304,28 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       selectedFile.type === 'application/gzip' ||
       selectedFile.name.toLowerCase().endsWith('.gz');
 
-    // Only process if it's an archive AND serveUncompressed is checked
-    if (isArchive && serveUncompressed) {
+    const isTarArchive =
+      selectedFile.type === 'application/x-tar' || selectedFile.name.toLowerCase().endsWith('.tar');
+
+    // Process TAR files - always upload as website with index.html check
+    let shouldUploadAsWebsite = isWebpageUpload;
+    if (isTarArchive) {
       setUploadProgress(0);
-      console.log('Processing archive file before upload');
+      processedFile = await processTarFile({
+        tarFile: selectedFile,
+        setUploadProgress,
+        setStatusMessage,
+      });
+      shouldUploadAsWebsite = true;
+    }
+    // Process ZIP/GZ archives when serveUncompressed is enabled
+    else if (isArchive && serveUncompressed) {
+      setUploadProgress(0);
       processedFile = await processArchiveFile(selectedFile);
-      console.log('Archive processed, starting upload...');
+      shouldUploadAsWebsite = true;
     }
 
     const messageToSign = `${processedFile.name}:${postageBatchId}`;
-    console.log('Message to sign:', messageToSign);
 
     const signedMessage = await walletClient.signMessage({
       message: messageToSign, // Just sign the plain string directly
@@ -365,7 +352,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       baseHeaders['x-message-content'] = messageToSign; // Send the original message for verification
     }
 
-    if (isWebpageUpload && isTarFile) {
+    if (shouldUploadAsWebsite) {
       baseHeaders['Swarm-Index-Document'] = 'index.html';
       baseHeaders['Swarm-Error-Document'] = 'error.html';
     }
@@ -497,7 +484,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           stamp.batchTTL,
           processedFile?.name,
           isWebpageUpload,
-          selectedFile.size
+          selectedFile.size,
+          isFolderUpload
         );
 
         return parsedReference.reference;
@@ -539,6 +527,7 @@ export const handleMultiFileUpload = async (
     address,
     beeApiUrl,
     serveUncompressed,
+    isWebpageUpload,
     setUploadProgress,
     setStatusMessage,
     setIsDistributing,
@@ -578,15 +567,30 @@ export const handleMultiFileUpload = async (
         file.type === 'application/gzip' ||
         file.name.toLowerCase().endsWith('.gz');
 
-      // Only process if it's an archive AND serveUncompressed is checked
-      if (isArchive && serveUncompressed) {
-        console.log('Processing archive file before upload');
+      const isTarArchive =
+        file.type === 'application/x-tar' || file.name.toLowerCase().endsWith('.tar');
+
+      // Process TAR files - always upload as website with index.html check
+      let shouldUploadAsWebsite = isWebpageUpload;
+      if (isTarArchive) {
+        processedFile = await processTarFile({
+          tarFile: file,
+          setUploadProgress: progress => {
+            // For multi-file, we need to calculate the overall progress
+            const overallProgress = (fileIndex / totalFiles + progress / 100 / totalFiles) * 100;
+            setUploadProgress(overallProgress);
+          },
+          setStatusMessage,
+        });
+        shouldUploadAsWebsite = true;
+      }
+      // Process ZIP/GZ archives when serveUncompressed is enabled
+      else if (isArchive && serveUncompressed) {
         processedFile = await processArchiveFile(file);
-        console.log('Archive processed, starting upload...');
+        shouldUploadAsWebsite = true;
       }
 
       const messageToSign = `${processedFile.name}:${postageBatchId}`;
-      console.log('Message to sign:', messageToSign);
 
       // Only sign message for the very first file
       let signedMessage = '';
@@ -603,6 +607,12 @@ export const handleMultiFileUpload = async (
         'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
         'swarm-collection': serveUncompressed && isArchive ? 'true' : 'false',
       };
+
+      // Add webpage headers if this should be uploaded as a website
+      if (shouldUploadAsWebsite) {
+        baseHeaders['Swarm-Index-Document'] = 'index.html';
+        baseHeaders['Swarm-Error-Document'] = 'error.html';
+      }
 
       // Add erasure coding redundancy level if specified (for multi-file uploads, use level 0 by default)
       // Note: Multi-file uploads don't currently support redundancy level selection
