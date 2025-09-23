@@ -48,7 +48,9 @@ const generateIndexHtml = (files: FileList, folderName: string): string => {
       continue;
     }
 
-    fileList.push(relativePath);
+    // Use the same TAR-compatible path that we use when adding files to the archive
+    const tarCompatiblePath = ensureTarCompatiblePath(relativePath);
+    fileList.push(tarCompatiblePath);
   }
 
   // Sort files alphabetically
@@ -65,7 +67,8 @@ const generateIndexHtml = (files: FileList, folderName: string): string => {
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return `<!-- Swarm Directory Index -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -669,7 +672,8 @@ const generateIndexHtmlForTar = (
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return `<!-- Swarm Directory Index -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">

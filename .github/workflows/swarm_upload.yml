@@ -1,6 +1,5 @@
 name: Swarm Upload
 
-
 on:
   push:
     tags:
@@ -24,8 +23,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history including tags
-      
+          fetch-depth: 0 # Fetch all history including tags
+
       - name: Get latest tag
         id: get_tag
         run: |
@@ -48,7 +47,7 @@ jobs:
             fi
             echo "trigger=manual" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Checkout specific tag
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -67,7 +66,7 @@ jobs:
       - name: Build application
         run: npm run build
         env:
-          NEXT_PUBLIC_DEFAULT_BEE_API_URL: https://app.ethswarm.org
+          NEXT_PUBLIC_DEFAULT_BEE_API_URL: https://beeport.ethswarm.org
 
       - name: Upload to Swarm
         uses: ethersphere/swarm-actions/upload-dir@latest
@@ -85,7 +84,7 @@ jobs:
         id: feed
         with:
           reference: ${{ steps.upload.outputs.reference }}
-          topic: "multichain-ui"
+          topic: 'multichain-ui'
           postage-batch-id: ${{ secrets.PRIVATE_POSTAGE_BATCH_ID }}
           bee-url: ${{ secrets.PRIVATE_BEE_URL }}
           signer: ${{ secrets.MULTICHAIN_PRIVATE_SIGNER }}
