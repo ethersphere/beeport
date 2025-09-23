@@ -8,13 +8,14 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 - **[Single File Upload](./single-file-upload.md)** - Basic file upload functionality
 - **[Multiple File Upload](./multiple-file-upload.md)** - Upload multiple files to the same stamp
-- **[ZIP File Upload](./zip-file-upload.md)** - Upload and process ZIP archives
+- **[Folder Upload](./folder-upload.md)** - 🆕 Upload entire directories with auto-generated websites
+- **[ZIP File Upload](./zip-file-upload.md)** - Upload and process ZIP archives with smart filtering
 
 ### Advanced Features
 
+- **[Archive Processing](./archive-processing.md)** - 🆕 Comprehensive guide to TAR/ZIP processing and website creation
 - **[Webpage Upload](./webpage-upload.md)** - Create websites from TAR/ZIP files
 - **[NFT Collection Upload](./nft-collection-upload.md)** - Upload entire NFT collections with automatic metadata processing
-- **[Archive Processing](./archive-processing.md)** - How ZIP, TAR, and GZ files are handled
 
 ### Technical Guides
 
@@ -46,14 +47,39 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 
 ## 📋 Feature Overview
 
-| Feature         | File Types | Special Processing          | Use Case             |
-| --------------- | ---------- | --------------------------- | -------------------- |
-| Single File     | Any        | Optional archive extraction | Individual files     |
-| Multiple Files  | Any        | Sequential upload           | Batch operations     |
-| ZIP Upload      | .zip       | Extract → TAR conversion    | Archive distribution |
-| Webpage Upload  | .tar, .zip | Web server configuration    | Static websites      |
-| NFT Collection  | .zip       | Metadata URL rewriting      | NFT projects         |
-| ENS Integration | Any        | Content hash linking        | Domain-based access  |
+| Feature         | File Types  | Special Processing                 | Use Case                      |
+| --------------- | ----------- | ---------------------------------- | ----------------------------- |
+| Single File     | Any         | Optional archive extraction        | Individual files              |
+| Multiple Files  | Any         | Sequential upload                  | Batch operations              |
+| Folder Upload   | Directories | Auto-index + TAR + website mode    | 🆕 Directory sharing/websites |
+| ZIP Upload      | .zip        | Extract + filter + index + TAR     | 🆕 Clean archive distribution |
+| TAR Upload      | .tar        | Extract + enhance + index + re-TAR | 🆕 Archive enhancement        |
+| Webpage Upload  | .tar, .zip  | Web server configuration           | Static websites               |
+| NFT Collection  | .zip        | Metadata URL rewriting             | NFT projects                  |
+| ENS Integration | Any         | Content hash linking               | Domain-based access           |
+
+## 🆕 New Features Highlights
+
+### Automatic Website Creation
+
+- **Folder uploads** → Instant browsable websites
+- **Auto-generated index.html** with professional branding
+- **Smart file filtering** removes system metadata
+- **Long filename handling** for TAR compatibility
+
+### Enhanced Archive Processing
+
+- **ZIP extraction** with automatic website mode
+- **TAR enhancement** adds missing index files
+- **System file cleanup** (PAX headers, \_\_MACOSX, .DS_Store)
+- **Cross-platform compatibility** Windows/Mac/Linux
+
+### Intelligent Processing
+
+- **Auto-detection** of best upload method
+- **Filename truncation** for TAR format compliance
+- **Metadata filtering** for clean, professional results
+- **Responsive index pages** work on all devices
 
 ## 🛠️ Technical Requirements
 
