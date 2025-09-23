@@ -259,8 +259,6 @@ ${fileListHtml}
 };
 
 const processZipFile = async (zipFile: File): Promise<File> => {
-  console.log('Processing ZIP file:', zipFile.name);
-
   try {
     // Read and extract the ZIP file
     const jszip = new JSZip();
@@ -274,17 +272,13 @@ const processZipFile = async (zipFile: File): Promise<File> => {
 
     // Check if index.html exists, if not, generate one
     if (!hasIndexFile(fileNames)) {
-      console.log('No index.html found in ZIP, generating one...');
       try {
         const indexHtml = generateIndexHtml(fileNames, zipFile.name);
         const indexBuffer = new TextEncoder().encode(indexHtml);
         tarball.append('index.html', indexBuffer);
-        console.log('Added generated index.html to TAR archive');
       } catch (indexError) {
         console.warn('Failed to generate index.html, proceeding without it:', indexError);
       }
-    } else {
-      console.log('ZIP already contains index.html, no generation needed');
     }
 
     // Process each file in the ZIP
@@ -299,7 +293,6 @@ const processZipFile = async (zipFile: File): Promise<File> => {
 
       // Add to TAR
       tarball.append(filename, new Uint8Array(content));
-      console.log(`Added to TAR: ${filename} (${content.byteLength} bytes)`);
     });
 
     // Wait for all files to be processed
@@ -313,7 +306,6 @@ const processZipFile = async (zipFile: File): Promise<File> => {
       lastModified: new Date().getTime(),
     });
 
-    console.log(`Created TAR file: ${tarFile.name} (${tarFile.size} bytes)`);
     return tarFile;
   } catch (error: unknown) {
     console.error('Error processing ZIP file:', error);
@@ -327,8 +319,6 @@ const processZipFile = async (zipFile: File): Promise<File> => {
  * Processes archive files (ZIP, GZIP) and returns a processed file ready for upload
  */
 export const processArchiveFile = async (archiveFile: File): Promise<File> => {
-  console.log('Processing archive file:', archiveFile.name);
-
   // Determine file type based on extension or MIME type
   const isZip =
     archiveFile.type === 'application/zip' || archiveFile.name.toLowerCase().endsWith('.zip');
@@ -361,7 +351,6 @@ export const processArchiveFile = async (archiveFile: File): Promise<File> => {
       lastModified: new Date().getTime(),
     });
 
-    console.log(`Decompressed file: ${tarFile.name} (${tarFile.size} bytes)`);
     return tarFile;
   } catch (error: unknown) {
     console.error('Error processing archive file:', error);

@@ -151,10 +151,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
   if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
     console.error('Missing file, postage batch ID, or wallet');
-    console.log('selectedFile', selectedFile);
-    console.log('postageBatchId', postageBatchId);
-    console.log('walletClient', walletClient);
-    console.log('publicClient', publicClient);
     return null;
   }
 
@@ -166,11 +162,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
    * Check the status of a postage stamp
    */
   const checkStampStatus = async (batchId: string): Promise<StampResponse> => {
-    console.log(`Checking stamps status for batch ${batchId}`);
     const response = await fetch(`${beeApiUrl}/stamps/${batchId}`);
-    const data = await response.json();
-    console.log('Stamp status response:', data);
-    return data;
+    return response.json();
   };
 
   /**
@@ -181,12 +174,8 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     headers: Record<string, string>,
     baseUrl: string
   ): Promise<XHRResponse> => {
-    console.log('Starting file upload...');
-    console.log(`File size: ${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`);
-
     // Add the filename as a query parameter
     const url = `${baseUrl}?name=${encodeURIComponent(file.name)}`;
-    console.log('Upload URL with filename:', url);
 
     // Calculate dynamic timeout based on file size using configurable settings
     const fileSizeGB = file.size / (1024 * 1024 * 1024);
@@ -201,9 +190,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       )
     );
     const timeoutMs = estimatedTimeMinutes * 60 * 1000;
-
-    console.log(`Estimated upload time: ${estimatedTimeMinutes.toFixed(1)} minutes`);
-    console.log(`Setting timeout to: ${(timeoutMs / (1000 * 60)).toFixed(1)} minutes`);
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -235,21 +221,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
           setUploadProgress(Math.min(99, percent));
 
-          // More detailed logging for large files
-          if (fileSizeGB > FILE_SIZE_CONFIG.enhancedLoggingThresholdGB) {
-            // Log more details for files > 500MB
-            const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
-            const totalMB = (event.total / (1024 * 1024)).toFixed(1);
-            const speed = event.loaded / ((currentTime - lastProgressTime + 1) / 1000); // bytes per second
-            const speedMBps = (speed / (1024 * 1024)).toFixed(2);
-
-            console.log(
-              `Upload progress: ${percent.toFixed(1)}% (${uploadedMB}/${totalMB} MB) at ${speedMBps} MB/s`
-            );
-          } else {
-            console.log(`Upload progress: ${percent.toFixed(1)}%`);
-          }
-
           if (percent >= 99) {
             setIsDistributing(true);
           }
@@ -259,7 +230,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadProgress(100);
-          console.log('Upload completed successfully');
         } else {
           console.error(`Upload failed with status: ${xhr.status}`);
         }
@@ -302,8 +272,6 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         reject(new Error('Upload was cancelled'));
       };
 
-      console.log(`Sending file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
-
       // For very large files, show additional warnings
       if (fileSizeGB > FILE_SIZE_CONFIG.largeFileThresholdGB) {
         console.warn(
@@ -340,26 +308,21 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     let shouldUploadAsWebsite = isWebpageUpload;
     if (isTarArchive) {
       setUploadProgress(0);
-      console.log('Processing TAR file to check/add index.html - will upload as website');
       processedFile = await processTarFile({
         tarFile: selectedFile,
         setUploadProgress,
         setStatusMessage,
       });
-      console.log('TAR file processed, will upload as website');
       shouldUploadAsWebsite = true;
     }
     // Process ZIP/GZ archives when serveUncompressed is enabled
     else if (isArchive && serveUncompressed) {
       setUploadProgress(0);
-      console.log('Processing archive file before upload - will upload as website');
       processedFile = await processArchiveFile(selectedFile);
-      console.log('Archive processed, will upload as website');
       shouldUploadAsWebsite = true;
     }
 
     const messageToSign = `${processedFile.name}:${postageBatchId}`;
-    console.log('Message to sign:', messageToSign);
 
     const signedMessage = await walletClient.signMessage({
       message: messageToSign, // Just sign the plain string directly
@@ -602,7 +565,6 @@ export const handleMultiFileUpload = async (
       // Process TAR files - always upload as website with index.html check
       let shouldUploadAsWebsite = isWebpageUpload;
       if (isTarArchive) {
-        console.log('Processing TAR file to check/add index.html - will upload as website');
         processedFile = await processTarFile({
           tarFile: file,
           setUploadProgress: progress => {
@@ -612,19 +574,15 @@ export const handleMultiFileUpload = async (
           },
           setStatusMessage,
         });
-        console.log('TAR file processed, will upload as website');
         shouldUploadAsWebsite = true;
       }
       // Process ZIP/GZ archives when serveUncompressed is enabled
       else if (isArchive && serveUncompressed) {
-        console.log('Processing archive file before upload - will upload as website');
         processedFile = await processArchiveFile(file);
-        console.log('Archive processed, will upload as website');
         shouldUploadAsWebsite = true;
       }
 
       const messageToSign = `${processedFile.name}:${postageBatchId}`;
-      console.log('Message to sign:', messageToSign);
 
       // Only sign message for the very first file
       let signedMessage = '';

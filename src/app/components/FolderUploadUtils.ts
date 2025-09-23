@@ -315,8 +315,6 @@ export const createFolderArchive = async (params: FolderUploadParams): Promise<F
     const indexHtml = generateIndexHtml(files, folderName);
     const indexBuffer = new TextEncoder().encode(indexHtml);
     tarball.append('index.html', indexBuffer);
-
-    console.log('Added generated index.html file to TAR archive');
   }
 
   // Add all files to the TAR archive, preserving folder structure
@@ -383,7 +381,6 @@ export const createFolderArchive = async (params: FolderUploadParams): Promise<F
     setUploadProgress(100);
     setStatusMessage({ step: 'archive_ready', message: 'TAR archive created successfully!' });
 
-    console.log(`Created TAR file: ${archiveFile.name} (${archiveFile.size} bytes)`);
     return archiveFile;
   } catch (error) {
     console.error('Error generating TAR archive:', error);
@@ -418,8 +415,6 @@ export const handleFolderSelection = async (
 
   // Extract folder name from the first file's webkitRelativePath
   const folderName = firstFile.webkitRelativePath.split('/')[0];
-
-  console.log(`Selected folder: ${folderName} with ${files.length} files`);
 
   try {
     const archiveFile = await createFolderArchive({
@@ -489,8 +484,6 @@ const extractTarFiles = (
     // Extract file type (byte 156)
     const typeFlag = String.fromCharCode(block[156]);
     const isDirectory = typeFlag === '5' || name.endsWith('/');
-
-    console.log(`TAR entry: ${name}, size: ${size}, type: ${typeFlag}, isDir: ${isDirectory}`);
 
     offset += 512; // Move past header
 
@@ -798,20 +791,17 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     const tarBuffer = await tarFile.arrayBuffer();
     const extractedFiles = extractTarFiles(tarBuffer);
 
-    console.log(`Extracted ${extractedFiles.length} entries from TAR file`);
     setUploadProgress(25);
 
     // Check if index.html already exists
     const hasIndex = tarHasIndexFile(extractedFiles);
 
     if (hasIndex) {
-      console.log('TAR file already contains index.html, no modification needed');
       setStatusMessage({ step: 'tar_ready', message: 'TAR archive ready for upload' });
       setUploadProgress(100);
       return tarFile;
     }
 
-    console.log('TAR file missing index.html, generating...');
     setStatusMessage({
       step: 'generating_index',
       message: 'Generating index.html for TAR archive...',
@@ -825,7 +815,6 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     const indexHtml = generateIndexHtmlForTar(extractedFiles, tarFile.name);
     const indexBuffer = new TextEncoder().encode(indexHtml);
     newTar.append('index.html', indexBuffer);
-    console.log('Added generated index.html to TAR archive');
 
     setUploadProgress(60);
     setStatusMessage({
@@ -838,7 +827,6 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     for (const file of extractedFiles) {
       if (!file.isDirectory) {
         newTar.append(file.name, file.data);
-        console.log(`Added file to TAR: ${file.name} (${file.data.length} bytes)`);
       }
       processedFiles++;
       const progress = 60 + Math.round((processedFiles / extractedFiles.length) * 30);
@@ -863,7 +851,6 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     setUploadProgress(100);
     setStatusMessage({ step: 'tar_enhanced', message: 'TAR archive enhanced with index.html!' });
 
-    console.log(`Enhanced TAR file: ${processedFile.name} (${processedFile.size} bytes)`);
     return processedFile;
   } catch (error) {
     console.error('Error processing TAR file:', error);
