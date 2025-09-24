@@ -37,6 +37,7 @@ import UploadHistorySection from './UploadHistorySection';
 import SearchableChainDropdown from './SearchableChainDropdown';
 import SearchableTokenDropdown from './SearchableTokenDropdown';
 import StorageStampsDropdown from './StorageStampsDropdown';
+import ErasureCodingDropdown from './ErasureCodingDropdown';
 import StorageDurationDropdown from './StorageDurationDropdown';
 
 import {
@@ -112,6 +113,7 @@ const SwapComponent: React.FC = () => {
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
+  const [redundancyLevel, setRedundancyLevel] = useState<number>(0);
   const [isFolderUpload, setIsFolderUpload] = useState(false);
   const [isNewStampCreated, setIsNewStampCreated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -1244,6 +1246,7 @@ const SwapComponent: React.FC = () => {
           serveUncompressed,
           isTarFile,
           isWebpageUpload,
+          redundancyLevel,
           isFolderUpload,
           setUploadProgress,
           setStatusMessage,
@@ -1922,6 +1925,22 @@ const SwapComponent: React.FC = () => {
                             </div>
                           )}
 
+                        {!isMultipleFiles && isTarFile && (
+                          <div className={styles.checkboxWrapper}>
+                            <input
+                              type="checkbox"
+                              id="webpage-upload"
+                              checked={isWebpageUpload}
+                              onChange={e => setIsWebpageUpload(e.target.checked)}
+                              className={styles.checkbox}
+                              disabled={uploadStep === 'uploading'}
+                            />
+                            <label htmlFor="webpage-upload" className={styles.checkboxLabel}>
+                              Upload as webpage
+                            </label>
+                          </div>
+                        )}
+
                         {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
                           <div className={styles.checkboxWrapper}>
                             <input
@@ -1941,6 +1960,25 @@ const SwapComponent: React.FC = () => {
                                 ?
                               </span>
                             </label>
+                          </div>
+                        )}
+
+                        {!isMultipleFiles && selectedFile && (
+                          <div className={styles.dropdownWrapper}>
+                            <label className={styles.dropdownLabel}>
+                              Erasure Coding
+                              <span
+                                className={styles.tooltip}
+                                title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
+                              >
+                                ?
+                              </span>
+                            </label>
+                            <ErasureCodingDropdown
+                              selectedLevel={redundancyLevel}
+                              onLevelChange={setRedundancyLevel}
+                              disabled={uploadStep === 'uploading'}
+                            />
                           </div>
                         )}
 
