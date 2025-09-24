@@ -50,6 +50,8 @@ import {
   // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
+  formatExpiryTime,
+  isExpiringSoon,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -2254,7 +2256,14 @@ const SwapComponent: React.FC = () => {
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Expires in:</span>
-                            <span>{Math.floor(uploadStampInfo.batchTTL / 86400)} days</span>
+                            <span
+                              className={
+                                isExpiringSoon(uploadStampInfo.batchTTL) ? styles.expiryWarning : ''
+                              }
+                            >
+                              {formatExpiryTime(uploadStampInfo.batchTTL)}
+                              {isExpiringSoon(uploadStampInfo.batchTTL) && ' ⚠️ TOP UP'}
+                            </span>
                           </div>
                         </div>
                         <div className={styles.utilizationBarContainer}>

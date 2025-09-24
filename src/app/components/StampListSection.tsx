@@ -12,6 +12,7 @@ import {
 } from './constants';
 import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
+import { formatExpiryTime, isExpiringSoon } from './utils';
 
 // Cache for expired stamps to avoid repeated API calls
 const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
@@ -353,7 +354,10 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     <span>Utilization: {stamp.utilization}%</span>
                   )}
                   {stamp.batchTTL !== undefined && (
-                    <span>Expires: {Math.floor(stamp.batchTTL / 86400)} days</span>
+                    <span className={isExpiringSoon(stamp.batchTTL) ? styles.expiryWarning : ''}>
+                      Expires: {formatExpiryTime(stamp.batchTTL)}
+                      {isExpiringSoon(stamp.batchTTL) && ' ⚠️ TOP UP'}
+                    </span>
                   )}
                   {stamp.timestamp && (
                     <span>Created: {new Date(stamp.timestamp * 1000).toLocaleDateString()}</span>

@@ -420,3 +420,38 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
     return null;
   }
 };
+
+/**
+ * Format TTL (Time To Live) in seconds to a human-readable string
+ * Shows hours/minutes for < 1 day, otherwise shows days
+ */
+export const formatExpiryTime = (ttlSeconds: number): string => {
+  const days = Math.floor(ttlSeconds / 86400);
+  const hours = Math.floor((ttlSeconds % 86400) / 3600);
+  const minutes = Math.floor((ttlSeconds % 3600) / 60);
+
+  if (days >= 1) {
+    return `${days} day${days === 1 ? '' : 's'}`;
+  } else if (hours >= 1) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  } else if (minutes >= 1) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  } else {
+    return 'Less than 1 minute';
+  }
+};
+
+/**
+ * Check if a stamp is expiring soon (≤ 1 day)
+ */
+export const isExpiringSoon = (ttlSeconds: number): boolean => {
+  return ttlSeconds <= 86400; // 1 day in seconds
+};
+
+/**
+ * Format hash for display (shows first 6 and last 6 characters)
+ */
+export const formatHash = (hash: string): string => {
+  if (hash.length <= 12) return hash;
+  return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
+};

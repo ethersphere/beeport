@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
+import { formatExpiryTime, isExpiringSoon } from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -84,7 +85,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   const formatExpiryDays = (ttl: number) => {
-    return `${Math.floor(ttl / 86400)} days`;
+    return formatExpiryTime(ttl);
   };
 
   const isArchiveFile = (filename?: string) => {
@@ -711,7 +712,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
+                  <span
+                    className={`${styles.expiryDate} ${isExpiringSoon(record.expiryDate) ? styles.expiryWarning : ''}`}
+                  >
+                    {formatExpiryDays(record.expiryDate)}
+                    {isExpiringSoon(record.expiryDate) && ' ⚠️ TOP UP'}
+                  </span>
                 </div>
                 {record.associatedDomains && record.associatedDomains.length > 0 && (
                   <div className={styles.associatedDomainsRow}>
