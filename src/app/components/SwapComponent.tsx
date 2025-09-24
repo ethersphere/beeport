@@ -109,6 +109,7 @@ const SwapComponent: React.FC = () => {
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
   const [isFolderUpload, setIsFolderUpload] = useState(false);
+  const [isNewStampCreated, setIsNewStampCreated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
@@ -799,7 +800,10 @@ const SwapComponent: React.FC = () => {
               step: 'Complete',
               message: 'Storage Bought Successfully',
               isSuccess: true,
+              warning:
+                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
             });
+            setIsNewStampCreated(true);
             setUploadStep('ready');
           } catch (error) {
             console.error('Failed to process batch completion:', error);
@@ -1016,9 +1020,12 @@ const SwapComponent: React.FC = () => {
               step: 'Complete',
               message: 'Storage Bought Successfully',
               isSuccess: true,
+              warning:
+                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
             });
 
             // Transition to upload step - this was missing!
+            setIsNewStampCreated(true);
             setUploadStep('ready');
           }
         } catch (error) {
@@ -1143,6 +1150,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setIsNewStampCreated(false);
 
     // Handle NFT Collection uploads
     if (isNFTCollection && selectedFile.name.toLowerCase().endsWith('.zip')) {
@@ -1290,6 +1298,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setIsNewStampCreated(false);
     setMultiFileResults([]);
 
     try {
@@ -1684,6 +1693,9 @@ const SwapComponent: React.FC = () => {
                       {statusMessage.error && (
                         <div className={styles.errorMessage}>{statusMessage.error}</div>
                       )}
+                      {statusMessage.warning && (
+                        <div className={styles.warningMessage}>{statusMessage.warning}</div>
+                      )}
 
                       {remainingTime !== null &&
                         estimatedTime !== null &&
@@ -1724,6 +1736,12 @@ const SwapComponent: React.FC = () => {
                     <div className={styles.uploadWarning}>
                       Warning! Upload data is public and can not be removed from the Swarm network
                     </div>
+                    {isNewStampCreated && (
+                      <div className={styles.uploadWarning}>
+                        ⏱️ New storage created: It takes around 1 minute before it becomes
+                        accessible on the network.
+                      </div>
+                    )}
                     {statusMessage.step === 'waiting_creation' ||
                     statusMessage.step === 'waiting_usable' ? (
                       <div className={styles.waitingMessage}>

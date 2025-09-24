@@ -248,6 +248,16 @@
   font-size: 14px;
 }
 
+.warningMessage {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(255, 122, 0, 0.1);
+  border: 1px solid rgba(255, 122, 0, 0.3);
+  border-radius: 8px;
+  color: #ff7a00;
+  font-size: 14px;
+}
+
 .success {
   color: #3fb950;
 }
