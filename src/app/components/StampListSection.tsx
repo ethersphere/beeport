@@ -12,7 +12,7 @@ import {
 } from './constants';
 import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
-import { formatExpiryTime, isExpiringSoon } from './utils';
+import { formatExpiryTime, isExpiringSoon, getStampUsage } from './utils';
 
 // Cache for expired stamps to avoid repeated API calls
 const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
@@ -41,6 +41,7 @@ interface BatchEvent {
   timestamp?: number;
   utilization?: number;
   batchTTL?: number;
+  bucketDepth?: number;
 }
 
 interface StampInfo {
@@ -272,6 +273,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
               timestamp: Number(contractBatch.timestamp),
               utilization: stampInfo.utilization,
               batchTTL: stampInfo.batchTTL,
+              bucketDepth: stampInfo.bucketDepth,
             };
           });
 
@@ -350,8 +352,16 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                 <div className={styles.stampListDetails}>
                   <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
-                  {stamp.utilization !== undefined && (
-                    <span>Utilization: {stamp.utilization}%</span>
+                  {stamp.utilization !== undefined && stamp.depth !== undefined && (
+                    <span>
+                      Utilization:{' '}
+                      {getStampUsage(
+                        stamp.utilization,
+                        stamp.depth,
+                        stamp.bucketDepth || 16
+                      ).toFixed(2)}
+                      %
+                    </span>
                   )}
                   {stamp.batchTTL !== undefined && (
                     <span className={isExpiringSoon(stamp.batchTTL) ? styles.expiryWarning : ''}>

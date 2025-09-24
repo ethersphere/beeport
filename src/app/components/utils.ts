@@ -449,6 +449,21 @@ export const isExpiringSoon = (ttlSeconds: number): boolean => {
 };
 
 /**
+ * Calculate the real stamp usage percentage
+ * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
+ * @param depth Stamp depth from Bee API
+ * @param bucketDepth Bucket depth (constant 16)
+ * @returns Real used capacity percentage (0-100)
+ */
+export function getStampUsage(
+  utilization: number,
+  depth: number,
+  bucketDepth: number = 16
+): number {
+  return (utilization / Math.pow(2, depth - bucketDepth)) * 100;
+}
+
+/**
  * Format hash for display (shows first 6 and last 6 characters)
  */
 export const formatHash = (hash: string): string => {

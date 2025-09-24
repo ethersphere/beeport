@@ -52,6 +52,7 @@ import {
   fetchStampInfo,
   formatExpiryTime,
   isExpiringSoon,
+  getStampUsage,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -2244,7 +2245,13 @@ const SwapComponent: React.FC = () => {
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>
-                            <span>{uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%</span>
+                            <span>
+                              {getStampUsage(
+                                uploadStampInfo.utilization || 0,
+                                uploadStampInfo.depth || 0
+                              ).toFixed(2)}
+                              %
+                            </span>
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Total Size:</span>
@@ -2270,7 +2277,7 @@ const SwapComponent: React.FC = () => {
                           <div
                             className={styles.utilizationBar}
                             style={{
-                              width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%`,
+                              width: `${getStampUsage(uploadStampInfo.utilization || 0, uploadStampInfo.depth || 0).toFixed(2)}%`,
                             }}
                           ></div>
                         </div>
