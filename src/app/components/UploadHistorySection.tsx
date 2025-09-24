@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
-import { formatExpiryTime, isExpiringSoon } from './utils';
+import { formatExpiryTime, isExpiringSoon, formatDateEU } from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -81,7 +81,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
   const formatDate = (timestamp: number) => {
     if (timestamp === undefined) return 'Unknown';
-    return new Date(timestamp).toLocaleDateString();
+    return formatDateEU(timestamp);
   };
 
   const formatExpiryDays = (ttl: number) => {

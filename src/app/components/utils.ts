@@ -464,6 +464,20 @@ export function getStampUsage(
 }
 
 /**
+ * Format date in EU format (DD/MM/YYYY)
+ * @param date Date object or timestamp
+ * @returns Formatted date string in EU format
+ */
+export const formatDateEU = (date: Date | number): string => {
+  const dateObj = typeof date === 'number' ? new Date(date) : date;
+  return dateObj.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+/**
  * Format hash for display (shows first 6 and last 6 characters)
  */
 export const formatHash = (hash: string): string => {

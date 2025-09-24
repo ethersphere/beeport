@@ -13,6 +13,7 @@ import { mainnet } from 'wagmi/chains';
 import { ENS_SUBGRAPH_URL, ENS_SUBGRAPH_API_KEY } from './constants';
 import ENSDomainDropdown from './ENSDomainDropdown';
 import styles from './css/ENSIntegration.module.css';
+import { formatDateEU } from './utils';
 
 interface ENSIntegrationProps {
   swarmReference: string;
@@ -586,7 +587,7 @@ This waiting period is required by ENS to prevent front-running attacks where so
 Your new ENS domain is now registered and ready to use:
 
 ✅ **Domain**: ${selectedDomain}
-✅ **Duration**: 1 year (expires ${new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString()})
+✅ **Duration**: 1 year (expires ${formatDateEU(Date.now() + 365 * 24 * 60 * 60 * 1000)})
 ✅ **Resolver**: ENS Public Resolver
 ✅ **Owner**: ${address}
 

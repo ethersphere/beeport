@@ -10,7 +10,7 @@ import {
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
 import { processTarFile } from './FolderUploadUtils';
-import { getStampUsage } from './utils';
+import { getStampUsage, formatDateEU } from './utils';
 
 /**
  * Interface for parameters needed for file upload function
@@ -473,7 +473,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           usedSize: `${realUtilizationPercent.toFixed(1)}%`,
           remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
           utilizationPercent: realUtilizationPercent,
-          createdDate: new Date().toLocaleDateString(),
+          createdDate: formatDateEU(new Date()),
         });
 
         saveUploadReference(
@@ -962,7 +962,7 @@ export const handleMultiFileUpload = async (
               usedSize,
               remainingSize: `${(((100 - realUtilizationPercent) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
               utilizationPercent: realUtilizationPercent,
-              createdDate: new Date().toLocaleDateString(),
+              createdDate: formatDateEU(new Date()),
             });
           }
         } catch (stampError) {
