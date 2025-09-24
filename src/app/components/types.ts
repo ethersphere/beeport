@@ -122,6 +122,7 @@ export interface StampInfo {
   usedSize?: string;
   remainingSize?: string;
   utilizationPercent?: number;
+  createdDate?: string;
 }
 
 export interface IncludedStep {

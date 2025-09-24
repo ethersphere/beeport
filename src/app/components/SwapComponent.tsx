@@ -89,6 +89,7 @@ interface StampInfo {
   usedSize?: string;
   remainingSize?: string;
   utilizationPercent?: number;
+  createdDate?: string;
 }
 
 const SwapComponent: React.FC = () => {
@@ -2258,19 +2259,12 @@ const SwapComponent: React.FC = () => {
                             <span>{uploadStampInfo.totalSize}</span>
                           </div>
                           <div className={styles.stampDetail}>
-                            <span>Remaining:</span>
-                            <span>{uploadStampInfo.remainingSize}</span>
+                            <span>Created:</span>
+                            <span>{uploadStampInfo.createdDate || 'Unknown'}</span>
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Expires in:</span>
-                            <span
-                              className={
-                                isExpiringSoon(uploadStampInfo.batchTTL) ? styles.expiryWarning : ''
-                              }
-                            >
-                              {formatExpiryTime(uploadStampInfo.batchTTL)}
-                              {isExpiringSoon(uploadStampInfo.batchTTL) && ' ⚠️ TOP UP'}
-                            </span>
+                            <span>{formatExpiryTime(uploadStampInfo.batchTTL)}</span>
                           </div>
                         </div>
                         <div className={styles.utilizationBarContainer}>

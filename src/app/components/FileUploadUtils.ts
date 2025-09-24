@@ -473,6 +473,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           usedSize: `${realUtilizationPercent.toFixed(1)}%`,
           remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
           utilizationPercent: realUtilizationPercent,
+          createdDate: new Date().toLocaleDateString(),
         });
 
         saveUploadReference(
@@ -961,6 +962,7 @@ export const handleMultiFileUpload = async (
               usedSize,
               remainingSize: `${(((100 - realUtilizationPercent) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
               utilizationPercent: realUtilizationPercent,
+              createdDate: new Date().toLocaleDateString(),
             });
           }
         } catch (stampError) {
