@@ -10,6 +10,7 @@ import {
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
 import { processTarFile } from './FolderUploadUtils';
+import { getStampUsage, formatDateEU } from './utils';
 
 /**
  * Interface for parameters needed for file upload function
@@ -458,16 +459,21 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         // Get the human-readable total size from the options
         const totalSizeString = getSizeForDepth(stamp.depth);
 
-        // Calculate the used and remaining sizes as percentages for display
-        const utilizationPercent = stamp.utilization;
+        // Calculate the real used capacity percentage
+        const realUtilizationPercent = getStampUsage(
+          stamp.utilization,
+          stamp.depth,
+          stamp.bucketDepth || 16
+        );
 
         // Update state with stamp info
         setUploadStampInfo({
           ...stamp,
           totalSize: totalSizeString,
-          usedSize: `${utilizationPercent.toFixed(1)}%`,
-          remainingSize: `${(100 - utilizationPercent).toFixed(1)}%`,
-          utilizationPercent: utilizationPercent,
+          usedSize: `${realUtilizationPercent.toFixed(1)}%`,
+          remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
+          utilizationPercent: realUtilizationPercent,
+          createdDate: formatDateEU(new Date()),
         });
 
         saveUploadReference(
@@ -920,7 +926,12 @@ export const handleMultiFileUpload = async (
             };
 
             const totalSize = getSizeForDepth(stampStatus.depth);
-            const usedSizeBytes = (stampStatus.utilization / 100) * Math.pow(2, stampStatus.depth);
+            const realUtilizationPercent = getStampUsage(
+              stampStatus.utilization,
+              stampStatus.depth,
+              stampStatus.bucketDepth || 16
+            );
+            const usedSizeBytes = (realUtilizationPercent / 100) * Math.pow(2, stampStatus.depth);
             const usedSize =
               usedSizeBytes < 1024
                 ? `${usedSizeBytes} bytes`
@@ -949,8 +960,9 @@ export const handleMultiFileUpload = async (
               batchTTL: stampStatus.batchTTL,
               totalSize,
               usedSize,
-              remainingSize: `${(((100 - stampStatus.utilization) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
-              utilizationPercent: stampStatus.utilization,
+              remainingSize: `${(((100 - realUtilizationPercent) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
+              utilizationPercent: realUtilizationPercent,
+              createdDate: formatDateEU(new Date()),
             });
           }
         } catch (stampError) {

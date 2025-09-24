@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
+import { formatExpiryTime, isExpiringSoon, formatDateEU } from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -80,11 +81,15 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
   const formatDate = (timestamp: number) => {
     if (timestamp === undefined) return 'Unknown';
-    return new Date(timestamp).toLocaleDateString();
+    return formatDateEU(timestamp);
   };
 
-  const formatExpiryDays = (ttl: number) => {
-    return `${Math.floor(ttl / 86400)} days`;
+  const formatExpiryDays = (expiryDate: number) => {
+    // expiryDate is a timestamp, we need to calculate remaining time in seconds
+    const now = Date.now();
+    const remainingMs = expiryDate - now;
+    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    return formatExpiryTime(remainingSeconds);
   };
 
   const isArchiveFile = (filename?: string) => {

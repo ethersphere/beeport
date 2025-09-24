@@ -50,6 +50,9 @@ import {
   // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
+  formatExpiryTime,
+  isExpiringSoon,
+  getStampUsage,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -86,6 +89,7 @@ interface StampInfo {
   usedSize?: string;
   remainingSize?: string;
   utilizationPercent?: number;
+  createdDate?: string;
 }
 
 const SwapComponent: React.FC = () => {
@@ -109,6 +113,7 @@ const SwapComponent: React.FC = () => {
   const [isWebpageUpload, setIsWebpageUpload] = useState(false);
   const [isTarFile, setIsTarFile] = useState(false);
   const [isFolderUpload, setIsFolderUpload] = useState(false);
+  const [isNewStampCreated, setIsNewStampCreated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
   const [availableChains, setAvailableChains] = useState<Chain[]>([]);
@@ -799,7 +804,10 @@ const SwapComponent: React.FC = () => {
               step: 'Complete',
               message: 'Storage Bought Successfully',
               isSuccess: true,
+              warning:
+                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
             });
+            setIsNewStampCreated(true);
             setUploadStep('ready');
           } catch (error) {
             console.error('Failed to process batch completion:', error);
@@ -1016,9 +1024,12 @@ const SwapComponent: React.FC = () => {
               step: 'Complete',
               message: 'Storage Bought Successfully',
               isSuccess: true,
+              warning:
+                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
             });
 
             // Transition to upload step - this was missing!
+            setIsNewStampCreated(true);
             setUploadStep('ready');
           }
         } catch (error) {
@@ -1143,6 +1154,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setIsNewStampCreated(false);
 
     // Handle NFT Collection uploads
     if (isNFTCollection && selectedFile.name.toLowerCase().endsWith('.zip')) {
@@ -1290,6 +1302,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setIsNewStampCreated(false);
     setMultiFileResults([]);
 
     try {
@@ -1667,6 +1680,7 @@ const SwapComponent: React.FC = () => {
                     setIsTarFile(false);
                     setIsFolderUpload(false);
                     setIsDistributing(false);
+                    setIsNewStampCreated(false); // Reset the new stamp warning
                   }}
                 >
                   ×
@@ -1683,6 +1697,9 @@ const SwapComponent: React.FC = () => {
                       </h3>
                       {statusMessage.error && (
                         <div className={styles.errorMessage}>{statusMessage.error}</div>
+                      )}
+                      {statusMessage.warning && (
+                        <div className={styles.warningMessage}>{statusMessage.warning}</div>
                       )}
 
                       {remainingTime !== null &&
@@ -1724,6 +1741,12 @@ const SwapComponent: React.FC = () => {
                     <div className={styles.uploadWarning}>
                       Warning! Upload data is public and can not be removed from the Swarm network
                     </div>
+                    {isNewStampCreated && (
+                      <div className={styles.uploadWarning}>
+                        ⏱️ New storage created: It takes around 1 minute before it becomes
+                        accessible on the network.
+                      </div>
+                    )}
                     {statusMessage.step === 'waiting_creation' ||
                     statusMessage.step === 'waiting_usable' ? (
                       <div className={styles.waitingMessage}>
@@ -2224,26 +2247,32 @@ const SwapComponent: React.FC = () => {
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>
-                            <span>{uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%</span>
+                            <span>
+                              {getStampUsage(
+                                uploadStampInfo.utilization || 0,
+                                uploadStampInfo.depth || 0
+                              ).toFixed(2)}
+                              %
+                            </span>
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Total Size:</span>
                             <span>{uploadStampInfo.totalSize}</span>
                           </div>
                           <div className={styles.stampDetail}>
-                            <span>Remaining:</span>
-                            <span>{uploadStampInfo.remainingSize}</span>
+                            <span>Created:</span>
+                            <span>{uploadStampInfo.createdDate || 'Unknown'}</span>
                           </div>
                           <div className={styles.stampDetail}>
                             <span>Expires in:</span>
-                            <span>{Math.floor(uploadStampInfo.batchTTL / 86400)} days</span>
+                            <span>{formatExpiryTime(uploadStampInfo.batchTTL)}</span>
                           </div>
                         </div>
                         <div className={styles.utilizationBarContainer}>
                           <div
                             className={styles.utilizationBar}
                             style={{
-                              width: `${uploadStampInfo.utilizationPercent?.toFixed(2) || 0}%`,
+                              width: `${getStampUsage(uploadStampInfo.utilization || 0, uploadStampInfo.depth || 0).toFixed(2)}%`,
                             }}
                           ></div>
                         </div>
@@ -2326,6 +2355,7 @@ const SwapComponent: React.FC = () => {
                         setStatusMessage({ step: '', message: '' });
                         setIsLoading(false);
                         setExecutionResult(null);
+                        setIsNewStampCreated(false); // Reset the new stamp warning
                       }}
                     >
                       Close

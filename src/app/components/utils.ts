@@ -420,3 +420,67 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
     return null;
   }
 };
+
+/**
+ * Format TTL (Time To Live) in seconds to a human-readable string
+ * Shows hours/minutes for < 1 day, otherwise shows days
+ */
+export const formatExpiryTime = (ttlSeconds: number): string => {
+  const days = Math.floor(ttlSeconds / 86400);
+  const hours = Math.floor((ttlSeconds % 86400) / 3600);
+  const minutes = Math.floor((ttlSeconds % 3600) / 60);
+
+  if (days >= 1) {
+    return `${days} day${days === 1 ? '' : 's'}`;
+  } else if (hours >= 1) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  } else if (minutes >= 1) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  } else {
+    return 'Less than 1 minute';
+  }
+};
+
+/**
+ * Check if a stamp is expiring soon (≤ 1 day)
+ */
+export const isExpiringSoon = (ttlSeconds: number): boolean => {
+  return ttlSeconds <= 86400; // 1 day in seconds
+};
+
+/**
+ * Calculate the real stamp usage percentage
+ * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
+ * @param depth Stamp depth from Bee API
+ * @param bucketDepth Bucket depth (constant 16)
+ * @returns Real used capacity percentage (0-100)
+ */
+export function getStampUsage(
+  utilization: number,
+  depth: number,
+  bucketDepth: number = 16
+): number {
+  return (utilization / Math.pow(2, depth - bucketDepth)) * 100;
+}
+
+/**
+ * Format date in EU format (DD/MM/YYYY)
+ * @param date Date object or timestamp
+ * @returns Formatted date string in EU format
+ */
+export const formatDateEU = (date: Date | number): string => {
+  const dateObj = typeof date === 'number' ? new Date(date) : date;
+  return dateObj.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+/**
+ * Format hash for display (shows first 6 and last 6 characters)
+ */
+export const formatHash = (hash: string): string => {
+  if (hash.length <= 12) return hash;
+  return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
+};

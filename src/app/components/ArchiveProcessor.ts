@@ -46,8 +46,11 @@ const ensureTarCompatiblePath = (path: string): string => {
 
   // Split filename into name and extension
   const lastDotIndex = filename.lastIndexOf('.');
-  const name = lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
-  const extension = lastDotIndex > 0 ? filename.substring(lastDotIndex) : '';
+  const name = lastDotIndex >= 0 ? filename.substring(0, lastDotIndex) : filename;
+  const extension = lastDotIndex >= 0 ? filename.substring(lastDotIndex) : '';
+
+  // Ensure we always have an extension if the original had one
+  const hasExtension = lastDotIndex >= 0 && extension.length > 1; // .ext must be at least 2 chars
 
   // Calculate available space for name (accounting for directory and extension)
   const availableSpace = TAR_FILENAME_LIMIT - directory.length - extension.length;
@@ -57,7 +60,9 @@ const ensureTarCompatiblePath = (path: string): string => {
     const shortHash = Math.abs(
       path.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
     ).toString(36);
-    return `file_${shortHash}${extension}`;
+    // Always preserve extension if it exists
+    const finalExtension = hasExtension ? extension : '';
+    return `file_${shortHash}${finalExtension}`;
   }
 
   // Truncate the name part and add a hash to maintain uniqueness
@@ -68,10 +73,12 @@ const ensureTarCompatiblePath = (path: string): string => {
 
   if (maxNameLength > 0) {
     const truncatedName = name.substring(0, maxNameLength);
-    return `${directory}${truncatedName}_${shortHash}${extension}`;
+    const finalExtension = hasExtension ? extension : '';
+    return `${directory}${truncatedName}_${shortHash}${finalExtension}`;
   } else {
     // Fallback: just use hash with extension
-    return `${directory}${shortHash}${extension}`;
+    const finalExtension = hasExtension ? extension : '';
+    return `${directory}${shortHash}${finalExtension}`;
   }
 };
 
