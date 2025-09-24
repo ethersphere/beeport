@@ -1680,6 +1680,7 @@ const SwapComponent: React.FC = () => {
                     setIsTarFile(false);
                     setIsFolderUpload(false);
                     setIsDistributing(false);
+                    setIsNewStampCreated(false); // Reset the new stamp warning
                   }}
                 >
                   ×
@@ -2354,6 +2355,7 @@ const SwapComponent: React.FC = () => {
                         setStatusMessage({ step: '', message: '' });
                         setIsLoading(false);
                         setExecutionResult(null);
+                        setIsNewStampCreated(false); // Reset the new stamp warning
                       }}
                     >
                       Close

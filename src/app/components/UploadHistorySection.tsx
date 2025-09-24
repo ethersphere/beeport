@@ -84,8 +84,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return formatDateEU(timestamp);
   };
 
-  const formatExpiryDays = (ttl: number) => {
-    return formatExpiryTime(ttl);
+  const formatExpiryDays = (expiryDate: number) => {
+    // expiryDate is a timestamp, we need to calculate remaining time in seconds
+    const now = Date.now();
+    const remainingMs = expiryDate - now;
+    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    return formatExpiryTime(remainingSeconds);
   };
 
   const isArchiveFile = (filename?: string) => {
@@ -712,12 +716,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span
-                    className={`${styles.expiryDate} ${isExpiringSoon(record.expiryDate) ? styles.expiryWarning : ''}`}
-                  >
-                    {formatExpiryDays(record.expiryDate)}
-                    {isExpiringSoon(record.expiryDate) && ' ⚠️ TOP UP'}
-                  </span>
+                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
                 </div>
                 {record.associatedDomains && record.associatedDomains.length > 0 && (
                   <div className={styles.associatedDomainsRow}>
