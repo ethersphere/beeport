@@ -446,6 +446,11 @@ export interface TarProcessingParams {
   setStatusMessage: (status: { step: string; message: string }) => void;
 }
 
+export interface TarProcessingResult {
+  file: File;
+  hasOrWillHaveIndex: boolean; // true if original had index.html or we added one
+}
+
 /**
  * Extract files from TAR buffer using a simple TAR parser
  * @param tarBuffer The TAR file buffer
@@ -904,9 +909,9 @@ ${fileListHtml}
 /**
  * Process a TAR file to add index.html if missing
  * @param params TAR processing parameters
- * @returns Promise<File> The processed TAR file (original or modified)
+ * @returns Promise<TarProcessingResult> The processed TAR file and index info
  */
-export const processTarFile = async (params: TarProcessingParams): Promise<File> => {
+export const processTarFile = async (params: TarProcessingParams): Promise<TarProcessingResult> => {
   const { tarFile, setUploadProgress, setStatusMessage } = params;
 
   setStatusMessage({ step: 'analyzing_tar', message: 'Analyzing TAR archive...' });
@@ -928,7 +933,7 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     if (hasIndex) {
       setStatusMessage({ step: 'tar_ready', message: 'TAR archive ready for upload' });
       setUploadProgress(100);
-      return tarFile;
+      return { file: tarFile, hasOrWillHaveIndex: true };
     }
 
     setStatusMessage({
@@ -982,7 +987,7 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     setUploadProgress(100);
     setStatusMessage({ step: 'tar_enhanced', message: 'TAR archive enhanced with index.html!' });
 
-    return processedFile;
+    return { file: processedFile, hasOrWillHaveIndex: true };
   } catch (error) {
     console.error('Error processing TAR file:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
