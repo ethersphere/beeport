@@ -157,8 +157,14 @@
   word-break: break-all;
   cursor: pointer;
   transition: color 0.2s ease;
-  padding: 2px 4px;
+  padding: 8px 12px; /* Increased padding for better click area */
   border-radius: 4px;
+  flex: 1; /* Take available space */
+  min-width: 0; /* Allow shrinking if needed */
+  user-select: none; /* Prevent text selection on click */
+  display: block; /* Ensure it's a block element for better click area */
+  position: relative; /* Ensure proper layering */
+  z-index: 1; /* Ensure it's above other elements */
 }
 
 .filename:hover {
@@ -170,7 +176,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* Prevent wrapping to avoid layout issues */
 }
 
 .filenameEdit {
