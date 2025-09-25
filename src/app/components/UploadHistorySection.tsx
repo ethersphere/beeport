@@ -347,21 +347,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             // Parse date and expiry
             const timestamp = parseDateFromCSV(dateCreated);
 
-            // Parse expiry field - can be timestamp or legacy "X days" format
+            // Parse expiry field - can be timestamp, TTL seconds, or legacy "X days" format
             let expiryDate: number;
             const expiryTimestamp = parseInt(expiryField);
 
             if (
               !isNaN(expiryTimestamp) &&
-              expiryTimestamp > 0 &&
-              expiryTimestamp < 32503680000000
+              expiryTimestamp > 1000000000000 && // Must be after Sep 9, 2001 (reasonable timestamp)
+              expiryTimestamp < 32503680000000 // Must be before year 3000
             ) {
-              // New format: direct timestamp
+              // Format: Unix timestamp in milliseconds (current format)
               expiryDate = expiryTimestamp;
+            } else if (
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 0 &&
+              expiryTimestamp < 1000000000
+            ) {
+              // Format: TTL in seconds (old bug where seconds were stored instead of timestamps)
+              // Convert to absolute timestamp: creation time + TTL seconds
+              expiryDate = timestamp + expiryTimestamp * 1000;
+              console.log(
+                `Migrating legacy TTL: ${expiryTimestamp}s -> ${new Date(expiryDate).toISOString()}`
+              );
             } else {
-              // Legacy format: "X days" - convert to timestamp
+              // Format: "X days" string (very old format)
               const expiryDaysNum = parseInt(expiryField.replace(/[^\d]/g, ''));
               expiryDate = timestamp + expiryDaysNum * 24 * 60 * 60 * 1000;
+              console.log(
+                `Migrating legacy days: ${expiryDaysNum} days -> ${new Date(expiryDate).toISOString()}`
+              );
             }
 
             if (!isNaN(timestamp) && !isNaN(expiryDate)) {
