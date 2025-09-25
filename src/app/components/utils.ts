@@ -478,6 +478,53 @@ export const formatDateEU = (date: Date | number): string => {
 };
 
 /**
+ * Format date for CSV export (Unix timestamp for reliable parsing)
+ * @param date Date object or timestamp
+ * @returns Unix timestamp as string
+ */
+export const formatDateForCSV = (date: Date | number): string => {
+  const timestamp = typeof date === 'number' ? date : date.getTime();
+  return timestamp.toString();
+};
+
+/**
+ * Parse date from CSV import (handles Unix timestamps and legacy date formats)
+ * @param dateString Date string to parse (Unix timestamp or date string)
+ * @returns Timestamp in milliseconds or NaN if invalid
+ */
+export const parseDateFromCSV = (dateString: string): number => {
+  // First try parsing as Unix timestamp
+  const timestamp = parseInt(dateString);
+  if (!isNaN(timestamp) && timestamp > 0) {
+    // Check if it's a reasonable timestamp (after year 1970 and before year 3000)
+    if (timestamp > 0 && timestamp < 32503680000000) {
+      return timestamp;
+    }
+  }
+
+  // Legacy support: try parsing as ISO format (YYYY-MM-DD)
+  let parsedDate = new Date(dateString);
+  if (!isNaN(parsedDate.getTime())) {
+    return parsedDate.getTime();
+  }
+
+  // Legacy support: try parsing as EU format (DD/MM/YYYY)
+  const euFormatMatch = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (euFormatMatch) {
+    const [, day, month, year] = euFormatMatch;
+    // Create date in ISO format for reliable parsing
+    parsedDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.getTime();
+    }
+  }
+
+  // If all else fails, try the browser's default parsing
+  parsedDate = new Date(dateString);
+  return parsedDate.getTime(); // Will be NaN if invalid
+};
+
+/**
  * Format hash for display (shows first 6 and last 6 characters)
  */
 export const formatHash = (hash: string): string => {

@@ -1,7 +1,13 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
-import { formatExpiryTime, isExpiringSoon, formatDateEU } from './utils';
+import {
+  formatExpiryTime,
+  isExpiringSoon,
+  formatDateEU,
+  formatDateForCSV,
+  parseDateFromCSV,
+} from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -252,7 +258,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Reference',
       'Stamp ID',
       'Date Created',
-      'Expiry (Days)',
+      'Expiry Date',
       'Filename',
       'File Type',
       'Is Webpage',
@@ -265,8 +271,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const csvRows = dataToExport.map(record => [
       record.reference,
       record.stampId,
-      formatDate(record.timestamp),
-      formatExpiryDays(record.expiryDate),
+      formatDateForCSV(record.timestamp), // Use machine-readable format for CSV
+      formatDateForCSV(record.expiryDate), // Export expiry as timestamp too
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record),
       record.isWebpageUpload ? 'Yes' : 'No',
@@ -323,7 +329,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               reference,
               stampId,
               dateCreated,
-              expiryDays,
+              expiryField, // Can be timestamp or legacy "X days" format
               filename,
               fileType,
               isWebpage,
@@ -339,16 +345,46 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             }
 
             // Parse date and expiry
-            const timestamp = new Date(dateCreated).getTime();
-            const expiryInSeconds = parseInt(expiryDays.replace(' days', '')) * 86400;
+            const timestamp = parseDateFromCSV(dateCreated);
 
-            if (!isNaN(timestamp) && !isNaN(expiryInSeconds)) {
+            // Parse expiry field - can be timestamp, TTL seconds, or legacy "X days" format
+            let expiryDate: number;
+            const expiryTimestamp = parseInt(expiryField);
+
+            if (
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 1000000000000 && // Must be after Sep 9, 2001 (reasonable timestamp)
+              expiryTimestamp < 32503680000000 // Must be before year 3000
+            ) {
+              // Format: Unix timestamp in milliseconds (current format)
+              expiryDate = expiryTimestamp;
+            } else if (
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 0 &&
+              expiryTimestamp < 1000000000
+            ) {
+              // Format: TTL in seconds (old bug where seconds were stored instead of timestamps)
+              // Convert to absolute timestamp: creation time + TTL seconds
+              expiryDate = timestamp + expiryTimestamp * 1000;
+              console.log(
+                `Migrating legacy TTL: ${expiryTimestamp}s -> ${new Date(expiryDate).toISOString()}`
+              );
+            } else {
+              // Format: "X days" string (very old format)
+              const expiryDaysNum = parseInt(expiryField.replace(/[^\d]/g, ''));
+              expiryDate = timestamp + expiryDaysNum * 24 * 60 * 60 * 1000;
+              console.log(
+                `Migrating legacy days: ${expiryDaysNum} days -> ${new Date(expiryDate).toISOString()}`
+              );
+            }
+
+            if (!isNaN(timestamp) && !isNaN(expiryDate)) {
               const record: UploadRecord = {
                 reference,
                 stampId,
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
-                expiryDate: expiryInSeconds,
+                expiryDate: expiryDate,
                 isWebpageUpload: isWebpage === 'Yes',
                 isFolderUpload: isFolder === 'Yes',
               };
@@ -416,8 +452,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
-  const startEditingFilename = (reference: string, currentFilename: string) => {
-    setEditingFilename(reference);
+  const startEditingFilename = (
+    index: number,
+    reference: string,
+    stampId: string,
+    currentFilename: string
+  ) => {
+    const uniqueId = `${index}_${reference}_${stampId}`;
+    setEditingFilename(uniqueId);
     setTempFilename(currentFilename || 'Unnamed upload');
   };
 
@@ -426,25 +468,29 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     setTempFilename('');
   };
 
-  const saveFilename = (reference: string) => {
+  const saveFilename = (index: number, reference: string, stampId: string) => {
     if (!tempFilename.trim()) {
       cancelEditingFilename();
       return;
     }
 
-    // Update the history state
+    // Update the history state - match by both reference AND stampId
     const updatedHistory = history.map(record =>
-      record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+      record.reference === reference && record.stampId === stampId
+        ? { ...record, filename: tempFilename.trim() }
+        : record
     );
     setHistory(updatedHistory);
 
-    // Update localStorage
+    // Update localStorage - match by both reference AND stampId
     const savedHistory = localStorage.getItem('uploadHistory');
     if (savedHistory) {
       const allHistory: UploadHistory = JSON.parse(savedHistory);
       if (allHistory[address]) {
         allHistory[address] = allHistory[address].map(record =>
-          record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+          record.reference === reference && record.stampId === stampId
+            ? { ...record, filename: tempFilename.trim() }
+            : record
         );
         localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
       }
@@ -455,9 +501,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     setTempFilename('');
   };
 
-  const handleFilenameKeyPress = (e: React.KeyboardEvent, reference: string) => {
+  const handleFilenameKeyPress = (
+    e: React.KeyboardEvent,
+    index: number,
+    reference: string,
+    stampId: string
+  ) => {
     if (e.key === 'Enter') {
-      saveFilename(reference);
+      saveFilename(index, reference, stampId);
     } else if (e.key === 'Escape') {
       cancelEditingFilename();
     }
@@ -616,20 +667,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
-                    {editingFilename === record.reference ? (
+                    {editingFilename === `${index}_${record.reference}_${record.stampId}` ? (
                       <div className={styles.filenameEdit}>
                         <input
                           type="text"
                           value={tempFilename}
                           onChange={e => setTempFilename(e.target.value)}
-                          onKeyDown={e => handleFilenameKeyPress(e, record.reference)}
-                          onBlur={() => saveFilename(record.reference)}
+                          onKeyDown={e =>
+                            handleFilenameKeyPress(e, index, record.reference, record.stampId)
+                          }
+                          onBlur={() => saveFilename(index, record.reference, record.stampId)}
                           className={styles.filenameInput}
                           autoFocus
                           placeholder="Enter filename..."
                         />
                         <button
-                          onClick={() => saveFilename(record.reference)}
+                          onClick={() => saveFilename(index, record.reference, record.stampId)}
                           className={styles.saveButton}
                           title="Save"
                         >
@@ -646,18 +699,28 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     ) : (
                       <span
                         className={styles.filename}
-                        onClick={() =>
-                          startEditingFilename(record.reference, record.filename || '')
-                        }
+                        onClick={e => {
+                          e.stopPropagation(); // Prevent event bubbling
+                          startEditingFilename(
+                            index,
+                            record.reference,
+                            record.stampId,
+                            record.filename || ''
+                          );
+                        }}
                         title="Click to rename"
                       >
                         {record.filename || 'Unnamed upload'}
                       </span>
                     )}
+                  </div>
+                  <div className={styles.tagContainer}>
+                    <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}
-                        onClick={() => {
+                        onClick={e => {
+                          e.stopPropagation(); // Prevent event bubbling
                           setSelectedReference(record.reference);
                           setShowENSModal(true);
                         }}
@@ -666,9 +729,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         ENS
                       </button>
                     )}
-                  </div>
-                  <div className={styles.tagContainer}>
-                    <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                     {record.fileSize && (
                       <span className={styles.fileSize}>{formatFileSize(record.fileSize)}</span>
                     )}
@@ -680,16 +740,13 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
                   <a
-                    href={getReferenceUrl(record)}
+                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.link}
                     title={record.reference}
                   >
                     {formatReference(record.reference)}
-                    {record.filename && !isArchiveFile(record.filename)
-                      ? `/${record.filename}`
-                      : ''}
                   </a>
                 </div>
                 <div className={styles.stampRow}>

@@ -1,6 +1,6 @@
 import { type PublicClient } from 'viem';
 import { ExecutionStatus, UploadStep } from './types';
-import { processArchiveFile } from './ArchiveProcessor';
+import { processArchiveFile, ArchiveProcessingResult } from './ArchiveProcessor';
 import { StampInfo } from './types';
 import {
   STORAGE_OPTIONS,
@@ -9,8 +9,40 @@ import {
   UPLOAD_TIMEOUT_CONFIG,
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
-import { processTarFile } from './FolderUploadUtils';
+import { processTarFile, TarProcessingResult } from './FolderUploadUtils';
 import { getStampUsage, formatDateEU } from './utils';
+
+/**
+ * Convert technical error messages to user-friendly ones
+ */
+export const getUserFriendlyErrorMessage = (error: Error): string => {
+  const errorMessage = error.message.toLowerCase();
+
+  // Check for non-Latin character encoding errors
+  if (
+    errorMessage.includes('iso-8859-1') ||
+    errorMessage.includes('code point') ||
+    errorMessage.includes('string contains non')
+  ) {
+    return 'Upload failed: File names must use only Latin characters (A-Z, 0-9). Please rename your files to remove special characters, emojis, or accented letters.';
+  }
+
+  // Check for other common upload errors
+  if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+    return 'Upload failed: Network connection issue. Please check your internet connection and try again.';
+  }
+
+  if (errorMessage.includes('timeout')) {
+    return 'Upload failed: Upload timed out. Please try again with a smaller file or check your connection.';
+  }
+
+  if (errorMessage.includes('file too large') || errorMessage.includes('size')) {
+    return 'Upload failed: File is too large. Please try a smaller file.';
+  }
+
+  // Return original error for unrecognized errors
+  return error.message;
+};
 
 /**
  * Interface for parameters needed for file upload function
@@ -84,6 +116,7 @@ export interface MultiFileResult {
   filename: string;
   reference: string;
   success: boolean;
+  isWebsite?: boolean; // Flag indicating this upload should be treated as a website
   error?: string;
 }
 
@@ -307,19 +340,25 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
     // Process TAR files - always upload as website with index.html check
     let shouldUploadAsWebsite = isWebpageUpload;
+    let hasIndexFile = false;
+
     if (isTarArchive) {
       setUploadProgress(0);
-      processedFile = await processTarFile({
+      const tarResult = await processTarFile({
         tarFile: selectedFile,
         setUploadProgress,
         setStatusMessage,
       });
+      processedFile = tarResult.file;
+      hasIndexFile = tarResult.hasOrWillHaveIndex;
       shouldUploadAsWebsite = true;
     }
     // Process ZIP/GZ archives when serveUncompressed is enabled
     else if (isArchive && serveUncompressed) {
       setUploadProgress(0);
-      processedFile = await processArchiveFile(selectedFile);
+      const archiveResult = await processArchiveFile(selectedFile);
+      processedFile = archiveResult.file;
+      hasIndexFile = archiveResult.hasOrWillHaveIndex;
       shouldUploadAsWebsite = true;
     }
 
@@ -476,12 +515,15 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           createdDate: formatDateEU(new Date()),
         });
 
+        // Calculate expiry timestamp from batchTTL (which is in seconds)
+        const expiryDate = Date.now() + stamp.batchTTL * 1000;
+
         saveUploadReference(
           parsedReference.reference,
           postageBatchId,
-          stamp.batchTTL,
+          expiryDate,
           processedFile?.name,
-          isWebpageUpload,
+          shouldUploadAsWebsite || hasIndexFile, // Mark as website if it contains or will contain index.html
           selectedFile.size,
           isFolderUpload
         );
@@ -495,10 +537,12 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     return parsedReference.reference;
   } catch (error) {
     console.error('Upload error:', error);
+    const friendlyError =
+      error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error';
     setStatusMessage({
       step: 'Error',
       message: 'Upload failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: friendlyError,
       isError: true,
     });
     setUploadStep('idle');
@@ -556,6 +600,10 @@ export const handleMultiFileUpload = async (
   ): Promise<MultiFileResult> => {
     const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
+    // Initialize website flags outside try block so they're available in catch
+    let shouldUploadAsWebsite = isWebpageUpload;
+    let hasIndexFile = false;
+
     try {
       // Check if it's an archive file that needs processing
       let processedFile = file;
@@ -568,10 +616,8 @@ export const handleMultiFileUpload = async (
       const isTarArchive =
         file.type === 'application/x-tar' || file.name.toLowerCase().endsWith('.tar');
 
-      // Process TAR files - always upload as website with index.html check
-      let shouldUploadAsWebsite = isWebpageUpload;
       if (isTarArchive) {
-        processedFile = await processTarFile({
+        const tarResult = await processTarFile({
           tarFile: file,
           setUploadProgress: progress => {
             // For multi-file, we need to calculate the overall progress
@@ -580,11 +626,15 @@ export const handleMultiFileUpload = async (
           },
           setStatusMessage,
         });
+        processedFile = tarResult.file;
+        hasIndexFile = tarResult.hasOrWillHaveIndex;
         shouldUploadAsWebsite = true;
       }
       // Process ZIP/GZ archives when serveUncompressed is enabled
       else if (isArchive && serveUncompressed) {
-        processedFile = await processArchiveFile(file);
+        const archiveResult = await processArchiveFile(file);
+        processedFile = archiveResult.file;
+        hasIndexFile = archiveResult.hasOrWillHaveIndex;
         shouldUploadAsWebsite = true;
       }
 
@@ -762,6 +812,7 @@ export const handleMultiFileUpload = async (
         filename: processedFile.name,
         reference: parsedReference.reference,
         success: true,
+        isWebsite: shouldUploadAsWebsite || hasIndexFile, // Include website flag for saving reference
       };
     } catch (error) {
       console.error(`Upload error for ${file.name} (attempt ${retryCount + 1}):`, error);
@@ -790,7 +841,8 @@ export const handleMultiFileUpload = async (
         filename: file.name,
         reference: '',
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        isWebsite: shouldUploadAsWebsite || hasIndexFile, // Include website flag even for errors
+        error: error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error',
       };
     }
   };
@@ -865,6 +917,7 @@ export const handleMultiFileUpload = async (
       filename: file.name,
       reference: '',
       success: false,
+      isWebsite: false,
     }));
     setMultiFileResults(initialResults);
 
@@ -945,7 +998,7 @@ export const handleMultiFileUpload = async (
               postageBatchId,
               expiryDate,
               result.filename,
-              false,
+              result.isWebsite, // Use the website flag from the result
               file.size
             );
 
@@ -974,7 +1027,7 @@ export const handleMultiFileUpload = async (
             postageBatchId,
             expiryDate,
             result.filename,
-            false,
+            result.isWebsite, // Use the website flag from the result
             file.size
           );
         }
