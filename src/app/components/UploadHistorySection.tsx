@@ -1,7 +1,13 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
 import { BEE_GATEWAY_URL } from './constants';
-import { formatExpiryTime, isExpiringSoon, formatDateEU } from './utils';
+import {
+  formatExpiryTime,
+  isExpiringSoon,
+  formatDateEU,
+  formatDateForCSV,
+  parseDateFromCSV,
+} from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -252,7 +258,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Reference',
       'Stamp ID',
       'Date Created',
-      'Expiry (Days)',
+      'Expiry Date',
       'Filename',
       'File Type',
       'Is Webpage',
@@ -265,8 +271,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const csvRows = dataToExport.map(record => [
       record.reference,
       record.stampId,
-      formatDate(record.timestamp),
-      formatExpiryDays(record.expiryDate),
+      formatDateForCSV(record.timestamp), // Use machine-readable format for CSV
+      formatDateForCSV(record.expiryDate), // Export expiry as timestamp too
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record),
       record.isWebpageUpload ? 'Yes' : 'No',
@@ -323,7 +329,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               reference,
               stampId,
               dateCreated,
-              expiryDays,
+              expiryField, // Can be timestamp or legacy "X days" format
               filename,
               fileType,
               isWebpage,
@@ -339,16 +345,32 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             }
 
             // Parse date and expiry
-            const timestamp = new Date(dateCreated).getTime();
-            const expiryInSeconds = parseInt(expiryDays.replace(' days', '')) * 86400;
+            const timestamp = parseDateFromCSV(dateCreated);
 
-            if (!isNaN(timestamp) && !isNaN(expiryInSeconds)) {
+            // Parse expiry field - can be timestamp or legacy "X days" format
+            let expiryDate: number;
+            const expiryTimestamp = parseInt(expiryField);
+
+            if (
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 0 &&
+              expiryTimestamp < 32503680000000
+            ) {
+              // New format: direct timestamp
+              expiryDate = expiryTimestamp;
+            } else {
+              // Legacy format: "X days" - convert to timestamp
+              const expiryDaysNum = parseInt(expiryField.replace(/[^\d]/g, ''));
+              expiryDate = timestamp + expiryDaysNum * 24 * 60 * 60 * 1000;
+            }
+
+            if (!isNaN(timestamp) && !isNaN(expiryDate)) {
               const record: UploadRecord = {
                 reference,
                 stampId,
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
-                expiryDate: expiryInSeconds,
+                expiryDate: expiryDate,
                 isWebpageUpload: isWebpage === 'Yes',
                 isFolderUpload: isFolder === 'Yes',
               };

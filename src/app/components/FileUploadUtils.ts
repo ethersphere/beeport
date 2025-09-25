@@ -476,10 +476,13 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
           createdDate: formatDateEU(new Date()),
         });
 
+        // Calculate expiry timestamp from batchTTL (which is in seconds)
+        const expiryDate = Date.now() + stamp.batchTTL * 1000;
+
         saveUploadReference(
           parsedReference.reference,
           postageBatchId,
-          stamp.batchTTL,
+          expiryDate,
           processedFile?.name,
           isWebpageUpload,
           selectedFile.size,
