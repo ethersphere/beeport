@@ -9,13 +9,13 @@
 }
 
 .left {
-    position: absolute;
+    position: fixed;
     left: 16px;
     bottom: 16px;
 }
 
 .right {
-    position: absolute;
+    position: fixed;
     right: 16px;
     bottom: 16px;
 }

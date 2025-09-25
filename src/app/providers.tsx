@@ -4,7 +4,6 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider } from 'wagmi';
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
-import FormbricksProvider from './formbricks';
 
 // Import correct config from the existing wagmi.ts
 import { config } from './wagmi';
@@ -43,7 +42,6 @@ export function Providers({ children }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={swarmTheme} modalSize="compact">
-        <FormbricksProvider/>
           {children}
         </RainbowKitProvider>
       </QueryClientProvider>
