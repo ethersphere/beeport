@@ -13,6 +13,38 @@ import { processTarFile, TarProcessingResult } from './FolderUploadUtils';
 import { getStampUsage, formatDateEU } from './utils';
 
 /**
+ * Convert technical error messages to user-friendly ones
+ */
+export const getUserFriendlyErrorMessage = (error: Error): string => {
+  const errorMessage = error.message.toLowerCase();
+
+  // Check for non-Latin character encoding errors
+  if (
+    errorMessage.includes('iso-8859-1') ||
+    errorMessage.includes('code point') ||
+    errorMessage.includes('string contains non')
+  ) {
+    return 'Upload failed: File names must use only Latin characters (A-Z, 0-9). Please rename your files to remove special characters, emojis, or accented letters.';
+  }
+
+  // Check for other common upload errors
+  if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+    return 'Upload failed: Network connection issue. Please check your internet connection and try again.';
+  }
+
+  if (errorMessage.includes('timeout')) {
+    return 'Upload failed: Upload timed out. Please try again with a smaller file or check your connection.';
+  }
+
+  if (errorMessage.includes('file too large') || errorMessage.includes('size')) {
+    return 'Upload failed: File is too large. Please try a smaller file.';
+  }
+
+  // Return original error for unrecognized errors
+  return error.message;
+};
+
+/**
  * Interface for parameters needed for file upload function
  */
 export interface FileUploadParams {
@@ -505,10 +537,12 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     return parsedReference.reference;
   } catch (error) {
     console.error('Upload error:', error);
+    const friendlyError =
+      error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error';
     setStatusMessage({
       step: 'Error',
       message: 'Upload failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: friendlyError,
       isError: true,
     });
     setUploadStep('idle');
@@ -808,7 +842,7 @@ export const handleMultiFileUpload = async (
         reference: '',
         success: false,
         isWebsite: shouldUploadAsWebsite || hasIndexFile, // Include website flag even for errors
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error',
       };
     }
   };
