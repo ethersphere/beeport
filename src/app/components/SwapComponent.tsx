@@ -68,6 +68,7 @@ import {
   handleMultiFileUpload,
   isArchiveFile,
   MultiFileResult,
+  getUserFriendlyErrorMessage,
 } from './FileUploadUtils';
 import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
@@ -1279,10 +1280,12 @@ const SwapComponent: React.FC = () => {
 
         // If not retryable or max retries reached, show error
         console.error('Upload error:', error);
+        const friendlyError =
+          error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error';
         setStatusMessage({
           step: 'Error',
           message: 'Upload failed',
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: friendlyError,
           isError: true,
         });
         setUploadStep('idle');

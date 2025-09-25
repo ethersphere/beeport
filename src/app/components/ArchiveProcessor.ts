@@ -348,7 +348,12 @@ ${fileListHtml}
 </html>`;
 };
 
-const processZipFile = async (zipFile: File): Promise<File> => {
+export interface ArchiveProcessingResult {
+  file: File;
+  hasOrWillHaveIndex: boolean; // true if original had index.html or we added one
+}
+
+const processZipFile = async (zipFile: File): Promise<ArchiveProcessingResult> => {
   try {
     // Read and extract the ZIP file
     const jszip = new JSZip();
@@ -361,13 +366,18 @@ const processZipFile = async (zipFile: File): Promise<File> => {
     const fileNames = Object.keys(zipContents.files).filter(name => !zipContents.files[name].dir);
 
     // Check if index.html exists, if not, generate one
-    if (!hasIndexFile(fileNames)) {
+    const hasIndex = hasIndexFile(fileNames);
+    let willHaveIndex = hasIndex;
+
+    if (!hasIndex) {
       try {
         const indexHtml = generateIndexHtml(fileNames, zipFile.name);
         const indexBuffer = new TextEncoder().encode(indexHtml);
         tarball.append('index.html', indexBuffer);
+        willHaveIndex = true;
       } catch (indexError) {
         console.warn('Failed to generate index.html, proceeding without it:', indexError);
+        willHaveIndex = false;
       }
     }
 
@@ -400,7 +410,7 @@ const processZipFile = async (zipFile: File): Promise<File> => {
       lastModified: new Date().getTime(),
     });
 
-    return tarFile;
+    return { file: tarFile, hasOrWillHaveIndex: willHaveIndex };
   } catch (error: unknown) {
     console.error('Error processing ZIP file:', error);
     // Handle unknown error type safely
@@ -412,7 +422,7 @@ const processZipFile = async (zipFile: File): Promise<File> => {
 /**
  * Processes archive files (ZIP, GZIP) and returns a processed file ready for upload
  */
-export const processArchiveFile = async (archiveFile: File): Promise<File> => {
+export const processArchiveFile = async (archiveFile: File): Promise<ArchiveProcessingResult> => {
   // Determine file type based on extension or MIME type
   const isZip =
     archiveFile.type === 'application/zip' || archiveFile.name.toLowerCase().endsWith('.zip');
@@ -445,7 +455,9 @@ export const processArchiveFile = async (archiveFile: File): Promise<File> => {
       lastModified: new Date().getTime(),
     });
 
-    return tarFile;
+    // For GZIP files, we can't easily check for index without re-processing
+    // So we assume they don't have index (most TAR.GZ files don't)
+    return { file: tarFile, hasOrWillHaveIndex: false };
   } catch (error: unknown) {
     console.error('Error processing archive file:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
