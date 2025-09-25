@@ -459,7 +459,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     currentFilename: string
   ) => {
     const uniqueId = `${index}_${reference}_${stampId}`;
-    console.log('Setting editing ID:', uniqueId);
     setEditingFilename(uniqueId);
     setTempFilename(currentFilename || 'Unnamed upload');
   };
@@ -702,14 +701,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         className={styles.filename}
                         onClick={e => {
                           e.stopPropagation(); // Prevent event bubbling
-                          console.log(
-                            'CLICKED:',
-                            record.filename,
-                            'Index:',
-                            index,
-                            'UniqueID:',
-                            `${index}_${record.reference}_${record.stampId}`
-                          );
                           startEditingFilename(
                             index,
                             record.reference,
@@ -749,16 +740,13 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
                   <a
-                    href={getReferenceUrl(record)}
+                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.link}
                     title={record.reference}
                   >
                     {formatReference(record.reference)}
-                    {record.filename && !isArchiveFile(record.filename)
-                      ? `/${record.filename}`
-                      : ''}
                   </a>
                 </div>
                 <div className={styles.stampRow}>
