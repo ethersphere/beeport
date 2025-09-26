@@ -1,7 +1,4 @@
 .priceTrackerContainer {
-  position: fixed;
-  bottom: 15px;
-  left: 15px;
   z-index: 1000;
   background-color: rgba(30, 30, 30, 0.75);
   backdrop-filter: blur(4px);
@@ -15,13 +12,6 @@
   cursor: default;
   opacity: 0.85;
   transform: translateY(0);
-}
-
-/* Hide price tracker on mobile devices */
-@media (max-width: 480px) {
-  .priceTrackerContainer {
-    display: none;
-  }
 }
 
 .priceTrackerContainer:hover {

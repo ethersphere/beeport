@@ -1,0 +1,15 @@
+.button {
+    padding: 8px 12px;
+    border: 1px solid var(--swarm-border);
+    background-color: var(--swarm-dark);
+    border-radius: 8px;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: block;
+    font-size: 0.8rem;
+}
+
+.button:hover {
+    background-color: #22272E;
+}

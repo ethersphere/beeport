@@ -1,0 +1,60 @@
+.disclaimerContainer {
+    max-width: 100%;
+    width: 460px;
+    font-size: 0.8rem;
+    color: var(--swarm-text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.disclaimerContainer p {
+    text-align: justify;
+    text-align-last: center;
+}
+
+.disclaimerDialog {
+    backdrop-filter: blur(2px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+}
+
+.disclaimerDialogContent {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--swarm-dark);
+    color: var(--swarm-text-secondary);
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.button {
+    width: 100%;
+    padding: 14px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 8px;
+    background-color: #ff7a00;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+
+.button:hover {
+    background-color: #e56e00;
+}
