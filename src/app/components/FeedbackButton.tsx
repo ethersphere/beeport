@@ -14,8 +14,8 @@ const FeedbackButton: React.FC = () => {
   useEffect(() => {
     formbricks
       .setup({
-        environmentId: process.env.NEXT_PUBLIC_FORMBRICKS_ENV_ID || '0000000000000000000000000',
-        appUrl: 'https://app.formbricks.com',
+        environmentId: process.env.NEXT_PUBLIC_FORMBRICKS_ENV_ID || 'cmejwregbbh89rj01io6z9670',
+        appUrl: process.env.NEXT_PUBLIC_FORMBRICKS_APP_URL || 'https://app.formbricks.com',
       })
       .then(() => {
         setShow(true);
