@@ -656,9 +656,7 @@ Your new ENS domain is now registered and ready to use:
       const interval = setInterval(() => {
         const now = Date.now();
         const elapsed = now - commitmentTimestamp;
-        const seconds = 60
-        setRemainingSeconds(seconds)
-        const waitTime = seconds * 1000;
+        const waitTime = 60 * 1000; // 60 seconds
 
         if (elapsed >= waitTime) {
           clearInterval(interval);
