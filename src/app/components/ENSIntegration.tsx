@@ -14,6 +14,7 @@ import { ENS_SUBGRAPH_URL, ENS_SUBGRAPH_API_KEY } from './constants';
 import ENSDomainDropdown from './ENSDomainDropdown';
 import styles from './css/ENSIntegration.module.css';
 import { formatDateEU } from './utils';
+import SimpleMarkdown from './SimpleMarkdown';
 
 interface ENSIntegrationProps {
   swarmReference: string;
@@ -293,6 +294,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [registrationPrice, setRegistrationPrice] = useState<string>('');
   const [commitmentTxHash, setCommitmentTxHash] = useState<string>('');
   const [commitmentTimestamp, setCommitmentTimestamp] = useState<number>(0);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(60); // For waiting period countdown
   const [registrationStep, setRegistrationStep] = useState<
     'input' | 'commit' | 'waiting' | 'register' | 'completed'
   >('input');
@@ -654,13 +656,18 @@ Your new ENS domain is now registered and ready to use:
       const interval = setInterval(() => {
         const now = Date.now();
         const elapsed = now - commitmentTimestamp;
-        const waitTime = 60 * 1000; // 60 seconds
+        const seconds = 60
+        setRemainingSeconds(seconds)
+        const waitTime = seconds * 1000;
 
         if (elapsed >= waitTime) {
           clearInterval(interval);
           setSuccess(
             `✅ Waiting period complete! You can now complete your registration for ${selectedDomain}`
           );
+        } else {
+          const remaining = Math.ceil((waitTime - elapsed) / 1000);
+          setRemainingSeconds(remaining);
         }
       }, 1000);
 
@@ -1361,7 +1368,13 @@ You can now access your content at:
                       )}
                     </div>
                   ) : isAvailable === false ? (
-                    <div className={styles.unavailable}>❌ {selectedDomain} is not available</div>
+                    selectedDomain.endsWith('.eth') ? (
+                      <div className={styles.unavailable}>❌ {selectedDomain} is not available</div>
+                    ) : (
+                      <div className={styles.unavailable}>
+                        ❌ {selectedDomain} must end with .eth
+                      </div>
+                    )
                   ) : null}
                 </div>
               )}
@@ -1416,7 +1429,7 @@ You can now access your content at:
 
           {success && (
             <div className={styles.success}>
-              <strong>Success!</strong> {success}
+              <strong>Success!</strong> <SimpleMarkdown>{success}</SimpleMarkdown>
             </div>
           )}
 
