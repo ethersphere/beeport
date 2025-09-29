@@ -1921,6 +1921,12 @@ const SwapComponent: React.FC = () => {
                               />
                               <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
                                 Serve uncompressed
+                                <span
+                                  className={styles.tooltip}
+                                  title="You will be able to see all files in archive and browse them through index.html file"
+                                >
+                                  ?
+                                </span>
                               </label>
                             </div>
                           )}
@@ -2347,6 +2353,9 @@ const SwapComponent: React.FC = () => {
                           <span>${Number(topUpInfo?.cost || 0).toFixed(2)}</span>
                         </div>
                       </div>
+                      <div className={styles.updateDelayNotice}>
+                        ⏱️ It will take a few minutes for the stamp expiry to be updated
+                      </div>
                     </div>
 
                     <button
@@ -2359,6 +2368,15 @@ const SwapComponent: React.FC = () => {
                         setIsLoading(false);
                         setExecutionResult(null);
                         setIsNewStampCreated(false); // Reset the new stamp warning
+
+                        // Clear the topup parameter from URL and return to clean state
+                        if (typeof window !== 'undefined') {
+                          const url = new URL(window.location.href);
+                          if (url.searchParams.has('topup')) {
+                            // Remove the topup parameter and navigate to clean URL
+                            window.location.href = window.location.origin;
+                          }
+                        }
                       }}
                     >
                       Close

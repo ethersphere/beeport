@@ -520,7 +520,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         <h2 className={styles.title}>Upload History</h2>
         <div className={styles.buttonGroup}>
           {filteredHistory.length > 0 && (
-            <button className={styles.downloadButton} onClick={downloadCSV} title="Download CSV">
+            <button className={styles.downloadButton} onClick={downloadCSV} title="Export History ">
               <svg
                 width="20"
                 height="20"
@@ -538,7 +538,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {address && (
-            <label className={styles.uploadButton} title="Upload CSV">
+            <label className={styles.uploadButton} title="Import History">
               <input
                 type="file"
                 accept=".csv"
