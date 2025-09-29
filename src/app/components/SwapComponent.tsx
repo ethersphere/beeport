@@ -2362,6 +2362,15 @@ const SwapComponent: React.FC = () => {
                         setIsLoading(false);
                         setExecutionResult(null);
                         setIsNewStampCreated(false); // Reset the new stamp warning
+
+                        // Clear the topup parameter from URL and return to clean state
+                        if (typeof window !== 'undefined') {
+                          const url = new URL(window.location.href);
+                          if (url.searchParams.has('topup')) {
+                            // Remove the topup parameter and navigate to clean URL
+                            window.location.href = window.location.origin;
+                          }
+                        }
                       }}
                     >
                       Close
