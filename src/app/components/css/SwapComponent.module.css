@@ -1193,6 +1193,18 @@
   font-weight: 500;
 }
 
+.updateDelayNotice {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #0d1117;
+  border: 1px solid #ff7a00;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8b949e;
+  text-align: center;
+  line-height: 1.4;
+}
+
 .utilizationBarContainer {
   height: 6px;
   width: 100%;

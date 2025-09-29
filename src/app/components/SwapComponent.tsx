@@ -2347,6 +2347,9 @@ const SwapComponent: React.FC = () => {
                           <span>${Number(topUpInfo?.cost || 0).toFixed(2)}</span>
                         </div>
                       </div>
+                      <div className={styles.updateDelayNotice}>
+                        ⏱️ It will take a few minutes for the stamp expiry to be updated
+                      </div>
                     </div>
 
                     <button
