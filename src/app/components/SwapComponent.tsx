@@ -94,6 +94,19 @@ interface StampInfo {
 }
 
 const SwapComponent: React.FC = () => {
+  // Log version info on component initialization
+  React.useEffect(() => {
+    console.log(`
+    ╔════════════════════════════════════════════════════════════════╗
+    ║                           🐝 BEEPORT 🐝                        ║
+    ║                         Version: 1.1.1                        ║
+    ║                                                                ║
+    ║            Multichain Swarm Upload & Stamp Manager            ║
+    ║              https://github.com/ethersphere/beeport            ║
+    ╚════════════════════════════════════════════════════════════════╝
+    `);
+  }, []);
+
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
