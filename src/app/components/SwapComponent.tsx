@@ -1921,6 +1921,12 @@ const SwapComponent: React.FC = () => {
                               />
                               <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
                                 Serve uncompressed
+                                <span
+                                  className={styles.tooltip}
+                                  title="You will be able to see all files in archive and browse them through index.html file"
+                                >
+                                  ?
+                                </span>
                               </label>
                             </div>
                           )}
