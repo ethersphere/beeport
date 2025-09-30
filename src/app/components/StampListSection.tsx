@@ -516,7 +516,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                           className={isExpiringSoon(stamp.batchTTL) ? styles.expiryWarning : ''}
                         >
                           Expires: {formatExpiryTime(stamp.batchTTL)}
-                          {isExpiringSoon(stamp.batchTTL) && ' ⚠️ TOP UP'}
+                          {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
                         </span>
                       )}
                     </>
