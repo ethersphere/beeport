@@ -1159,7 +1159,7 @@ const SwapComponent: React.FC = () => {
     } else {
       return (selectedFile?.size || 0) > maxSizeBytes;
     }
-  }
+  };
 
   const handleFileUpload = async () => {
     if (isMultipleFiles && selectedFiles.length > 0) {
