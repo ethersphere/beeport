@@ -368,9 +368,18 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       message: messageToSign, // Just sign the plain string directly
     });
 
+    // Determine Content-Type with fallback for unsupported file types
+    let contentType: string;
+    if (serveUncompressed && (isTarFile || isArchive)) {
+      contentType = 'application/x-tar';
+    } else {
+      // Use file MIME type, fallback to application/octet-stream if not set or empty
+      // This fallback supports all file types including ISO files, executables, etc.
+      contentType = processedFile.type || 'application/octet-stream';
+    }
+
     const baseHeaders: Record<string, string> = {
-      'Content-Type':
-        serveUncompressed && (isTarFile || isArchive) ? 'application/x-tar' : processedFile.type,
+      'Content-Type': contentType,
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
       'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
@@ -648,8 +657,18 @@ export const handleMultiFileUpload = async (
         });
       }
 
+      // Determine Content-Type with fallback for unsupported file types
+      let contentType: string;
+      if (serveUncompressed && isArchive) {
+        contentType = 'application/x-tar';
+      } else {
+        // Use file MIME type, fallback to application/octet-stream if not set or empty
+        // This fallback supports all file types including ISO files, executables, etc.
+        contentType = processedFile.type || 'application/octet-stream';
+      }
+
       const baseHeaders: Record<string, string> = {
-        'Content-Type': serveUncompressed && isArchive ? 'application/x-tar' : processedFile.type,
+        'Content-Type': contentType,
         'swarm-postage-batch-id': postageBatchId,
         'swarm-pin': 'false',
         'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,

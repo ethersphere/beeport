@@ -1759,7 +1759,7 @@ const SwapComponent: React.FC = () => {
                     </div>
                     {isNewStampCreated && (
                       <div className={styles.uploadWarning}>
-                        ⏱️ New storage created: It takes around 1 minute before it becomes
+                        ⏱️ New storage created: It takes around up to 2 minutes before it becomes
                         accessible on the network.
                       </div>
                     )}

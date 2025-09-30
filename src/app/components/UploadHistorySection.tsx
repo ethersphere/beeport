@@ -31,7 +31,15 @@ interface UploadHistory {
   [address: string]: UploadRecord[];
 }
 
-type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
+type FileType =
+  | 'all'
+  | 'images'
+  | 'videos'
+  | 'audio'
+  | 'archives'
+  | 'websites'
+  | 'documents'
+  | 'other';
 
 /**
  * Formats file size in bytes to human-readable format
@@ -100,7 +108,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
   const isArchiveFile = (filename?: string) => {
     if (!filename) return false;
-    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lz4', '.zst'];
     return archiveExtensions.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
@@ -174,9 +182,42 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     // Archive files
-    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lz4', '.zst'];
     if (archiveExtensions.some(ext => extension.endsWith(ext))) {
       return 'archives';
+    }
+
+    // Document files
+    const documentExtensions = [
+      '.pdf',
+      '.doc',
+      '.docx',
+      '.xls',
+      '.xlsx',
+      '.ppt',
+      '.pptx',
+      '.txt',
+      '.rtf',
+      '.csv',
+      '.md',
+      '.xml',
+      '.yaml',
+      '.yml',
+    ];
+    if (documentExtensions.some(ext => extension.endsWith(ext))) {
+      return 'documents';
+    }
+
+    // Disk images and system files
+    const diskImageExtensions = ['.iso', '.img', '.dmg', '.vhd', '.vmdk', '.qcow2'];
+    if (diskImageExtensions.some(ext => extension.endsWith(ext))) {
+      return 'other';
+    }
+
+    // Executable and binary files
+    const executableExtensions = ['.exe', '.msi', '.deb', '.rpm', '.pkg', '.app', '.bin'];
+    if (executableExtensions.some(ext => extension.endsWith(ext))) {
+      return 'other';
     }
 
     // Website files (common web file extensions)
@@ -201,6 +242,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         return 'Archive';
       case 'websites':
         return 'Website';
+      case 'documents':
+        return 'Document';
+      case 'other':
+        return 'File';
       default:
         return 'File';
     }
@@ -227,6 +272,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       audio: 0,
       archives: 0,
       websites: 0,
+      documents: 0,
+      other: 0,
     };
 
     history.forEach(record => {
@@ -484,10 +531,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
     // Update localStorage - match by both reference AND stampId
     const savedHistory = localStorage.getItem('uploadHistory');
-    if (savedHistory) {
+    if (savedHistory && address) {
       const allHistory: UploadHistory = JSON.parse(savedHistory);
       if (allHistory[address]) {
-        allHistory[address] = allHistory[address].map(record =>
+        allHistory[address] = allHistory[address].map((record: UploadRecord) =>
           record.reference === reference && record.stampId === stampId
             ? { ...record, filename: tempFilename.trim() }
             : record
@@ -647,6 +694,20 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               disabled={getFilterCounts.websites === 0}
             >
               Websites ({getFilterCounts.websites})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'documents' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('documents')}
+              disabled={getFilterCounts.documents === 0}
+            >
+              Documents ({getFilterCounts.documents})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'other' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('other')}
+              disabled={getFilterCounts.other === 0}
+            >
+              Other ({getFilterCounts.other})
             </button>
           </div>
         </div>
