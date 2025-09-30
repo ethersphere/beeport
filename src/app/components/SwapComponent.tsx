@@ -1151,6 +1151,16 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  const exceedsMaximumUploadSize = (): boolean => {
+    const maxSizeBytes = FILE_SIZE_CONFIG.maximumFileGB * 1024 * 1024 * 1024;
+    if (isMultipleFiles) {
+      const totalSize = selectedFiles.reduce((total, file) => total + file.size, 0);
+      return totalSize > maxSizeBytes;
+    } else {
+      return (selectedFile?.size || 0) > maxSizeBytes;
+    }
+  }
+
   const handleFileUpload = async () => {
     if (isMultipleFiles && selectedFiles.length > 0) {
       return handleMultipleFileUpload();
@@ -1905,16 +1915,17 @@ const SwapComponent: React.FC = () => {
                             <div className={styles.fileSizeTotal}>
                               Total size: {formatFileSize(getTotalFileSize())}
                             </div>
-                            {hasVeryLargeFiles() && (
+                            {!exceedsMaximumUploadSize() && hasVeryLargeFiles() && (
                               <div className={styles.largeFileWarning}>
                                 ⚠️ Large files detected ({'>'}2GB). Upload may take several hours.
                                 Please ensure stable internet connection and keep this tab open.
                               </div>
                             )}
-                            {getTotalFileSize() > 10 * 1024 * 1024 * 1024 && (
-                              <div className={styles.veryLargeFileWarning}>
-                                🚨 Very large total size ({'>'}10GB). Consider uploading in smaller
-                                batches to reduce timeout risk.
+                            {exceedsMaximumUploadSize() && (
+                              <div className={styles.errorMessage}>
+                                ❌ Total upload size exceeds the maximum allowed size of{' '}
+                                {FILE_SIZE_CONFIG.maximumFileGB}GB. Please select smaller files or
+                                fewer files.
                               </div>
                             )}
                           </div>
@@ -1970,7 +1981,8 @@ const SwapComponent: React.FC = () => {
                           onClick={handleFileUpload}
                           disabled={
                             (isMultipleFiles ? selectedFiles.length === 0 : !selectedFile) ||
-                            uploadStep === 'uploading'
+                            uploadStep === 'uploading' ||
+                            exceedsMaximumUploadSize()
                           }
                           className={styles.uploadButton}
                         >
