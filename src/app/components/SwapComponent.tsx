@@ -79,7 +79,7 @@ import {
 } from './FileUploadUtils';
 import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
-import { generateAndUpdateNonce, fetchNodeWalletAddress, checkWalletUnlocked } from './utils';
+import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
 import { useTokenManagement } from './TokenUtils';
 
 // Update the StampInfo interface to include the additional properties
@@ -497,74 +497,77 @@ const SwapComponent: React.FC = () => {
     }
   }, [isConnected, publicClient, walletClient, address, initializeLiFi]);
 
-  // Check wallet lock status and disconnect if locked
+  // Enhanced wallet lock detection based on MetaMask GitHub issues
   useEffect(() => {
-    const checkWalletLock = async () => {
-      console.log('🔄 Initial wallet lock check triggered');
-      console.log('📊 isConnected:', isConnected);
-      console.log('📊 walletClient:', !!walletClient);
-      console.log('📊 address:', address);
-
-      if (!isConnected || !walletClient) {
-        console.log('⏭️ Skipping wallet lock check - not connected or no client');
-        return;
-      }
-
-      try {
-        console.log('🔍 Running checkWalletUnlocked...');
-        const isUnlocked = await checkWalletUnlocked(walletClient);
-        console.log('📊 checkWalletUnlocked result:', isUnlocked);
-
-        if (!isUnlocked) {
-          console.log('🔒 Wallet is locked, calling disconnect()...');
-          disconnect();
-          console.log('✅ Disconnect called');
-        } else {
-          console.log('🔓 Wallet is unlocked, continuing normally');
-        }
-      } catch (error) {
-        console.error('❌ Error during wallet lock check:', error);
-        console.warn('Wallet lock check failed:', error);
-        // On check failure, assume wallet is accessible to avoid unnecessary disconnections
-      }
-    };
-
-    // Check immediately when wallet client changes
-    checkWalletLock();
-  }, [isConnected, walletClient, address, disconnect]);
-
-  // Periodic wallet lock check (every 30 seconds when connected)
-  useEffect(() => {
-    if (!isConnected || !walletClient) {
-      console.log('⏭️ Skipping periodic wallet lock check setup - not connected or no client');
+    if (!isConnected || !window.ethereum) {
+      console.log('⏭️ Skipping wallet lock check - not connected or no ethereum');
       return;
     }
 
-    console.log('⏰ Setting up periodic wallet lock check (every 30 seconds)');
-    const interval = setInterval(async () => {
-      console.log('🔄 Periodic wallet lock check triggered');
-      try {
-        const isUnlocked = await checkWalletUnlocked(walletClient);
-        console.log('📊 Periodic check result:', isUnlocked);
+    console.log('⏰ Setting up enhanced wallet lock detection');
 
-        if (!isUnlocked) {
-          console.log('🔒 Wallet became locked during periodic check, calling disconnect()...');
-          disconnect();
-          console.log('✅ Periodic disconnect called');
-        } else {
-          console.log('🔓 Periodic check: Wallet still unlocked');
-        }
-      } catch (error) {
-        console.error('❌ Error during periodic wallet lock check:', error);
-        console.warn('Periodic wallet lock check failed:', error);
+    // Listen for accountsChanged events (though MetaMask doesn't always fire these on lock/unlock)
+    const handleAccountsChanged = (accounts: string[]) => {
+      console.log('🔄 accountsChanged event fired:', accounts);
+
+      // If we're connected but get empty accounts, wallet might be locked
+      if (isConnected && (!accounts || accounts.length === 0)) {
+        console.log('🔒 accountsChanged: No accounts but still connected, disconnecting...');
+        disconnect();
       }
-    }, 30000); // Check every 30 seconds
+    };
+
+    // Listen for connect/disconnect events
+    const handleConnect = (connectInfo: any) => {
+      console.log('🔗 connect event:', connectInfo);
+    };
+
+    const handleDisconnect = (error: any) => {
+      console.log('🔌 disconnect event:', error);
+      if (isConnected) {
+        console.log('🔒 MetaMask disconnected, updating app state...');
+        disconnect();
+      }
+    };
+
+    // Set up event listeners
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('connect', handleConnect);
+    window.ethereum.on('disconnect', handleDisconnect);
+
+    // Fallback: Periodic check using wallet operations (less frequent to avoid false positives)
+    const interval = setInterval(async () => {
+      try {
+        // Try a simple wallet operation that requires unlock
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        console.log('🔓 Wallet responsive, chain ID:', chainId);
+      } catch (error: any) {
+        console.log('❌ Wallet operation failed:', error?.message);
+
+        // More specific error checking based on MetaMask behavior
+        const errorMessage = error?.message?.toLowerCase() || '';
+        if (
+          errorMessage.includes('unauthorized') ||
+          errorMessage.includes('not authorized') ||
+          errorMessage.includes('user rejected') ||
+          error?.code === 4100 // Unauthorized (wallet locked)
+        ) {
+          console.log('🔒 Wallet appears locked based on operation failure, disconnecting...');
+          disconnect();
+        }
+      }
+    }, 30000); // 30 seconds - less frequent to avoid interference
 
     return () => {
-      console.log('🛑 Clearing periodic wallet lock check interval');
+      console.log('🛑 Cleaning up wallet lock detection');
+      if (window.ethereum?.removeListener) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('connect', handleConnect);
+        window.ethereum.removeListener('disconnect', handleDisconnect);
+      }
       clearInterval(interval);
     };
-  }, [isConnected, walletClient, disconnect]);
+  }, [isConnected, disconnect]);
 
   const fetchAndSetNodeWalletAddress = useCallback(async () => {
     const address = await fetchNodeWalletAddress(beeApiUrl, DEFAULT_NODE_ADDRESS);
