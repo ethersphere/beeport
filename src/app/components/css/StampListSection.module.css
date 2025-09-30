@@ -142,7 +142,7 @@
 .refreshButton {
   margin-top: 0;
   padding: 10px 16px;
-  background-color: #ff7a00;
+  background-color: #6b7280;
   color: white;
   border: none;
   border-radius: 8px;
@@ -157,7 +157,7 @@
 }
 
 .refreshButton:hover {
-  background-color: #e56e00;
+  background-color: #4b5563;
 }
 
 .refreshButton:disabled {
