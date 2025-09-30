@@ -12,7 +12,13 @@ import {
 } from './constants';
 import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
-import { formatExpiryTime, isExpiringSoon, getStampUsage, formatDateEU } from './utils';
+import {
+  formatExpiryTime,
+  isExpiringSoon,
+  getStampUsage,
+  formatDateEU,
+  fetchStampInfo,
+} from './utils';
 
 // Cache for expired stamps to avoid repeated API calls
 const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
@@ -77,6 +83,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 }) => {
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshingStamps, setRefreshingStamps] = useState<Set<string>>(new Set());
 
   // Utility functions for cache management (can be called from dev tools)
   const clearExpiredStampsCache = () => {
@@ -138,83 +145,83 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     return option ? option.size : `${depth} (unknown size)`;
   };
 
-  useEffect(() => {
-    // Helper functions for caching
-    const getExpiredStampsCache = (): ExpiredStampCache => {
-      try {
-        const cached = localStorage.getItem(EXPIRED_STAMPS_CACHE_KEY);
-        if (!cached) return {};
+  // Helper functions for caching (moved outside useEffect to be reusable)
+  const getExpiredStampsCache = (): ExpiredStampCache => {
+    try {
+      const cached = localStorage.getItem(EXPIRED_STAMPS_CACHE_KEY);
+      if (!cached) return {};
 
-        const cache = JSON.parse(cached) as ExpiredStampCache;
-        const now = Date.now();
+      const cache = JSON.parse(cached) as ExpiredStampCache;
+      const now = Date.now();
 
-        // Clean up very old cache entries (older than 7 days)
-        let cleaned = false;
-        Object.keys(cache).forEach(batchId => {
-          const entry = cache[batchId];
-          const ageInCache = now - entry.expiredAt;
+      // Clean up very old cache entries (older than 7 days)
+      let cleaned = false;
+      Object.keys(cache).forEach(batchId => {
+        const entry = cache[batchId];
+        const ageInCache = now - entry.expiredAt;
 
-          // Remove entries that have been in cache for > 7 days with high failure count
-          if (ageInCache > 7 * 24 * 60 * 60 * 1000 && entry.failureCount >= 5) {
-            delete cache[batchId];
-            cleaned = true;
-          }
-        });
-
-        // Save cleaned cache
-        if (cleaned) {
-          localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
+        // Remove entries that have been in cache for > 7 days with high failure count
+        if (ageInCache > 7 * 24 * 60 * 60 * 1000 && entry.failureCount >= 5) {
+          delete cache[batchId];
+          cleaned = true;
         }
+      });
 
-        return cache;
-      } catch (error) {
-        console.warn('Error reading expired stamps cache:', error);
-        return {};
-      }
-    };
-
-    const markStampAsExpired = (batchId: string, stampTimestamp?: number) => {
-      try {
-        const cache = getExpiredStampsCache();
-        const now = Date.now();
-
-        // Calculate stamp age if we have the timestamp
-        const stampAge = stampTimestamp ? now - stampTimestamp * 1000 : undefined;
-
-        // If it's already in cache, increment failure count
-        if (cache[batchId]) {
-          cache[batchId].lastChecked = now;
-          cache[batchId].failureCount += 1;
-
-          // Only keep in cache if stamp is old enough OR we've had many failures
-          if (
-            stampAge &&
-            stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE &&
-            cache[batchId].failureCount < 5
-          ) {
-            delete cache[batchId];
-          }
-        } else {
-          // Don't cache young stamps as expired - they might just be propagating
-          if (stampAge && stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE) {
-            return;
-          }
-
-          // New expired stamp (old enough to cache)
-          cache[batchId] = {
-            expiredAt: now,
-            lastChecked: now,
-            failureCount: 1,
-            stampAge,
-          };
-        }
-
+      // Save cleaned cache
+      if (cleaned) {
         localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
-      } catch (error) {
-        console.warn('Error updating expired stamps cache:', error);
       }
-    };
 
+      return cache;
+    } catch (error) {
+      console.warn('Error reading expired stamps cache:', error);
+      return {};
+    }
+  };
+
+  const markStampAsExpired = (batchId: string, stampTimestamp?: number) => {
+    try {
+      const cache = getExpiredStampsCache();
+      const now = Date.now();
+
+      // Calculate stamp age if we have the timestamp
+      const stampAge = stampTimestamp ? now - stampTimestamp * 1000 : undefined;
+
+      // If it's already in cache, increment failure count
+      if (cache[batchId]) {
+        cache[batchId].lastChecked = now;
+        cache[batchId].failureCount += 1;
+
+        // Only keep in cache if stamp is old enough OR we've had many failures
+        if (
+          stampAge &&
+          stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE &&
+          cache[batchId].failureCount < 5
+        ) {
+          delete cache[batchId];
+        }
+      } else {
+        // Don't cache young stamps as expired - they might just be propagating
+        if (stampAge && stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE) {
+          return;
+        }
+
+        // New expired stamp (old enough to cache)
+        cache[batchId] = {
+          expiredAt: now,
+          lastChecked: now,
+          failureCount: 1,
+          stampAge,
+        };
+      }
+
+      localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+      console.warn('Error updating expired stamps cache:', error);
+    }
+  };
+
+  useEffect(() => {
     const isStampKnownExpired = (batchId: string): boolean => {
       const cache = getExpiredStampsCache();
       const cachedEntry = cache[batchId];
@@ -386,6 +393,55 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     fetchStamps();
   }, [address, beeApiUrl]); // Only dependencies that actually need to trigger re-fetching
 
+  // Function to refresh a specific stamp
+  const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
+    if (!address) return;
+
+    const batchId = stampToRefresh.batchId;
+    setRefreshingStamps(prev => new Set(prev).add(batchId));
+
+    try {
+      // Re-fetch stamp info directly from the API using utils function
+      const stampTimestamp = stampToRefresh.timestamp || Date.now() / 1000;
+      const stampInfo = await fetchStampInfo(batchId, beeApiUrl);
+
+      if (!stampInfo) {
+        const now = Date.now();
+        const stampAge = now - stampTimestamp * 1000;
+
+        // Check if still young enough for propagation
+        if (stampAge < MAX_PROPAGATION_AGE) {
+          // Keep as propagating - no change needed
+          return;
+        } else {
+          // Too old, remove from list
+          setStamps(prev => prev.filter(s => s.batchId !== batchId));
+          return;
+        }
+      } else {
+        // Stamp is now ready! Update it with real data
+        const updatedStamp: BatchEvent = {
+          ...stampToRefresh, // Keep existing data
+          utilization: stampInfo.utilization,
+          batchTTL: stampInfo.batchTTL,
+          bucketDepth: stampInfo.bucketDepth,
+          isPropagating: false, // No longer propagating
+        };
+
+        // Update the specific stamp in the list
+        setStamps(prev => prev.map(stamp => (stamp.batchId === batchId ? updatedStamp : stamp)));
+      }
+    } catch (error) {
+      console.error(`Error refreshing stamp ${batchId}:`, error);
+    } finally {
+      setRefreshingStamps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(batchId);
+        return newSet;
+      });
+    }
+  };
+
   const handleStampSelect = (stamp: any) => {
     setPostageBatchId(stamp.batchId.slice(2));
     setShowOverlay(true);
@@ -469,22 +525,30 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   {stamp.timestamp && <span>Created: {formatDateEU(stamp.timestamp * 1000)}</span>}
                 </div>
                 <div className={styles.stampActions}>
-                  <button
-                    className={styles.uploadWithStampButton}
-                    onClick={() => {
-                      if (!stamp.isPropagating) {
-                        handleStampSelect(stamp);
+                  {stamp.isPropagating ? (
+                    <button
+                      className={styles.refreshButton}
+                      onClick={() => refreshSingleStamp(stamp)}
+                      disabled={refreshingStamps.has(stamp.batchId)}
+                      title={
+                        refreshingStamps.has(stamp.batchId)
+                          ? 'Checking stamp status...'
+                          : 'Refresh to check if stamp is ready'
                       }
-                    }}
-                    disabled={stamp.isPropagating}
-                    title={
-                      stamp.isPropagating
-                        ? 'Please wait for stamp to finish propagating'
-                        : 'Upload with these stamps'
-                    }
-                  >
-                    {stamp.isPropagating ? 'Propagating...' : 'Upload with these stamps'}
-                  </button>
+                    >
+                      {refreshingStamps.has(stamp.batchId) ? '⏳ Checking...' : 'Refresh'}
+                    </button>
+                  ) : (
+                    <button
+                      className={styles.uploadWithStampButton}
+                      onClick={() => {
+                        handleStampSelect(stamp);
+                      }}
+                      title="Upload with these stamps"
+                    >
+                      Upload with these stamps
+                    </button>
+                  )}
 
                   <button
                     className={styles.topUpButton}
