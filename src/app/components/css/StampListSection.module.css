@@ -132,6 +132,11 @@
 .uploadWithStampButton:disabled {
   background-color: #30363d;
   cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.uploadWithStampButton:disabled:hover {
+  background-color: #30363d;
 }
 
 .topUpButton {
@@ -155,6 +160,16 @@
   background-color: #35507f;
 }
 
+.topUpButton:disabled {
+  background-color: #30363d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.topUpButton:disabled:hover {
+  background-color: #30363d;
+}
+
 .expiryWarning {
   color: #f85149 !important;
   font-weight: 600;
@@ -162,4 +177,60 @@
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.propagatingMessage {
+  margin: 8px 0;
+  padding: 0;
+}
+
+.propagatingText {
+  color: #ff7a00 !important;
+  font-weight: 500;
+  background-color: rgba(255, 122, 0, 0.1);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 122, 0, 0.3);
+  font-size: 0.85em;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.resetButtonContainer {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #30363d;
+}
+
+.resetButton {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  opacity: 0.5;
+}
+
+.resetButton:hover {
+  opacity: 1;
+  background-color: rgba(48, 54, 61, 0.3);
+  border-color: #6e7681;
+  color: #f0f6fc;
 }
