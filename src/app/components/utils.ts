@@ -471,6 +471,68 @@ export function getStampUsage(
 }
 
 /**
+ * Check if wallet is unlocked - simplified version
+ * @param walletClient The wallet client to test
+ * @returns Promise<boolean> true if wallet is accessible, false if locked
+ */
+export const checkWalletUnlocked = async (walletClient: any): Promise<boolean> => {
+  console.log('🔍 Checking wallet unlock status...');
+
+  if (!walletClient) {
+    console.log('❌ No wallet client provided');
+    return true; // If no client, assume unlocked to avoid blocking
+  }
+
+  try {
+    // Direct call to window.ethereum
+    if (typeof window !== 'undefined' && window.ethereum) {
+      console.log('🔄 Calling window.ethereum.request directly...');
+      
+      const accounts = await window.ethereum.request({
+        method: 'eth_accounts',
+      });
+      
+      console.log('📊 Direct eth_accounts result:', accounts);
+      console.log('📊 accounts length:', accounts?.length);
+
+      const hasAccounts = accounts && Array.isArray(accounts) && accounts.length > 0;
+      
+      if (hasAccounts) {
+        console.log('🔓 Wallet is UNLOCKED');
+        return true;
+      } else {
+        console.log('🔒 Wallet appears to be LOCKED (no accounts returned)');
+        return false;
+      }
+    }
+
+    // If no window.ethereum, assume unlocked
+    console.log('⚠️ No window.ethereum available, assuming unlocked');
+    return true;
+    
+  } catch (error: any) {
+    console.error('❌ Error checking wallet status:', error?.message);
+    
+    // Check for specific lock-related errors
+    const errorMessage = error?.message?.toLowerCase() || '';
+    if (
+      errorMessage.includes('unauthorized') ||
+      errorMessage.includes('locked') ||
+      errorMessage.includes('metamask is locked') ||
+      error?.code === 4100 || // Unauthorized
+      error?.code === -32603   // Internal error
+    ) {
+      console.log('🔒 Wallet is LOCKED (error indicates lock)');
+      return false;
+    }
+    
+    // For other errors, assume unlocked to avoid blocking the user
+    console.log('⚠️ Unknown error, assuming unlocked to avoid blocking');
+    return true;
+  }
+};
+
+/**
  * Format date in EU format (DD/MM/YYYY)
  * @param date Date object or timestamp
  * @returns Formatted date string in EU format

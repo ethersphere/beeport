@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useWalletClient,
+  useSwitchChain,
+  useDisconnect,
+} from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
@@ -72,7 +79,7 @@ import {
 } from './FileUploadUtils';
 import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
-import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
+import { generateAndUpdateNonce, fetchNodeWalletAddress, checkWalletUnlocked } from './utils';
 import { useTokenManagement } from './TokenUtils';
 
 // Update the StampInfo interface to include the additional properties
@@ -98,10 +105,10 @@ const SwapComponent: React.FC = () => {
   React.useEffect(() => {
     console.log(`
     ╔════════════════════════════════════════════════════════════════╗
-    ║                           🐝 BEEPORT 🐝                        ║
-    ║                         Version: 1.1.2                        ║
+    ║                           🐝 BEEPORT 🐝                         ║
+    ║                         Version: 1.1.2                         ║
     ║                                                                ║
-    ║            Multichain Swarm Upload & Stamp Manager            ║
+    ║            Multichain Swarm Upload & Stamp Manager             ║
     ║              https://github.com/ethersphere/beeport            ║
     ╚════════════════════════════════════════════════════════════════╝
     `);
@@ -113,6 +120,7 @@ const SwapComponent: React.FC = () => {
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const { openConnectModal } = useConnectModal();
+  const { disconnect } = useDisconnect();
 
   // Add state to track if component has mounted to prevent hydration mismatches
   const [hasMounted, setHasMounted] = useState(false);
@@ -488,6 +496,75 @@ const SwapComponent: React.FC = () => {
     } else {
     }
   }, [isConnected, publicClient, walletClient, address, initializeLiFi]);
+
+  // Check wallet lock status and disconnect if locked
+  useEffect(() => {
+    const checkWalletLock = async () => {
+      console.log('🔄 Initial wallet lock check triggered');
+      console.log('📊 isConnected:', isConnected);
+      console.log('📊 walletClient:', !!walletClient);
+      console.log('📊 address:', address);
+
+      if (!isConnected || !walletClient) {
+        console.log('⏭️ Skipping wallet lock check - not connected or no client');
+        return;
+      }
+
+      try {
+        console.log('🔍 Running checkWalletUnlocked...');
+        const isUnlocked = await checkWalletUnlocked(walletClient);
+        console.log('📊 checkWalletUnlocked result:', isUnlocked);
+
+        if (!isUnlocked) {
+          console.log('🔒 Wallet is locked, calling disconnect()...');
+          disconnect();
+          console.log('✅ Disconnect called');
+        } else {
+          console.log('🔓 Wallet is unlocked, continuing normally');
+        }
+      } catch (error) {
+        console.error('❌ Error during wallet lock check:', error);
+        console.warn('Wallet lock check failed:', error);
+        // On check failure, assume wallet is accessible to avoid unnecessary disconnections
+      }
+    };
+
+    // Check immediately when wallet client changes
+    checkWalletLock();
+  }, [isConnected, walletClient, address, disconnect]);
+
+  // Periodic wallet lock check (every 30 seconds when connected)
+  useEffect(() => {
+    if (!isConnected || !walletClient) {
+      console.log('⏭️ Skipping periodic wallet lock check setup - not connected or no client');
+      return;
+    }
+
+    console.log('⏰ Setting up periodic wallet lock check (every 30 seconds)');
+    const interval = setInterval(async () => {
+      console.log('🔄 Periodic wallet lock check triggered');
+      try {
+        const isUnlocked = await checkWalletUnlocked(walletClient);
+        console.log('📊 Periodic check result:', isUnlocked);
+
+        if (!isUnlocked) {
+          console.log('🔒 Wallet became locked during periodic check, calling disconnect()...');
+          disconnect();
+          console.log('✅ Periodic disconnect called');
+        } else {
+          console.log('🔓 Periodic check: Wallet still unlocked');
+        }
+      } catch (error) {
+        console.error('❌ Error during periodic wallet lock check:', error);
+        console.warn('Periodic wallet lock check failed:', error);
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => {
+      console.log('🛑 Clearing periodic wallet lock check interval');
+      clearInterval(interval);
+    };
+  }, [isConnected, walletClient, disconnect]);
 
   const fetchAndSetNodeWalletAddress = useCallback(async () => {
     const address = await fetchNodeWalletAddress(beeApiUrl, DEFAULT_NODE_ADDRESS);
