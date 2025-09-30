@@ -206,6 +206,11 @@
   font-weight: 600;
 }
 
+.expiryKhaki {
+  color: #d4a11a !important;
+  font-weight: 600;
+}
+
 .propagatingMessage {
   margin: 8px 0;
   padding: 0;

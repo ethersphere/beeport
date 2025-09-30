@@ -449,6 +449,13 @@ export const isExpiringSoon = (ttlSeconds: number): boolean => {
 };
 
 /**
+ * Check if a stamp is in warning period (≤ 3 days but > 1 day)
+ */
+export const isExpiryWarning = (ttlSeconds: number): boolean => {
+  return ttlSeconds <= 259200 && ttlSeconds > 86400; // 3 days but more than 1 day
+};
+
+/**
  * Calculate the real stamp usage percentage
  * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
  * @param depth Stamp depth from Bee API

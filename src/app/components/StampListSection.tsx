@@ -15,6 +15,7 @@ import { gnosis } from 'viem/chains';
 import {
   formatExpiryTime,
   isExpiringSoon,
+  isExpiryWarning,
   getStampUsage,
   formatDateEU,
   fetchStampInfo,
@@ -513,7 +514,13 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       )}
                       {stamp.batchTTL !== undefined && (
                         <span
-                          className={isExpiringSoon(stamp.batchTTL) ? styles.expiryWarning : ''}
+                          className={
+                            isExpiringSoon(stamp.batchTTL)
+                              ? styles.expiryWarning
+                              : isExpiryWarning(stamp.batchTTL)
+                                ? styles.expiryKhaki
+                                : ''
+                          }
                         >
                           Expires: {formatExpiryTime(stamp.batchTTL)}
                           {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
