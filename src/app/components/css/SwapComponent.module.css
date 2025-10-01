@@ -1,7 +1,7 @@
 .container {
   max-width: 500px;
   margin: 0 auto;
-  margin-top: 50px; /* Add 50px top margin for non-mobile screens */
+  margin-top: 35px; /* Add 35px top margin for non-mobile screens */
   padding: 25px;
   background-color: #0f131ac7;
   border-radius: 12px;

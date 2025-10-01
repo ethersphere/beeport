@@ -1755,7 +1755,9 @@ const SwapComponent: React.FC = () => {
                         : 'Upload File'}
                     </h3>
                     <div className={styles.uploadWarning}>
-                      Warning! Upload data is public and can not be removed from the Swarm network
+                    Warning! Uploaded data cannot be deleted - it will only be removed from the
+                      network once the stamp has expired. Uploaded data exists publicly in the
+                      network - anyone who knows the reference can access it.
                     </div>
                     {isNewStampCreated && (
                       <div className={styles.uploadWarning}>
