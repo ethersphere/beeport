@@ -108,7 +108,7 @@ export const UPLOAD_TIMEOUT_CONFIG = {
 // File size thresholds for warnings and enhanced logging
 export const FILE_SIZE_CONFIG = {
   largeFileThresholdGB: 2, // Files larger than this show warnings
-  veryLargeFileTotalGB: 10, // Total batch size that triggers batch size warnings
+  maximumFileGB: 8, // Maximum file size allowed for upload
   enhancedLoggingThresholdMB: 500, // Files larger than this get detailed progress logging
   enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
 } as const;
