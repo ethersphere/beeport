@@ -1,14 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  useAccount,
-  useChainId,
-  usePublicClient,
-  useWalletClient,
-  useSwitchChain,
-  useDisconnect,
-} from 'wagmi';
+import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
@@ -120,7 +113,6 @@ const SwapComponent: React.FC = () => {
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const { openConnectModal } = useConnectModal();
-  const { disconnect } = useDisconnect();
 
   // Add state to track if component has mounted to prevent hydration mismatches
   const [hasMounted, setHasMounted] = useState(false);
@@ -497,82 +489,62 @@ const SwapComponent: React.FC = () => {
     }
   }, [isConnected, publicClient, walletClient, address, initializeLiFi]);
 
-  // Enhanced wallet lock detection based on MetaMask GitHub issues
-  useEffect(() => {
-    if (!isConnected || !window.ethereum) {
-      console.log('⏭️ Skipping wallet lock check - not connected or no ethereum');
-      return;
-    }
-
-    console.log('⏰ Setting up enhanced wallet lock detection');
-
-    // Listen for accountsChanged events (though MetaMask doesn't always fire these on lock/unlock)
-    const handleAccountsChanged = (accounts: string[]) => {
-      console.log('🔄 accountsChanged event fired:', accounts);
-
-      // If we're connected but get empty accounts, wallet might be locked
-      if (isConnected && (!accounts || accounts.length === 0)) {
-        console.log('🔒 accountsChanged: No accounts but still connected, disconnecting...');
-        disconnect();
-      }
-    };
-
-    // Listen for connect/disconnect events
-    const handleConnect = (connectInfo: any) => {
-      console.log('🔗 connect event:', connectInfo);
-    };
-
-    const handleDisconnect = (error: any) => {
-      console.log('🔌 disconnect event:', error);
-      if (isConnected) {
-        console.log('🔒 MetaMask disconnected, updating app state...');
-        disconnect();
-      }
-    };
-
-    // Set up event listeners
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('connect', handleConnect);
-    window.ethereum.on('disconnect', handleDisconnect);
-
-    // Fallback: Periodic check using wallet operations (less frequent to avoid false positives)
-    const interval = setInterval(async () => {
-      try {
-        // Try a simple wallet operation that requires unlock
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        console.log('🔓 Wallet responsive, chain ID:', chainId);
-      } catch (error: any) {
-        console.log('❌ Wallet operation failed:', error?.message);
-
-        // More specific error checking based on MetaMask behavior
-        const errorMessage = error?.message?.toLowerCase() || '';
-        if (
-          errorMessage.includes('unauthorized') ||
-          errorMessage.includes('not authorized') ||
-          errorMessage.includes('user rejected') ||
-          error?.code === 4100 // Unauthorized (wallet locked)
-        ) {
-          console.log('🔒 Wallet appears locked based on operation failure, disconnecting...');
-          disconnect();
-        }
-      }
-    }, 30000); // 30 seconds - less frequent to avoid interference
-
-    return () => {
-      console.log('🛑 Cleaning up wallet lock detection');
-      if (window.ethereum?.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('connect', handleConnect);
-        window.ethereum.removeListener('disconnect', handleDisconnect);
-      }
-      clearInterval(interval);
-    };
-  }, [isConnected, disconnect]);
-
   const fetchAndSetNodeWalletAddress = useCallback(async () => {
     const address = await fetchNodeWalletAddress(beeApiUrl, DEFAULT_NODE_ADDRESS);
     setNodeAddress(address);
   }, [beeApiUrl]);
+
+  // Check if wallet is accessible before critical operations
+  const ensureWalletReady = useCallback(async (): Promise<boolean> => {
+    console.log('🔍 Checking wallet readiness...');
+
+    // First check basic connection state
+    if (!isConnected || !address || !walletClient) {
+      console.log('❌ Wallet not connected, opening connect modal...');
+      openConnectModal?.();
+      return false;
+    }
+
+    // Try to verify wallet is actually responsive
+    try {
+      // Test with a simple operation that requires wallet to be unlocked
+      if (typeof window !== 'undefined' && window.ethereum) {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        console.log('✅ Wallet is ready, accounts:', accounts);
+        return true;
+      }
+    } catch (error: any) {
+      console.log('❌ Wallet check failed:', error?.message);
+
+      const errorMessage = error?.message?.toLowerCase() || '';
+      if (
+        errorMessage.includes('unauthorized') ||
+        errorMessage.includes('locked') ||
+        errorMessage.includes('user rejected') ||
+        error?.code === 4100
+      ) {
+        console.log('🔒 Wallet appears locked, prompting user to unlock...');
+
+        // Show user-friendly message about unlocking wallet
+        setStatusMessage({
+          step: 'Wallet Locked',
+          message: 'Please unlock your wallet to continue',
+          error: 'Your wallet (MetaMask) is locked. Please unlock it and try again.',
+          isError: true,
+        });
+
+        // Also try to trigger connect modal which might help
+        openConnectModal?.();
+        return false;
+      }
+
+      // For other errors, still try to proceed but warn user
+      console.log('⚠️ Unknown wallet error, but attempting to proceed...');
+      return true;
+    }
+
+    return true;
+  }, [isConnected, address, walletClient, openConnectModal]);
 
   useEffect(() => {
     const fetchAndSetNode = async () => {
@@ -708,6 +680,13 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleDirectBzzTransactions = async (updatedConfig: any) => {
+    // Check wallet readiness before proceeding with stamp operations
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ Wallet not ready, aborting stamp operation');
+      return;
+    }
+
     // Ensure we have all needed objects and data
     if (!address || !publicClient || !walletClient) {
       console.error('Missing required objects for direct BZZ transaction');
@@ -926,6 +905,13 @@ const SwapComponent: React.FC = () => {
   // handleChainSwitch, handleGnosisRoute) - now using Relay API via RelayQuotes.ts
 
   const handleSwap = async () => {
+    // Check wallet readiness before proceeding with swap/stamp operations
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ Wallet not ready, aborting swap operation');
+      return;
+    }
+
     if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
       console.error('Wallet not connected, clients not available, or chain not selected');
       return;
@@ -1232,6 +1218,27 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleFileUpload = async () => {
+    // Show modal immediately to provide feedback during wallet check
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
+
+    // Check wallet readiness before proceeding
+    setStatusMessage({
+      step: 'Wallet Check',
+      message: 'Checking wallet connection...',
+    });
+
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ Wallet not ready, aborting upload');
+      // Reset modal state if wallet check fails
+      setIsLoading(false);
+      setShowOverlay(false);
+      setUploadStep('idle');
+      return;
+    }
+
     if (isMultipleFiles && selectedFiles.length > 0) {
       return handleMultipleFileUpload();
     }
@@ -1245,9 +1252,7 @@ const SwapComponent: React.FC = () => {
       return;
     }
 
-    setIsLoading(true);
-    setShowOverlay(true);
-    setUploadStep('uploading');
+    // Modal state already set during wallet check, just reset the new stamp flag
     setIsNewStampCreated(false);
 
     // Handle NFT Collection uploads
@@ -1390,16 +1395,33 @@ const SwapComponent: React.FC = () => {
   };
 
   const handleMultipleFileUpload = async () => {
-    if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
-      console.error('Missing files, postage batch ID, or wallet');
-      return;
-    }
-
+    // Show modal immediately to provide feedback during wallet check
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
     setIsNewStampCreated(false);
     setMultiFileResults([]);
+
+    // Check wallet readiness before proceeding
+    setStatusMessage({
+      step: 'Wallet Check',
+      message: 'Checking wallet connection...',
+    });
+
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ Wallet not ready, aborting multiple file upload');
+      // Reset modal state if wallet check fails
+      setIsLoading(false);
+      setShowOverlay(false);
+      setUploadStep('idle');
+      return;
+    }
+
+    if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
+      console.error('Missing files, postage batch ID, or wallet');
+      return;
+    }
 
     try {
       await handleMultiFileUpload({

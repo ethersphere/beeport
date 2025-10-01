@@ -7,6 +7,7 @@ import {
   useEnsResolver,
   useSwitchChain,
 } from 'wagmi';
+import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { parseAbi, namehash, keccak256, toBytes } from 'viem';
 import { normalize } from 'viem/ens';
 import { mainnet } from 'wagmi/chains';
@@ -264,10 +265,11 @@ export const shortenHash = (
 };
 
 const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose }) => {
-  const { address, chainId } = useAccount();
+  const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const { switchChain } = useSwitchChain();
+  const { openConnectModal } = useConnectModal();
 
   const [selectedDomain, setSelectedDomain] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -298,6 +300,50 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
   const [registrationStep, setRegistrationStep] = useState<
     'input' | 'commit' | 'waiting' | 'register' | 'completed'
   >('input');
+
+  // Check if wallet is accessible before critical operations
+  const ensureWalletReady = useCallback(async (): Promise<boolean> => {
+    console.log('🔍 Checking ENS wallet readiness...');
+
+    // First check basic connection state
+    if (!isConnected || !address || !walletClient) {
+      console.log('❌ ENS: Wallet not connected, opening connect modal...');
+      setError('Please connect your wallet to continue');
+      openConnectModal?.();
+      return false;
+    }
+
+    // Try to verify wallet is actually responsive
+    try {
+      // Test with a simple operation that requires wallet to be unlocked
+      if (typeof window !== 'undefined' && window.ethereum) {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        console.log('✅ ENS: Wallet is ready, accounts:', accounts);
+        return true;
+      }
+    } catch (error: any) {
+      console.log('❌ ENS: Wallet check failed:', error?.message);
+
+      const errorMessage = error?.message?.toLowerCase() || '';
+      if (
+        errorMessage.includes('unauthorized') ||
+        errorMessage.includes('locked') ||
+        errorMessage.includes('user rejected') ||
+        error?.code === 4100
+      ) {
+        console.log('🔒 ENS: Wallet appears locked, prompting user to unlock...');
+        setError('Your wallet (MetaMask) is locked. Please unlock it and try again.');
+        openConnectModal?.();
+        return false;
+      }
+
+      // For other errors, still try to proceed but warn user
+      console.log('⚠️ ENS: Unknown wallet error, but attempting to proceed...');
+      return true;
+    }
+
+    return true;
+  }, [isConnected, address, walletClient, openConnectModal]);
 
   // Function to switch to Ethereum mainnet
   const switchToEthereum = useCallback(async () => {
@@ -430,6 +476,13 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
 
   // Handle domain registration process
   const handleDomainRegistration = async () => {
+    // Check wallet readiness before proceeding
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ ENS: Wallet not ready, aborting domain registration');
+      return;
+    }
+
     if (!selectedDomain || !walletClient || !publicClient || !address) {
       setError('Please enter a domain name and connect your wallet');
       return;
@@ -999,6 +1052,13 @@ Your new ENS domain is now registered and ready to use:
   ]);
 
   const handleSetContentHash = async () => {
+    // Check wallet readiness before proceeding
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      console.log('❌ ENS: Wallet not ready, aborting content hash setting');
+      return;
+    }
+
     console.log('🚀 Starting handleSetContentHash for domain:', selectedDomain);
     console.log('📊 Initial state:', {
       selectedDomain,
