@@ -1738,102 +1738,110 @@ const SwapComponent: React.FC = () => {
             </p>
           )}
 
-          <button
-            className={`${styles.button} ${
-              !isConnected
-                ? ''
-                : !selectedDays ||
-                    !fromToken ||
-                    liquidityError ||
-                    aggregatorDown ||
-                    insufficientFunds
-                  ? styles.buttonDisabled
-                  : ''
-            } ${isPriceEstimating ? styles.calculatingButton : ''}`}
-            disabled={
-              isConnected &&
-              (!selectedDays ||
-                !fromToken ||
-                liquidityError ||
-                aggregatorDown ||
-                insufficientFunds ||
-                isPriceEstimating)
-            }
-            onClick={
-              !hasMounted || !isConnected
-                ? handleGetStarted
-                : selectedChainId === ChainId.DAI &&
-                    fromToken &&
-                    getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-                    needsApproval
-                  ? handleBzzApproval
-                  : handleSwap
-            }
-          >
-            {isLoading ? (
-              <div>Loading...</div>
-            ) : !hasMounted || !isConnected ? (
-              'Get Started'
-            ) : !selectedDays ? (
-              'Choose Timespan'
-            ) : !fromToken ? (
-              'No Token Available'
-            ) : isPriceEstimating ? (
-              'Calculating Cost...'
-            ) : aggregatorDown ? (
-              'LIFI Router Error: Please try later'
-            ) : liquidityError ? (
-              "Cannot Swap - Can't Find Route"
-            ) : insufficientFunds ? (
-              'Insufficient Balance'
-            ) : isTopUp ? (
-              'Top Up Batch'
-            ) : selectedChainId === ChainId.DAI &&
+          <div className={styles.buttonContainer}>
+            <button
+              className={`${styles.button} ${
+                !isConnected
+                  ? ''
+                  : !selectedDays ||
+                      !fromToken ||
+                      liquidityError ||
+                      aggregatorDown ||
+                      insufficientFunds
+                    ? styles.buttonDisabled
+                    : ''
+              } ${isPriceEstimating ? styles.calculatingButton : ''}`}
+              disabled={
+                isConnected &&
+                (!selectedDays ||
+                  !fromToken ||
+                  liquidityError ||
+                  aggregatorDown ||
+                  insufficientFunds ||
+                  isPriceEstimating)
+              }
+              onClick={
+                !hasMounted || !isConnected
+                  ? handleGetStarted
+                  : selectedChainId === ChainId.DAI &&
+                      fromToken &&
+                      getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+                      needsApproval
+                    ? handleBzzApproval
+                    : handleSwap
+              }
+            >
+              {isLoading ? (
+                <div>Loading...</div>
+              ) : !hasMounted || !isConnected ? (
+                'Get Started'
+              ) : !selectedDays ? (
+                'Choose Timespan'
+              ) : !fromToken ? (
+                'No Token Available'
+              ) : isPriceEstimating ? (
+                'Calculating Cost...'
+              ) : aggregatorDown ? (
+                'LIFI Router Error: Please try later'
+              ) : liquidityError ? (
+                "Cannot Swap - Can't Find Route"
+              ) : insufficientFunds ? (
+                'Insufficient Balance'
+              ) : isTopUp ? (
+                'Top Up Batch'
+              ) : selectedChainId === ChainId.DAI &&
+                fromToken &&
+                getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+                needsApproval ? (
+                <div className={styles.approvalButtonContent}>
+                  <span>{approvalType === 'exact' ? 'Approve' : 'Approve Infinite'}</span>
+                  <span
+                    className={`${styles.approvalArrow} ${showApprovalDropdown ? styles.approvalArrowUp : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setShowApprovalDropdown(!showApprovalDropdown);
+                    }}
+                  >
+                    ▼
+                  </span>
+                </div>
+              ) : (
+                'Buy Storage'
+              )}
+            </button>
+
+            {/* Approval dropdown positioned relative to the main button */}
+            {selectedChainId === ChainId.DAI &&
               fromToken &&
               getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-              needsApproval ? (
-              <div className={styles.approvalButtonContent}>
-                <span>{approvalType === 'exact' ? 'Approve' : 'Approve Infinite'}</span>
-                <span
-                  className={`${styles.approvalArrow} ${showApprovalDropdown ? styles.approvalArrowUp : ''}`}
-                  onClick={e => {
-                    e.stopPropagation();
-                    setShowApprovalDropdown(!showApprovalDropdown);
-                  }}
-                >
-                  ▼
-                </span>
-                {showApprovalDropdown && (
-                  <div className={styles.approvalOptionsInButton} ref={approvalDropdownRef}>
-                    <button
-                      className={`${styles.approvalOption} ${approvalType === 'exact' ? styles.approvalOptionActive : ''}`}
-                      onClick={e => {
-                        e.stopPropagation();
-                        setApprovalType('exact');
-                        setShowApprovalDropdown(false);
-                      }}
-                    >
-                      <span>Approve</span>
-                      <span className={styles.approvalDescription}>Exact amount needed</span>
-                    </button>
-                    <button
-                      className={`${styles.approvalOption} ${approvalType === 'infinite' ? styles.approvalOptionActive : ''}`}
-                      onClick={e => {
-                        e.stopPropagation();
-                        setApprovalType('infinite');
-                        setShowApprovalDropdown(false);
-                      }}
-                    >
-                      <span>Approve Infinite</span>
-                      <span className={styles.approvalDescription}>No future approvals needed</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              'Buy Storage'
-            )}
-          </button>
+              needsApproval &&
+              showApprovalDropdown && (
+                <div className={styles.approvalOptionsOutside} ref={approvalDropdownRef}>
+                  <button
+                    className={`${styles.approvalOption} ${approvalType === 'exact' ? styles.approvalOptionActive : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setApprovalType('exact');
+                      setShowApprovalDropdown(false);
+                    }}
+                  >
+                    <span>Approve</span>
+                    <span className={styles.approvalDescription}>Exact amount needed</span>
+                  </button>
+                  <button
+                    className={`${styles.approvalOption} ${approvalType === 'infinite' ? styles.approvalOptionActive : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setApprovalType('infinite');
+                      setShowApprovalDropdown(false);
+                    }}
+                  >
+                    <span>Approve Infinite</span>
+                    <span className={styles.approvalDescription}>No future approvals needed</span>
+                  </button>
+                </div>
+              )}
+          </div>
 
           {executionResult && (
             <pre className={styles.resultBox}>{JSON.stringify(executionResult, null, 2)}</pre>

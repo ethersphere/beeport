@@ -1604,6 +1604,12 @@
   }
 }
 
+/* Button container for relative positioning */
+.buttonContainer {
+  position: relative;
+  width: 100%;
+}
+
 /* Approval button content styles */
 .approvalButtonContent {
   display: flex;
@@ -1624,6 +1630,7 @@
   bottom: 100%;
   left: 0;
   right: 0;
+  width: 100%;
   background: #1e2328;
   border: 1px solid #30363d;
   border-radius: 8px;
@@ -1631,5 +1638,19 @@
   z-index: 1000;
   overflow: hidden;
   margin-bottom: 8px;
+}
+
+.approvalOptionsOutside {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: #1e2328;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  overflow: hidden;
 }
 
