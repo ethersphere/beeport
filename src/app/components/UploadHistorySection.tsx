@@ -88,7 +88,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       const savedHistory = localStorage.getItem('uploadHistory');
       if (savedHistory) {
         const parsedHistory: UploadHistory = JSON.parse(savedHistory);
-        setHistory(parsedHistory[address] || []);
+        const userHistory = parsedHistory[address] || [];
+
+        // Deduplicate based on reference + stampId, keeping the most recent entry
+        const uniqueHistory = userHistory.reduce((acc: UploadRecord[], record) => {
+          const key = `${record.reference}_${record.stampId}`;
+          const existingIndex = acc.findIndex(r => `${r.reference}_${r.stampId}` === key);
+
+          if (existingIndex === -1) {
+            // Not found, add it
+            acc.push(record);
+          } else {
+            // Found, keep the one with the more recent timestamp
+            if (record.timestamp > acc[existingIndex].timestamp) {
+              acc[existingIndex] = record;
+            }
+          }
+
+          return acc;
+        }, []);
+
+        setHistory(uniqueHistory);
+
+        // Save deduplicated history back to localStorage if duplicates were found
+        if (uniqueHistory.length < userHistory.length) {
+          const allHistory: UploadHistory = parsedHistory;
+          allHistory[address] = uniqueHistory;
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+          console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
+        }
       }
     }
   }, [address]);
@@ -102,7 +130,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // expiryDate is a timestamp, we need to calculate remaining time in seconds
     const now = Date.now();
     const remainingMs = expiryDate - now;
-    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    const remainingSeconds = Math.floor(remainingMs / 1000);
     return formatExpiryTime(remainingSeconds);
   };
 
@@ -365,7 +393,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         const dataLines = lines.slice(1).filter(line => line.trim());
 
         const newRecords: UploadRecord[] = [];
-        const existingReferences = new Set(history.map(record => record.reference));
+        const existingKeys = new Set(
+          history.map(record => `${record.reference}_${record.stampId}`)
+        );
 
         dataLines.forEach(line => {
           // Parse CSV line (handle quoted fields)
@@ -385,9 +415,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               fullLink,
             ] = fields;
 
-            // Skip if reference already exists (prevent duplicates)
-            if (existingReferences.has(reference)) {
-              console.log(`Skipping duplicate reference: ${reference}`);
+            // Skip if reference + stampId combination already exists (prevent duplicates)
+            const key = `${reference}_${stampId}`;
+            if (existingKeys.has(key)) {
+              console.log(`Skipping duplicate: ${reference} with stamp ${stampId}`);
               return;
             }
 
@@ -446,8 +477,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
               newRecords.push(record);
 
-              // Add to existing references set to prevent duplicates within the same upload
-              existingReferences.add(reference);
+              // Add to existing keys set to prevent duplicates within the same upload
+              existingKeys.add(key);
             }
           }
         });
@@ -558,6 +589,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       saveFilename(index, reference, stampId);
     } else if (e.key === 'Escape') {
       cancelEditingFilename();
+    }
+  };
+
+  const deleteRecord = (reference: string, stampId: string) => {
+    if (!address) return;
+
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this upload from history? This action cannot be undone. Back it up if still possible.'
+    );
+
+    if (confirmed) {
+      // Remove from state
+      const updatedHistory = history.filter(
+        record => !(record.reference === reference && record.stampId === stampId)
+      );
+      setHistory(updatedHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        if (allHistory[address]) {
+          allHistory[address] = allHistory[address].filter(
+            (record: UploadRecord) =>
+              !(record.reference === reference && record.stampId === stampId)
+          );
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+        }
+      }
     }
   };
 
@@ -769,7 +829,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                             record.filename || ''
                           );
                         }}
-                        title="Click to rename"
+                        title="Click to rename locally"
                       >
                         {record.filename || 'Unnamed upload'}
                       </span>
@@ -795,20 +855,54 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     )}
                   </div>
                 </div>
-                <span className={styles.date}>{formatDate(record.timestamp)}</span>
-              </div>
-              <div className={styles.itemDetails}>
-                <div className={styles.referenceRow}>
-                  <span className={styles.label}>Reference:</span>
+                <div className={styles.dateContainer}>
+                  <span className={styles.date}>{formatDate(record.timestamp)}</span>
                   <a
                     href={`${BEE_GATEWAY_URL}${record.reference}/`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={styles.link}
+                    className={styles.openFileButton}
+                    title="Open file in new tab"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+              <div className={styles.itemDetails}>
+                <div className={styles.referenceRow}>
+                  <span className={styles.label}>Reference:</span>
+                  <span
+                    className={styles.stampId}
                     title={record.reference}
+                    onClick={() => {
+                      navigator.clipboard.writeText(record.reference);
+                      // Show temporary "Copied!" message
+                      const uniqueId = `ref-${record.reference}-${record.stampId}`;
+                      const element = document.querySelector(`[data-unique-id="${uniqueId}"]`);
+                      if (element) {
+                        element.setAttribute('data-copied', 'true');
+                        setTimeout(() => {
+                          element.setAttribute('data-copied', 'false');
+                        }, 2000);
+                      }
+                    }}
+                    data-unique-id={`ref-${record.reference}-${record.stampId}`}
+                    data-copied="false"
                   >
                     {formatReference(record.reference)}
-                  </a>
+                  </span>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
@@ -834,7 +928,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
+                  <span
+                    className={
+                      record.expiryDate < Date.now() ? styles.expiryExpired : styles.expiryDate
+                    }
+                  >
+                    {formatExpiryDays(record.expiryDate)}
+                  </span>
+                  {record.expiryDate < Date.now() && (
+                    <button
+                      className={styles.deleteButton}
+                      onClick={() => deleteRecord(record.reference, record.stampId)}
+                      title="Delete from history"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 {record.associatedDomains && record.associatedDomains.length > 0 && (
                   <div className={styles.associatedDomainsRow}>

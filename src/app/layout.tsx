@@ -16,19 +16,6 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <Script id="logrocket-analytics" strategy="afterInteractive">
-          {`
-            (function() {
-              var script = document.createElement('script');
-              script.src = 'https://cdn.lr-in.com/LogRocket.min.js';
-              script.async = true;
-              script.onload = function() {
-                window.LogRocket && window.LogRocket.init('bxvp76/beeport');
-              };
-              document.head.appendChild(script);
-            })();
-          `}
-        </Script>
         <Script id="matomo-analytics" strategy="afterInteractive">
           {`
             var _paq = window._paq = window._paq || [];

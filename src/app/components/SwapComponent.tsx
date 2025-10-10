@@ -150,6 +150,33 @@ const SwapComponent: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
+  // Approval options state
+  const [approvalType, setApprovalType] = useState<'exact' | 'infinite'>('exact');
+  const [showApprovalDropdown, setShowApprovalDropdown] = useState(false);
+  const [needsApproval, setNeedsApproval] = useState(false);
+  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
+  const approvalDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close approval dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        approvalDropdownRef.current &&
+        !approvalDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowApprovalDropdown(false);
+      }
+    };
+
+    if (showApprovalDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showApprovalDropdown]);
+
   const [isWalletLoading, setIsWalletLoading] = useState(true);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
   const [topUpBatchId, setTopUpBatchId] = useState<string | null>(null);
@@ -494,6 +521,160 @@ const SwapComponent: React.FC = () => {
     setNodeAddress(address);
   }, [beeApiUrl]);
 
+  // Check if BZZ approval is needed
+  const checkBzzApproval = useCallback(
+    async (amount: bigint): Promise<boolean> => {
+      if (!address || !publicClient) return true;
+
+      try {
+        const allowance = await publicClient.readContract({
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: parseAbi([
+            'function allowance(address owner, address spender) external view returns (uint256)',
+          ]),
+          functionName: 'allowance',
+          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
+        });
+
+        return BigInt(allowance.toString()) < amount;
+      } catch (error) {
+        console.error('Failed to check BZZ allowance:', error);
+        return true; // Default to needing approval if check fails
+      }
+    },
+    [address, publicClient]
+  );
+
+  // Handle BZZ approval
+  const handleBzzApproval = async () => {
+    if (!address || !publicClient || !walletClient || !currentPrice || !selectedDays) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setShowOverlay(true);
+      setStatusMessage({
+        step: 'Approval',
+        message: 'Approving BZZ tokens...',
+      });
+
+      // Calculate amount based on whether this is a top-up or new batch
+      let totalAmount: bigint;
+      if (isTopUp && originalStampInfo) {
+        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
+      } else {
+        const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+        const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+        totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
+      }
+
+      const MAX_UINT256 =
+        '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+      const approvalAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
+
+      const approveCallData = {
+        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+        abi: [
+          {
+            constant: false,
+            inputs: [
+              { name: '_spender', type: 'address' },
+              { name: '_value', type: 'uint256' },
+            ],
+            name: 'approve',
+            outputs: [{ name: 'success', type: 'bool' }],
+            type: 'function',
+          },
+        ],
+        functionName: 'approve',
+        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, approvalAmount],
+        account: address,
+      };
+
+      const approveTxHash = await walletClient.writeContract(approveCallData);
+
+      setStatusMessage({
+        step: 'Approval',
+        message: 'Waiting for approval confirmation...',
+      });
+
+      const approveReceipt = await publicClient.waitForTransactionReceipt({
+        hash: approveTxHash,
+      });
+
+      if (approveReceipt.status !== 'success') {
+        throw new Error('Approval failed');
+      }
+
+      console.log(
+        `✅ ${approvalType === 'infinite' ? 'Infinite' : 'Exact'} BZZ approval completed successfully`
+      );
+
+      // Update approval status
+      setNeedsApproval(false);
+      setIsLoading(false);
+      setShowOverlay(false);
+    } catch (error) {
+      console.error('Approval failed:', error);
+      setStatusMessage({
+        step: 'Error',
+        message: 'Approval failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        isError: true,
+      });
+      setIsLoading(false);
+      setShowOverlay(false);
+    }
+  };
+
+  // Check approval status when relevant parameters change
+  useEffect(() => {
+    const checkApprovalStatus = async () => {
+      if (
+        selectedChainId === ChainId.DAI &&
+        fromToken &&
+        getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+        currentPrice &&
+        selectedDays &&
+        address &&
+        publicClient
+      ) {
+        setIsCheckingApproval(true);
+
+        // Calculate total amount
+        let totalAmount: bigint;
+        if (isTopUp && originalStampInfo) {
+          totalAmount = calculateTopUpAmount(originalStampInfo.depth);
+        } else {
+          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+          const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+          totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
+        }
+
+        const needsApprovalResult = await checkBzzApproval(totalAmount);
+        setNeedsApproval(needsApprovalResult);
+        setIsCheckingApproval(false);
+      } else {
+        setNeedsApproval(false);
+        setIsCheckingApproval(false);
+      }
+    };
+
+    checkApprovalStatus();
+  }, [
+    selectedChainId,
+    fromToken,
+    currentPrice,
+    selectedDays,
+    address,
+    publicClient,
+    isTopUp,
+    originalStampInfo,
+    selectedDepth,
+    checkBzzApproval,
+  ]);
+
   useEffect(() => {
     const fetchAndSetNode = async () => {
       await fetchAndSetNodeWalletAddress();
@@ -663,84 +844,7 @@ const SwapComponent: React.FC = () => {
           }...${topUpBatchId?.slice(-4)}`
         : 'Buying storage...';
 
-      // Check current BZZ allowance to see if we need approval
-      setStatusMessage({
-        step: 'Checking',
-        message: 'Checking token allowance...',
-      });
-
-      let needsApproval = true;
-      try {
-        const allowance = await publicClient.readContract({
-          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-          abi: parseAbi([
-            'function allowance(address owner, address spender) external view returns (uint256)',
-          ]),
-          functionName: 'allowance',
-          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
-        });
-
-        const currentAllowance = BigInt(allowance.toString());
-        needsApproval = currentAllowance < totalAmount;
-
-        console.log('🔍 BZZ Allowance Check:', {
-          currentAllowance: currentAllowance.toString(),
-          requiredAmount: totalAmount.toString(),
-          needsApproval,
-        });
-      } catch (error) {
-        console.error('Failed to check BZZ allowance:', error);
-        // Default to needing approval if check fails
-        needsApproval = true;
-      }
-
-      if (needsApproval) {
-        setStatusMessage({
-          step: 'Approval',
-          message: 'Approving Token...',
-        });
-
-        // Use infinite approval (max uint256) to avoid future approval transactions
-        const MAX_UINT256 =
-          '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-
-        const approveCallData = {
-          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-          abi: [
-            {
-              constant: false,
-              inputs: [
-                { name: '_spender', type: 'address' },
-                { name: '_value', type: 'uint256' },
-              ],
-              name: 'approve',
-              outputs: [{ name: 'success', type: 'bool' }],
-              type: 'function',
-            },
-          ],
-          functionName: 'approve',
-          args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, BigInt(MAX_UINT256)],
-          account: address,
-        };
-
-        console.log('🔐 Sending infinite approval tx for BZZ tokens...');
-
-        const approveTxHash = await walletClient.writeContract(approveCallData);
-        console.log('Approval transaction hash:', approveTxHash);
-
-        // Wait for approval transaction to be mined
-        const approveReceipt = await publicClient.waitForTransactionReceipt({
-          hash: approveTxHash,
-        });
-
-        if (approveReceipt.status !== 'success') {
-          throw new Error('Approval failed');
-        }
-
-        console.log('✅ Infinite BZZ approval completed successfully');
-      } else {
-        console.log('✅ BZZ approval sufficient - skipping approval transaction');
-      }
+      // Approval is now handled separately, proceed directly to stamp creation
 
       // Prepare contract write parameters - different based on operation type
       let contractWriteParams;
@@ -1634,51 +1738,110 @@ const SwapComponent: React.FC = () => {
             </p>
           )}
 
-          <button
-            className={`${styles.button} ${
-              !isConnected
-                ? ''
-                : !selectedDays ||
-                    !fromToken ||
-                    liquidityError ||
-                    aggregatorDown ||
-                    insufficientFunds
-                  ? styles.buttonDisabled
-                  : ''
-            } ${isPriceEstimating ? styles.calculatingButton : ''}`}
-            disabled={
-              isConnected &&
-              (!selectedDays ||
-                !fromToken ||
-                liquidityError ||
-                aggregatorDown ||
-                insufficientFunds ||
-                isPriceEstimating)
-            }
-            onClick={!hasMounted || !isConnected ? handleGetStarted : handleSwap}
-          >
-            {isLoading ? (
-              <div>Loading...</div>
-            ) : !hasMounted || !isConnected ? (
-              'Get Started'
-            ) : !selectedDays ? (
-              'Choose Timespan'
-            ) : !fromToken ? (
-              'No Token Available'
-            ) : isPriceEstimating ? (
-              'Calculating Cost...'
-            ) : aggregatorDown ? (
-              'LIFI Router Error: Please try later'
-            ) : liquidityError ? (
-              "Cannot Swap - Can't Find Route"
-            ) : insufficientFunds ? (
-              'Insufficient Balance'
-            ) : isTopUp ? (
-              'Top Up Batch'
-            ) : (
-              'Execute Swap'
-            )}
-          </button>
+          <div className={styles.buttonContainer}>
+            <button
+              className={`${styles.button} ${
+                !isConnected
+                  ? ''
+                  : !selectedDays ||
+                      !fromToken ||
+                      liquidityError ||
+                      aggregatorDown ||
+                      insufficientFunds
+                    ? styles.buttonDisabled
+                    : ''
+              } ${isPriceEstimating ? styles.calculatingButton : ''}`}
+              disabled={
+                isConnected &&
+                (!selectedDays ||
+                  !fromToken ||
+                  liquidityError ||
+                  aggregatorDown ||
+                  insufficientFunds ||
+                  isPriceEstimating)
+              }
+              onClick={
+                !hasMounted || !isConnected
+                  ? handleGetStarted
+                  : selectedChainId === ChainId.DAI &&
+                      fromToken &&
+                      getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+                      needsApproval
+                    ? handleBzzApproval
+                    : handleSwap
+              }
+            >
+              {isLoading ? (
+                <div>Loading...</div>
+              ) : !hasMounted || !isConnected ? (
+                'Get Started'
+              ) : !selectedDays ? (
+                'Choose Timespan'
+              ) : !fromToken ? (
+                'No Token Available'
+              ) : isPriceEstimating ? (
+                'Calculating Cost...'
+              ) : aggregatorDown ? (
+                'LIFI Router Error: Please try later'
+              ) : liquidityError ? (
+                "Cannot Swap - Can't Find Route"
+              ) : insufficientFunds ? (
+                'Insufficient Balance'
+              ) : isTopUp ? (
+                'Top Up Batch'
+              ) : selectedChainId === ChainId.DAI &&
+                fromToken &&
+                getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+                needsApproval ? (
+                <div className={styles.approvalButtonContent}>
+                  <span>{approvalType === 'exact' ? 'Approve' : 'Approve Infinite'}</span>
+                  <span
+                    className={`${styles.approvalArrow} ${showApprovalDropdown ? styles.approvalArrowUp : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setShowApprovalDropdown(!showApprovalDropdown);
+                    }}
+                  >
+                    ▼
+                  </span>
+                </div>
+              ) : (
+                'Buy Storage'
+              )}
+            </button>
+
+            {/* Approval dropdown positioned relative to the main button */}
+            {selectedChainId === ChainId.DAI &&
+              fromToken &&
+              getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
+              needsApproval &&
+              showApprovalDropdown && (
+                <div className={styles.approvalOptionsOutside} ref={approvalDropdownRef}>
+                  <button
+                    className={`${styles.approvalOption} ${approvalType === 'exact' ? styles.approvalOptionActive : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setApprovalType('exact');
+                      setShowApprovalDropdown(false);
+                    }}
+                  >
+                    <span>Approve</span>
+                    <span className={styles.approvalDescription}>Exact amount needed</span>
+                  </button>
+                  <button
+                    className={`${styles.approvalOption} ${approvalType === 'infinite' ? styles.approvalOptionActive : ''}`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setApprovalType('infinite');
+                      setShowApprovalDropdown(false);
+                    }}
+                  >
+                    <span>Approve Infinite</span>
+                    <span className={styles.approvalDescription}>No future approvals needed</span>
+                  </button>
+                </div>
+              )}
+          </div>
 
           {executionResult && (
             <pre className={styles.resultBox}>{JSON.stringify(executionResult, null, 2)}</pre>
@@ -1765,9 +1928,9 @@ const SwapComponent: React.FC = () => {
                         : 'Upload File'}
                     </h3>
                     <div className={styles.uploadWarning}>
-                    Warning! Uploaded data cannot be deleted - it will only be removed from the
-                      network once the stamp has expired. Uploaded data exists publicly in the
-                      network - anyone who knows the reference can access it.
+                      Warning! Uploaded data cannot be deleted - it will be removed once the stamp
+                      has expired. Uploaded data exists publicly in the network - anyone who knows
+                      the reference can access it.
                     </div>
                     {isNewStampCreated && (
                       <div className={styles.uploadWarning}>
