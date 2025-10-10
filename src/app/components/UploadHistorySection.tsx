@@ -102,7 +102,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // expiryDate is a timestamp, we need to calculate remaining time in seconds
     const now = Date.now();
     const remainingMs = expiryDate - now;
-    const remainingSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+    const remainingSeconds = Math.floor(remainingMs / 1000);
     return formatExpiryTime(remainingSeconds);
   };
 
@@ -561,6 +561,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
+  const deleteRecord = (reference: string, stampId: string) => {
+    if (!address) return;
+
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this upload from history? This action cannot be undone. Back it up if still possible.'
+    );
+
+    if (confirmed) {
+      // Remove from state
+      const updatedHistory = history.filter(
+        record => !(record.reference === reference && record.stampId === stampId)
+      );
+      setHistory(updatedHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        if (allHistory[address]) {
+          allHistory[address] = allHistory[address].filter(
+            (record: UploadRecord) =>
+              !(record.reference === reference && record.stampId === stampId)
+          );
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+        }
+      }
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.titleContainer}>
@@ -834,7 +863,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
+                  <span
+                    className={
+                      record.expiryDate < Date.now() ? styles.expiryExpired : styles.expiryDate
+                    }
+                  >
+                    {formatExpiryDays(record.expiryDate)}
+                  </span>
+                  {record.expiryDate < Date.now() && (
+                    <button
+                      className={styles.deleteButton}
+                      onClick={() => deleteRecord(record.reference, record.stampId)}
+                      title="Delete from history"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 {record.associatedDomains && record.associatedDomains.length > 0 && (
                   <div className={styles.associatedDomainsRow}>

@@ -424,8 +424,28 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
 /**
  * Format TTL (Time To Live) in seconds to a human-readable string
  * Shows hours/minutes for < 1 day, otherwise shows days
+ * Handles expired stamps (negative values) by showing "Expired X time ago"
  */
 export const formatExpiryTime = (ttlSeconds: number): string => {
+  // Handle expired stamps (negative TTL)
+  if (ttlSeconds < 0) {
+    const expiredSeconds = Math.abs(ttlSeconds);
+    const days = Math.floor(expiredSeconds / 86400);
+    const hours = Math.floor((expiredSeconds % 86400) / 3600);
+    const minutes = Math.floor((expiredSeconds % 3600) / 60);
+
+    if (days >= 1) {
+      return `Expired ${days} day${days === 1 ? '' : 's'} ago`;
+    } else if (hours >= 1) {
+      return `Expired ${hours} hour${hours === 1 ? '' : 's'} ago`;
+    } else if (minutes >= 1) {
+      return `Expired ${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    } else {
+      return 'Expired less than 1 minute ago';
+    }
+  }
+
+  // Handle active stamps
   const days = Math.floor(ttlSeconds / 86400);
   const hours = Math.floor((ttlSeconds % 86400) / 3600);
   const minutes = Math.floor((ttlSeconds % 3600) / 60);
