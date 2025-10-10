@@ -10,7 +10,10 @@ const APP_VERSION = '1.1.4';
 
 export default function SwapPage() {
   useEffect(() => {
-    console.log(`%c🐝 Swarm Multichain Upload v${APP_VERSION}`, 'color: #ff7a00; font-weight: bold; font-size: 14px;');
+    console.log(
+      `%c🐝 Swarm Multichain Upload v${APP_VERSION}`,
+      'color: #ff7a00; font-weight: bold; font-size: 14px;'
+    );
   }, []);
 
   return (
