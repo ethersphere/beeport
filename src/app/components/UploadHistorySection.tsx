@@ -88,7 +88,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       const savedHistory = localStorage.getItem('uploadHistory');
       if (savedHistory) {
         const parsedHistory: UploadHistory = JSON.parse(savedHistory);
-        setHistory(parsedHistory[address] || []);
+        const userHistory = parsedHistory[address] || [];
+
+        // Deduplicate based on reference + stampId, keeping the most recent entry
+        const uniqueHistory = userHistory.reduce((acc: UploadRecord[], record) => {
+          const key = `${record.reference}_${record.stampId}`;
+          const existingIndex = acc.findIndex(r => `${r.reference}_${r.stampId}` === key);
+
+          if (existingIndex === -1) {
+            // Not found, add it
+            acc.push(record);
+          } else {
+            // Found, keep the one with the more recent timestamp
+            if (record.timestamp > acc[existingIndex].timestamp) {
+              acc[existingIndex] = record;
+            }
+          }
+
+          return acc;
+        }, []);
+
+        setHistory(uniqueHistory);
+
+        // Save deduplicated history back to localStorage if duplicates were found
+        if (uniqueHistory.length < userHistory.length) {
+          const allHistory: UploadHistory = parsedHistory;
+          allHistory[address] = uniqueHistory;
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+          console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
+        }
       }
     }
   }, [address]);
@@ -365,7 +393,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         const dataLines = lines.slice(1).filter(line => line.trim());
 
         const newRecords: UploadRecord[] = [];
-        const existingReferences = new Set(history.map(record => record.reference));
+        const existingKeys = new Set(
+          history.map(record => `${record.reference}_${record.stampId}`)
+        );
 
         dataLines.forEach(line => {
           // Parse CSV line (handle quoted fields)
@@ -385,9 +415,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               fullLink,
             ] = fields;
 
-            // Skip if reference already exists (prevent duplicates)
-            if (existingReferences.has(reference)) {
-              console.log(`Skipping duplicate reference: ${reference}`);
+            // Skip if reference + stampId combination already exists (prevent duplicates)
+            const key = `${reference}_${stampId}`;
+            if (existingKeys.has(key)) {
+              console.log(`Skipping duplicate: ${reference} with stamp ${stampId}`);
               return;
             }
 
@@ -446,8 +477,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
               newRecords.push(record);
 
-              // Add to existing references set to prevent duplicates within the same upload
-              existingReferences.add(reference);
+              // Add to existing keys set to prevent duplicates within the same upload
+              existingKeys.add(key);
             }
           }
         });
