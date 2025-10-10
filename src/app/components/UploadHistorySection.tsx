@@ -852,15 +852,27 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               <div className={styles.itemDetails}>
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
-                  <a
-                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.link}
+                  <span
+                    className={styles.stampId}
                     title={record.reference}
+                    onClick={() => {
+                      navigator.clipboard.writeText(record.reference);
+                      // Show temporary "Copied!" message
+                      const element = document.querySelector(
+                        `[data-reference="${record.reference}"]`
+                      );
+                      if (element) {
+                        element.setAttribute('data-copied', 'true');
+                        setTimeout(() => {
+                          element.setAttribute('data-copied', 'false');
+                        }, 2000);
+                      }
+                    }}
+                    data-reference={record.reference}
+                    data-copied="false"
                   >
                     {formatReference(record.reference)}
-                  </a>
+                  </span>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
