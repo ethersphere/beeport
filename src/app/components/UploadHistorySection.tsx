@@ -769,7 +769,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                             record.filename || ''
                           );
                         }}
-                        title="Click to rename"
+                        title="Click to rename locally"
                       >
                         {record.filename || 'Unnamed upload'}
                       </span>

@@ -157,7 +157,7 @@
   word-break: break-all;
   cursor: pointer;
   transition: color 0.2s ease;
-  padding: 8px 12px; /* Increased padding for better click area */
+  padding: 2px 0px 10px 4px;
   border-radius: 4px;
   flex: 1; /* Take available space */
   min-width: 0; /* Allow shrinking if needed */
@@ -169,7 +169,6 @@
 
 .filename:hover {
   color: #58a6ff;
-  background-color: rgba(88, 166, 255, 0.1);
 }
 
 .filenameRow {
