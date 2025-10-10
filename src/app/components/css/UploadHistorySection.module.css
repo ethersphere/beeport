@@ -211,6 +211,42 @@
   flex-wrap: nowrap; /* Prevent wrapping to avoid layout issues */
 }
 
+.openFileButton {
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.openFileButton:hover {
+  background-color: rgba(255, 122, 0, 0.1);
+  border-color: #ff7a00;
+  color: #ff7a00;
+}
+
+.openFileButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dateContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .filenameEdit {
   display: flex;
   align-items: center;
@@ -498,6 +534,10 @@
   
   .date {
     margin-left: 0;
+  }
+
+  .dateContainer {
+    align-items: flex-start;
   }
   
   .filename {
