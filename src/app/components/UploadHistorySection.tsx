@@ -827,7 +827,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <div className={styles.dateContainer}>
                   <span className={styles.date}>{formatDate(record.timestamp)}</span>
                   <a
-                    href={getReferenceUrl(record)}
+                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.openFileButton}
