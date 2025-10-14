@@ -98,10 +98,10 @@ const SwapComponent: React.FC = () => {
   React.useEffect(() => {
     console.log(`
     ╔════════════════════════════════════════════════════════════════╗
-    ║                           🐝 BEEPORT 🐝                        ║
-    ║                         Version: 1.1.3                        ║
+    ║                           🐝 BEEPORT 🐝                         ║
+    ║                         Version: 1.1.5                         ║
     ║                                                                ║
-    ║            Multichain Swarm Upload & Stamp Manager            ║
+    ║            Multichain Swarm Upload & Stamp Manager             ║
     ║              https://github.com/ethersphere/beeport            ║
     ╚════════════════════════════════════════════════════════════════╝
     `);

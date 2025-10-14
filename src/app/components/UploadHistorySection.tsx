@@ -1,12 +1,13 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
-import { BEE_GATEWAY_URL } from './constants';
+import { BEE_GATEWAY_URL, DEFAULT_BEE_API_URL } from './constants';
 import {
   formatExpiryTime,
   isExpiringSoon,
   formatDateEU,
   formatDateForCSV,
   parseDateFromCSV,
+  fetchStampInfo,
 } from './utils';
 import ENSIntegration from './ENSIntegration';
 
@@ -68,6 +69,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   const [selectedReference, setSelectedReference] = React.useState<string>('');
   const [editingFilename, setEditingFilename] = React.useState<string | null>(null);
   const [tempFilename, setTempFilename] = React.useState<string>('');
+  const [isMigrating, setIsMigrating] = React.useState(false);
+  const [migrationProgress, setMigrationProgress] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -81,6 +84,143 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       return reference || 'Invalid Reference';
     }
     return `${reference.slice(0, 6)}...${reference.slice(-4)}`;
+  };
+
+  /**
+   * Checks if an expiry date needs migration
+   * Returns true if the expiry date is in an old/invalid format
+   */
+  const needsExpiryMigration = (expiryDate: number): boolean => {
+    // Valid timestamp format: Unix timestamp in milliseconds
+    // Should be > 1000000000000 (after Sep 9, 2001) and < 32503680000000 (before year 3000)
+    if (!isNaN(expiryDate) && expiryDate > 1000000000000 && expiryDate < 32503680000000) {
+      return false; // Already in correct format
+    }
+    return true; // Needs migration
+  };
+
+  /**
+   * Auto-migrates old expiry dates by querying the Bee API
+   * This runs on every load and updates localStorage when complete
+   */
+  const migrateOldExpiryDates = async (records: UploadRecord[], userAddress: string) => {
+    // Find records that need migration
+    const recordsToMigrate = records.filter(record => needsExpiryMigration(record.expiryDate));
+
+    if (recordsToMigrate.length === 0) {
+      console.log('✅ All expiry dates are up to date');
+      return;
+    }
+
+    console.log(`🔄 Migrating ${recordsToMigrate.length} old expiry dates...`);
+    setIsMigrating(true);
+    setMigrationProgress(`Migrating expiry dates (0/${recordsToMigrate.length})...`);
+
+    let migratedCount = 0;
+    const updatedRecords = [...records];
+
+    // Process records one at a time to avoid overwhelming the API
+    for (let i = 0; i < recordsToMigrate.length; i++) {
+      const record = recordsToMigrate[i];
+
+      try {
+        setMigrationProgress(`Migrating expiry dates (${i + 1}/${recordsToMigrate.length})...`);
+
+        // Query the Bee API for stamp info
+        const stampInfo = await fetchStampInfo(record.stampId, DEFAULT_BEE_API_URL);
+
+        if (stampInfo && stampInfo.batchTTL) {
+          // Calculate correct expiry date from current time + TTL
+          const correctExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
+
+          // Find and update the record in our array
+          const recordIndex = updatedRecords.findIndex(
+            r => r.reference === record.reference && r.stampId === record.stampId
+          );
+
+          if (recordIndex !== -1) {
+            updatedRecords[recordIndex] = {
+              ...updatedRecords[recordIndex],
+              expiryDate: correctExpiryDate,
+            };
+            migratedCount++;
+
+            console.log(
+              `✅ Migrated ${record.filename || 'unnamed'}: ${formatStampId(record.stampId)} -> expires ${formatDateEU(correctExpiryDate)}`
+            );
+          }
+        } else {
+          // API returned no data - set default expiry in the past (13 days ago)
+          const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+          // Find and update the record in our array
+          const recordIndex = updatedRecords.findIndex(
+            r => r.reference === record.reference && r.stampId === record.stampId
+          );
+
+          if (recordIndex !== -1) {
+            updatedRecords[recordIndex] = {
+              ...updatedRecords[recordIndex],
+              expiryDate: defaultExpiryDate,
+            };
+            migratedCount++;
+
+            console.log(
+              `⚠️ No API data for ${formatStampId(record.stampId)} - set default expiry (13 days ago) for ${record.filename || 'unnamed'}`
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error migrating expiry for ${formatStampId(record.stampId)}:`, error);
+
+        // On error, set default expiry in the past (13 days ago)
+        const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+        const recordIndex = updatedRecords.findIndex(
+          r => r.reference === record.reference && r.stampId === record.stampId
+        );
+
+        if (recordIndex !== -1) {
+          updatedRecords[recordIndex] = {
+            ...updatedRecords[recordIndex],
+            expiryDate: defaultExpiryDate,
+          };
+          migratedCount++;
+
+          console.log(
+            `⚠️ Error migrating ${record.filename || 'unnamed'} - set default expiry (13 days ago)`
+          );
+        }
+      }
+
+      // Add a small delay between API calls to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // If any records were migrated, update localStorage and state
+    if (migratedCount > 0) {
+      console.log(`✅ Successfully migrated ${migratedCount} expiry dates`);
+      setMigrationProgress(`Successfully migrated ${migratedCount} expiry dates!`);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[userAddress] = updatedRecords;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+
+      // Update component state to reflect the changes
+      setHistory(updatedRecords);
+
+      // Clear the migration message after a few seconds
+      setTimeout(() => {
+        setIsMigrating(false);
+        setMigrationProgress('');
+      }, 3000);
+    } else {
+      setIsMigrating(false);
+      setMigrationProgress('');
+    }
   };
 
   React.useEffect(() => {
@@ -117,6 +257,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
           console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
         }
+
+        // Auto-migrate old expiry dates
+        migrateOldExpiryDates(uniqueHistory, address);
       }
     }
   }, [address]);
@@ -379,12 +522,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     document.body.removeChild(link);
   };
 
-  const uploadCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !address) return;
 
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const csvContent = e.target?.result as string;
         const lines = csvContent.split('\n');
@@ -396,6 +539,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         const existingKeys = new Set(
           history.map(record => `${record.reference}_${record.stampId}`)
         );
+
+        // Track stamps that need API lookup and their associated records
+        const stampToRecordIndices: Map<string, number[]> = new Map();
 
         dataLines.forEach(line => {
           // Parse CSV line (handle quoted fields)
@@ -422,41 +568,37 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               return;
             }
 
-            // Parse date and expiry
+            // Parse date
             const timestamp = parseDateFromCSV(dateCreated);
 
-            // Parse expiry field - can be timestamp, TTL seconds, or legacy "X days" format
+            // Check if expiry is in valid format
             let expiryDate: number;
             const expiryTimestamp = parseInt(expiryField);
+            const hasValidExpiry =
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 1000000000000 && // Must be after Sep 9, 2001
+              expiryTimestamp < 32503680000000; // Must be before year 3000
 
-            if (
-              !isNaN(expiryTimestamp) &&
-              expiryTimestamp > 1000000000000 && // Must be after Sep 9, 2001 (reasonable timestamp)
-              expiryTimestamp < 32503680000000 // Must be before year 3000
-            ) {
-              // Format: Unix timestamp in milliseconds (current format)
+            if (hasValidExpiry) {
+              // Valid timestamp - use it directly
               expiryDate = expiryTimestamp;
-            } else if (
-              !isNaN(expiryTimestamp) &&
-              expiryTimestamp > 0 &&
-              expiryTimestamp < 1000000000
-            ) {
-              // Format: TTL in seconds (old bug where seconds were stored instead of timestamps)
-              // Convert to absolute timestamp: creation time + TTL seconds
-              expiryDate = timestamp + expiryTimestamp * 1000;
-              console.log(
-                `Migrating legacy TTL: ${expiryTimestamp}s -> ${new Date(expiryDate).toISOString()}`
-              );
             } else {
-              // Format: "X days" string (very old format)
-              const expiryDaysNum = parseInt(expiryField.replace(/[^\d]/g, ''));
-              expiryDate = timestamp + expiryDaysNum * 24 * 60 * 60 * 1000;
+              // Invalid format - mark with placeholder, will query API later
+              expiryDate = 0; // Placeholder value
+
+              // Track this stamp for API lookup
+              const recordIndex = newRecords.length;
+              if (!stampToRecordIndices.has(stampId)) {
+                stampToRecordIndices.set(stampId, []);
+              }
+              stampToRecordIndices.get(stampId)!.push(recordIndex);
+
               console.log(
-                `Migrating legacy days: ${expiryDaysNum} days -> ${new Date(expiryDate).toISOString()}`
+                `⚠️ Invalid expiry format for ${formatStampId(stampId)} - will query API`
               );
             }
 
-            if (!isNaN(timestamp) && !isNaN(expiryDate)) {
+            if (!isNaN(timestamp)) {
               const record: UploadRecord = {
                 reference,
                 stampId,
@@ -483,26 +625,111 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           }
         });
 
-        if (newRecords.length > 0) {
-          // Merge with existing history
-          const updatedHistory = [...newRecords, ...history];
-          setHistory(updatedHistory);
-
-          // Save to localStorage
-          const savedHistory = localStorage.getItem('uploadHistory');
-          const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
-          allHistory[address] = updatedHistory;
-          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
-
-          alert(
-            `Successfully imported ${newRecords.length} new records. Skipped duplicates if any.`
-          );
-        } else {
+        if (newRecords.length === 0) {
           alert('No new records found or all records were duplicates.');
+          return;
+        }
+
+        // Query API for stamps with invalid expiry dates
+        if (stampToRecordIndices.size > 0) {
+          console.log(
+            `🔄 Querying API for ${stampToRecordIndices.size} unique stamps with invalid expiry dates...`
+          );
+          setIsMigrating(true);
+          setMigrationProgress(`Fetching expiry dates for ${stampToRecordIndices.size} stamps...`);
+
+          let queriedCount = 0;
+          const uniqueStamps = Array.from(stampToRecordIndices.keys());
+
+          for (const stampId of uniqueStamps) {
+            try {
+              queriedCount++;
+              setMigrationProgress(
+                `Fetching expiry dates (${queriedCount}/${uniqueStamps.length})...`
+              );
+
+              const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
+
+              if (stampInfo && stampInfo.batchTTL) {
+                // Calculate correct expiry date
+                const correctExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
+
+                // Apply to all records with this stamp
+                const recordIndices = stampToRecordIndices.get(stampId)!;
+                recordIndices.forEach(index => {
+                  newRecords[index].expiryDate = correctExpiryDate;
+                });
+
+                console.log(
+                  `✅ Fetched expiry for ${formatStampId(stampId)}: ${formatDateEU(correctExpiryDate)} (applied to ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`
+                );
+              } else {
+                // API returned no data - set default expiry in the past (13 days ago)
+                const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+                // Apply to all records with this stamp
+                const recordIndices = stampToRecordIndices.get(stampId)!;
+                recordIndices.forEach(index => {
+                  newRecords[index].expiryDate = defaultExpiryDate;
+                });
+
+                console.log(
+                  `⚠️ No API data for ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
+                );
+              }
+
+              // Rate limiting
+              await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+              console.error(`❌ Error fetching expiry for ${formatStampId(stampId)}:`, error);
+
+              // On error, set default expiry in the past (13 days ago)
+              const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+              const recordIndices = stampToRecordIndices.get(stampId)!;
+              recordIndices.forEach(index => {
+                newRecords[index].expiryDate = defaultExpiryDate;
+              });
+
+              console.log(
+                `⚠️ Error fetching ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
+              );
+            }
+          }
+
+          setMigrationProgress(`Successfully fetched ${queriedCount} stamp expiry dates!`);
+          setTimeout(() => {
+            setIsMigrating(false);
+            setMigrationProgress('');
+          }, 2000);
+        }
+
+        // Merge with existing history
+        const updatedHistory = [...newRecords, ...history];
+        setHistory(updatedHistory);
+
+        // Save to localStorage
+        const savedHistory = localStorage.getItem('uploadHistory');
+        const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
+        allHistory[address] = updatedHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+
+        alert(
+          `Successfully imported ${newRecords.length} new records. ${stampToRecordIndices.size > 0 ? `Fetched expiry dates for ${stampToRecordIndices.size} unique stamps.` : ''}`
+        );
+
+        // Auto-migrate any remaining records with invalid expiry dates (e.g., if API failed)
+        const stillNeedMigration = updatedHistory.filter(r => needsExpiryMigration(r.expiryDate));
+        if (stillNeedMigration.length > 0) {
+          console.log(
+            `🔄 ${stillNeedMigration.length} records still need migration - running auto-migration...`
+          );
+          migrateOldExpiryDates(updatedHistory, address);
         }
       } catch (error) {
         console.error('Error parsing CSV:', error);
         alert('Error parsing CSV file. Please check the format.');
+        setIsMigrating(false);
+        setMigrationProgress('');
       }
     };
 
@@ -710,6 +937,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         </div>
       </div>
 
+      {/* Migration progress indicator */}
+      {isMigrating && (
+        <div
+          style={{
+            padding: '10px 15px',
+            marginBottom: '15px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px',
+            color: '#856404',
+            fontSize: '14px',
+            textAlign: 'center',
+          }}
+        >
+          🔄 {migrationProgress}
+        </div>
+      )}
+
       {/* Filter buttons */}
       {history.length > 0 && (
         <div className={styles.filterContainer}>
@@ -912,7 +1157,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     onClick={() => {
                       navigator.clipboard.writeText(record.stampId);
                       // Show temporary "Copied!" message
-                      const element = document.querySelector(`[data-stamp-id="${record.stampId}"]`);
+                      const element = document.querySelector(
+                        `[data-stamp-id="${index}_${record.stampId}"]`
+                      );
                       if (element) {
                         element.setAttribute('data-copied', 'true');
                         setTimeout(() => {
@@ -920,7 +1167,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         }, 2000);
                       }
                     }}
-                    data-stamp-id={record.stampId}
+                    data-stamp-id={`${index}_${record.stampId}`}
                     data-copied="false"
                   >
                     {formatStampId(record.stampId)}
