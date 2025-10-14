@@ -101,7 +101,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
   /**
    * Auto-migrates old expiry dates by querying the Bee API
-   * This runs in the background and updates localStorage when complete
+   * This runs on every load and updates localStorage when complete
    */
   const migrateOldExpiryDates = async (records: UploadRecord[], userAddress: string) => {
     // Find records that need migration
@@ -109,24 +109,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
     if (recordsToMigrate.length === 0) {
       console.log('✅ All expiry dates are up to date');
-
-      // Mark migration as complete for this address
-      const migrationKey = `beeport_expiry_migrated_${userAddress}`;
-      localStorage.setItem(migrationKey, Date.now().toString());
       return;
-    }
-
-    // Check if we recently migrated for this address (within last hour)
-    const migrationKey = `beeport_expiry_migrated_${userAddress}`;
-    const lastMigration = localStorage.getItem(migrationKey);
-    if (lastMigration) {
-      const timeSinceLastMigration = Date.now() - parseInt(lastMigration);
-      const oneHour = 60 * 60 * 1000;
-
-      if (timeSinceLastMigration < oneHour) {
-        console.log('⏭️ Skipping migration - already ran within the last hour');
-        return;
-      }
     }
 
     console.log(`🔄 Migrating ${recordsToMigrate.length} old expiry dates...`);
@@ -167,12 +150,46 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             );
           }
         } else {
-          console.warn(
-            `⚠️ Could not fetch stamp info for ${formatStampId(record.stampId)} - skipping migration`
+          // API returned no data - set default expiry in the past (13 days ago)
+          const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+          // Find and update the record in our array
+          const recordIndex = updatedRecords.findIndex(
+            r => r.reference === record.reference && r.stampId === record.stampId
           );
+
+          if (recordIndex !== -1) {
+            updatedRecords[recordIndex] = {
+              ...updatedRecords[recordIndex],
+              expiryDate: defaultExpiryDate,
+            };
+            migratedCount++;
+
+            console.log(
+              `⚠️ No API data for ${formatStampId(record.stampId)} - set default expiry (13 days ago) for ${record.filename || 'unnamed'}`
+            );
+          }
         }
       } catch (error) {
         console.error(`❌ Error migrating expiry for ${formatStampId(record.stampId)}:`, error);
+
+        // On error, set default expiry in the past (13 days ago)
+        const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+        const recordIndex = updatedRecords.findIndex(
+          r => r.reference === record.reference && r.stampId === record.stampId
+        );
+
+        if (recordIndex !== -1) {
+          updatedRecords[recordIndex] = {
+            ...updatedRecords[recordIndex],
+            expiryDate: defaultExpiryDate,
+          };
+          migratedCount++;
+
+          console.log(
+            `⚠️ Error migrating ${record.filename || 'unnamed'} - set default expiry (13 days ago)`
+          );
+        }
       }
 
       // Add a small delay between API calls to avoid rate limiting
@@ -195,20 +212,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       // Update component state to reflect the changes
       setHistory(updatedRecords);
 
-      // Mark migration as complete
-      const migrationKey = `beeport_expiry_migrated_${userAddress}`;
-      localStorage.setItem(migrationKey, Date.now().toString());
-
       // Clear the migration message after a few seconds
       setTimeout(() => {
         setIsMigrating(false);
         setMigrationProgress('');
       }, 3000);
     } else {
-      // Even if nothing was migrated, mark as attempted
-      const migrationKey = `beeport_expiry_migrated_${userAddress}`;
-      localStorage.setItem(migrationKey, Date.now().toString());
-
       setIsMigrating(false);
       setMigrationProgress('');
     }
@@ -655,17 +664,35 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   `✅ Fetched expiry for ${formatStampId(stampId)}: ${formatDateEU(correctExpiryDate)} (applied to ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`
                 );
               } else {
-                console.warn(
-                  `⚠️ Could not fetch stamp info for ${formatStampId(stampId)} - using fallback`
+                // API returned no data - set default expiry in the past (13 days ago)
+                const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+                // Apply to all records with this stamp
+                const recordIndices = stampToRecordIndices.get(stampId)!;
+                recordIndices.forEach(index => {
+                  newRecords[index].expiryDate = defaultExpiryDate;
+                });
+
+                console.log(
+                  `⚠️ No API data for ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
                 );
-                // Keep the placeholder value (0) which will trigger migration later
               }
 
               // Rate limiting
               await new Promise(resolve => setTimeout(resolve, 200));
             } catch (error) {
               console.error(`❌ Error fetching expiry for ${formatStampId(stampId)}:`, error);
-              // Keep the placeholder value (0) which will trigger migration later
+
+              // On error, set default expiry in the past (13 days ago)
+              const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+              const recordIndices = stampToRecordIndices.get(stampId)!;
+              recordIndices.forEach(index => {
+                newRecords[index].expiryDate = defaultExpiryDate;
+              });
+
+              console.log(
+                `⚠️ Error fetching ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
+              );
             }
           }
 
