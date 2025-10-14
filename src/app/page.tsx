@@ -4,18 +4,8 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import SwapComponent from './components/SwapComponent';
 import styles from './page.module.css';
 import BottomBar from './components/BottomBar';
-import { useEffect } from 'react';
-
-const APP_VERSION = '1.1.4';
 
 export default function SwapPage() {
-  useEffect(() => {
-    console.log(
-      `%c🐝 Swarm Multichain Upload v${APP_VERSION}`,
-      'color: #ff7a00; font-weight: bold; font-size: 14px;'
-    );
-  }, []);
-
   return (
     <div className={styles.pageContainer}>
       <div className={styles.videoContainer}>
