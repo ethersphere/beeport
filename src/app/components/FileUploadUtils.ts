@@ -57,6 +57,7 @@ export interface FileUploadParams {
   serveUncompressed: boolean;
   isTarFile: boolean;
   isWebpageUpload: boolean;
+  redundancyLevel?: number;
   isFolderUpload?: boolean;
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
@@ -171,6 +172,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     serveUncompressed,
     isTarFile,
     isWebpageUpload,
+    redundancyLevel = 0,
     isFolderUpload = false,
     setUploadProgress,
     setStatusMessage,
@@ -415,6 +417,11 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
       'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
       'swarm-collection': serveUncompressed && (isTarFile || isArchive) ? 'true' : 'false',
     };
+
+    // Add erasure coding redundancy level if specified
+    if (redundancyLevel > 0) {
+      baseHeaders['swarm-redundancy-level'] = redundancyLevel.toString();
+    }
 
     if (!isLocalhost) {
       baseHeaders['x-upload-signed-message'] = signedMessage;
@@ -742,6 +749,9 @@ export const handleMultiFileUpload = async (
         baseHeaders['Swarm-Index-Document'] = 'index.html';
         baseHeaders['Swarm-Error-Document'] = 'error.html';
       }
+
+      // Add erasure coding redundancy level if specified (for multi-file uploads, use level 0 by default)
+      // Note: Multi-file uploads don't currently support redundancy level selection
 
       if (!isLocalhost) {
         // For multi-file uploads, add session-related headers
