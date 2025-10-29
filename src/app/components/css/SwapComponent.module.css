@@ -1,7 +1,7 @@
 .container {
   max-width: 500px;
   margin: 0 auto;
-  margin-top: 50px; /* Add 50px top margin for non-mobile screens */
+  margin-top: 35px; /* Add 35px top margin for non-mobile screens */
   padding: 25px;
   background-color: #0f131ac7;
   border-radius: 12px;
@@ -245,6 +245,16 @@
   border: 1px solid rgba(229, 83, 75, 0.3);
   border-radius: 8px;
   color: #ff5a52;
+  font-size: 14px;
+}
+
+.warningMessage {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: rgba(255, 122, 0, 0.1);
+  border: 1px solid rgba(255, 122, 0, 0.3);
+  border-radius: 8px;
+  color: #ff7a00;
   font-size: 14px;
 }
 
@@ -1222,6 +1232,18 @@
   font-weight: 500;
 }
 
+.updateDelayNotice {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #0d1117;
+  border: 1px solid #ff7a00;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8b949e;
+  text-align: center;
+  line-height: 1.4;
+}
+
 .utilizationBarContainer {
   height: 6px;
   width: 100%;
@@ -1487,5 +1509,187 @@
     width: 100%;
     min-width: auto;
   }
+}
+
+.expiryWarning {
+  color: #f85149 !important;
+  font-weight: 600;
+  background-color: rgba(248, 81, 73, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+/* Approval Dropdown Styles */
+.approvalContainer {
+  margin: 15px 0;
+  position: relative;
+}
+
+.approvalDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.approvalButton {
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.approvalButton:hover {
+  background: linear-gradient(135deg, #357abd 0%, #2a5f8f 100%);
+  transform: translateY(-1px);
+}
+
+.approvalButtonActive {
+  background: linear-gradient(135deg, #357abd 0%, #2a5f8f 100%);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+}
+
+.approvalArrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.approvalArrowUp {
+  transform: rotate(180deg);
+}
+
+.approvalOptions {
+  position: absolute;
+  top: -120px; /* Show above the button */
+  left: 0;
+  right: 0;
+  background: #1e2328;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.approvalOption {
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #30363d;
+}
+
+.approvalOption:last-child {
+  border-bottom: none;
+}
+
+.approvalOption:hover {
+  background-color: rgba(74, 144, 226, 0.1);
+}
+
+.approvalOptionActive {
+  background-color: rgba(74, 144, 226, 0.2);
+  border-left: 3px solid #4a90e2;
+}
+
+.approvalOption span:first-child {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.approvalDescription {
+  font-size: 12px;
+  color: #8b949e;
+  font-weight: 400;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  .approvalContainer {
+    margin: 12px 0;
+  }
+  
+  .approvalButton {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  
+  .approvalOption {
+    padding: 10px 14px;
+  }
+  
+  .approvalOption span:first-child {
+    font-size: 13px;
+  }
+  
+  .approvalDescription {
+    font-size: 11px;
+  }
+}
+
+/* Button container for relative positioning */
+.buttonContainer {
+  position: relative;
+  width: 100%;
+}
+
+/* Approval button content styles */
+.approvalButtonContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  position: relative;
+}
+
+.approvalButtonContent span:first-child {
+  flex: 1;
+  text-align: center;
+  margin-right: 20px; /* Add space for the arrow */
+}
+
+.approvalOptionsInButton {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: #1e2328;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.approvalOptionsOutside {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: #1e2328;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  overflow: hidden;
 }
 

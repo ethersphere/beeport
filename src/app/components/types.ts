@@ -7,6 +7,7 @@ export type ExecutionStatus = {
   isSuccess?: boolean;
   reference?: string;
   filename?: string;
+  warning?: string;
 };
 
 export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';
@@ -121,6 +122,7 @@ export interface StampInfo {
   usedSize?: string;
   remainingSize?: string;
   utilizationPercent?: number;
+  createdDate?: string;
 }
 
 export interface IncludedStep {

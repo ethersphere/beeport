@@ -2,7 +2,6 @@ import '@rainbow-me/rainbowkit/styles.css';
 import { Providers } from './providers';
 import './globals.css';
 import Script from 'next/script';
-import { TrackJSAgent } from 'trackjs-nextjs';
 
 export const metadata = {
   title: 'Beeport',
@@ -17,11 +16,6 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <TrackJSAgent
-          config={{
-            token: '2718ca1ab72d4ff38899696b48210d39',
-          }}
-        />
         <Script id="matomo-analytics" strategy="afterInteractive">
           {`
             var _paq = window._paq = window._paq || [];
@@ -37,13 +31,25 @@ function RootLayout({ children }: { children: React.ReactNode }) {
             })();
           `}
         </Script>
+        <meta property="og:title" content="Swarm Beeport" />
+        <meta
+          property="og:description"
+          content="Beeport is the web2 rails for Swarm making it quick and simple to upload and share files, websites, and more, without running a node."
+        />
+        <meta property="og:image" content="https://www.ethswarm.org/uploads/beeportOG.png" />
+        <meta property="og:url" content="https://beeport.ethswarm.org/" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:site" content="@ethswarm" />
+        <meta name="twitter:title" content="Swarm Beeport" />
+        <meta
+          name="twitter:description"
+          content="Beeport is the web2 rails for Swarm making it quick and simple to upload and share files, websites, and more, without running a node."
+        />
+        <meta name="twitter:image" content="https://www.ethswarm.org/uploads/beeportOG.png" />
+        <meta name="twitter:url" content="https://beeport.ethswarm.org/" />
       </head>
       <body className="swarm-theme">
         <div className="main-container">
-          <video autoPlay muted playsInline className="background-video">
-            <source src="/doors_v3.mp4" type="video/mp4" />
-          </video>
-
           <main className="content">
             <Providers>{children}</Providers>
           </main>

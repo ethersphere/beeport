@@ -420,3 +420,141 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
     return null;
   }
 };
+
+/**
+ * Format TTL (Time To Live) in seconds to a human-readable string
+ * Shows hours/minutes for < 1 day, otherwise shows days
+ * Handles expired stamps (negative values) by showing "Expired X time ago"
+ */
+export const formatExpiryTime = (ttlSeconds: number): string => {
+  // Handle expired stamps (negative TTL)
+  if (ttlSeconds < 0) {
+    const expiredSeconds = Math.abs(ttlSeconds);
+    const days = Math.floor(expiredSeconds / 86400);
+    const hours = Math.floor((expiredSeconds % 86400) / 3600);
+    const minutes = Math.floor((expiredSeconds % 3600) / 60);
+
+    if (days >= 1) {
+      return `Expired ${days} day${days === 1 ? '' : 's'} ago`;
+    } else if (hours >= 1) {
+      return `Expired ${hours} hour${hours === 1 ? '' : 's'} ago`;
+    } else if (minutes >= 1) {
+      return `Expired ${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    } else {
+      return 'Expired less than 1 minute ago';
+    }
+  }
+
+  // Handle active stamps
+  const days = Math.floor(ttlSeconds / 86400);
+  const hours = Math.floor((ttlSeconds % 86400) / 3600);
+  const minutes = Math.floor((ttlSeconds % 3600) / 60);
+
+  if (days >= 1) {
+    return `${days} day${days === 1 ? '' : 's'}`;
+  } else if (hours >= 1) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  } else if (minutes >= 1) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  } else {
+    return 'Less than 1 minute';
+  }
+};
+
+/**
+ * Check if a stamp is expiring soon (≤ 1 day)
+ */
+export const isExpiringSoon = (ttlSeconds: number): boolean => {
+  return ttlSeconds <= 86400; // 1 day in seconds
+};
+
+/**
+ * Check if a stamp is in warning period (≤ 3 days but > 1 day)
+ */
+export const isExpiryWarning = (ttlSeconds: number): boolean => {
+  return ttlSeconds <= 259200 && ttlSeconds > 86400; // 3 days but more than 1 day
+};
+
+/**
+ * Calculate the real stamp usage percentage
+ * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
+ * @param depth Stamp depth from Bee API
+ * @param bucketDepth Bucket depth (constant 16)
+ * @returns Real used capacity percentage (0-100)
+ */
+export function getStampUsage(
+  utilization: number,
+  depth: number,
+  bucketDepth: number = 16
+): number {
+  return (utilization / Math.pow(2, depth - bucketDepth)) * 100;
+}
+
+/**
+ * Format date in EU format (DD/MM/YYYY)
+ * @param date Date object or timestamp
+ * @returns Formatted date string in EU format
+ */
+export const formatDateEU = (date: Date | number): string => {
+  const dateObj = typeof date === 'number' ? new Date(date) : date;
+  return dateObj.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+/**
+ * Format date for CSV export (Unix timestamp for reliable parsing)
+ * @param date Date object or timestamp
+ * @returns Unix timestamp as string
+ */
+export const formatDateForCSV = (date: Date | number): string => {
+  const timestamp = typeof date === 'number' ? date : date.getTime();
+  return timestamp.toString();
+};
+
+/**
+ * Parse date from CSV import (handles Unix timestamps and legacy date formats)
+ * @param dateString Date string to parse (Unix timestamp or date string)
+ * @returns Timestamp in milliseconds or NaN if invalid
+ */
+export const parseDateFromCSV = (dateString: string): number => {
+  // First try parsing as Unix timestamp
+  const timestamp = parseInt(dateString);
+  if (!isNaN(timestamp) && timestamp > 0) {
+    // Check if it's a reasonable timestamp (after year 1970 and before year 3000)
+    if (timestamp > 0 && timestamp < 32503680000000) {
+      return timestamp;
+    }
+  }
+
+  // Legacy support: try parsing as ISO format (YYYY-MM-DD)
+  let parsedDate = new Date(dateString);
+  if (!isNaN(parsedDate.getTime())) {
+    return parsedDate.getTime();
+  }
+
+  // Legacy support: try parsing as EU format (DD/MM/YYYY)
+  const euFormatMatch = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (euFormatMatch) {
+    const [, day, month, year] = euFormatMatch;
+    // Create date in ISO format for reliable parsing
+    parsedDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.getTime();
+    }
+  }
+
+  // If all else fails, try the browser's default parsing
+  parsedDate = new Date(dateString);
+  return parsedDate.getTime(); // Will be NaN if invalid
+};
+
+/**
+ * Format hash for display (shows first 6 and last 6 characters)
+ */
+export const formatHash = (hash: string): string => {
+  if (hash.length <= 12) return hash;
+  return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
+};

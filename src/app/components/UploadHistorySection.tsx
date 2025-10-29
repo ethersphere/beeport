@@ -1,6 +1,14 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
-import { BEE_GATEWAY_URL } from './constants';
+import { BEE_GATEWAY_URL, DEFAULT_BEE_API_URL } from './constants';
+import {
+  formatExpiryTime,
+  isExpiringSoon,
+  formatDateEU,
+  formatDateForCSV,
+  parseDateFromCSV,
+  fetchStampInfo,
+} from './utils';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -24,7 +32,15 @@ interface UploadHistory {
   [address: string]: UploadRecord[];
 }
 
-type FileType = 'all' | 'images' | 'videos' | 'audio' | 'archives' | 'websites';
+type FileType =
+  | 'all'
+  | 'images'
+  | 'videos'
+  | 'audio'
+  | 'archives'
+  | 'websites'
+  | 'documents'
+  | 'other';
 
 /**
  * Formats file size in bytes to human-readable format
@@ -53,6 +69,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   const [selectedReference, setSelectedReference] = React.useState<string>('');
   const [editingFilename, setEditingFilename] = React.useState<string | null>(null);
   const [tempFilename, setTempFilename] = React.useState<string>('');
+  const [isMigrating, setIsMigrating] = React.useState(false);
+  const [migrationProgress, setMigrationProgress] = React.useState<string>('');
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
@@ -68,28 +86,200 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     return `${reference.slice(0, 6)}...${reference.slice(-4)}`;
   };
 
+  /**
+   * Checks if an expiry date needs migration
+   * Returns true if the expiry date is in an old/invalid format
+   */
+  const needsExpiryMigration = (expiryDate: number): boolean => {
+    // Valid timestamp format: Unix timestamp in milliseconds
+    // Should be > 1000000000000 (after Sep 9, 2001) and < 32503680000000 (before year 3000)
+    if (!isNaN(expiryDate) && expiryDate > 1000000000000 && expiryDate < 32503680000000) {
+      return false; // Already in correct format
+    }
+    return true; // Needs migration
+  };
+
+  /**
+   * Auto-migrates old expiry dates by querying the Bee API
+   * This runs on every load and updates localStorage when complete
+   */
+  const migrateOldExpiryDates = async (records: UploadRecord[], userAddress: string) => {
+    // Find records that need migration
+    const recordsToMigrate = records.filter(record => needsExpiryMigration(record.expiryDate));
+
+    if (recordsToMigrate.length === 0) {
+      console.log('✅ All expiry dates are up to date');
+      return;
+    }
+
+    console.log(`🔄 Migrating ${recordsToMigrate.length} old expiry dates...`);
+    setIsMigrating(true);
+    setMigrationProgress(`Migrating expiry dates (0/${recordsToMigrate.length})...`);
+
+    let migratedCount = 0;
+    const updatedRecords = [...records];
+
+    // Process records one at a time to avoid overwhelming the API
+    for (let i = 0; i < recordsToMigrate.length; i++) {
+      const record = recordsToMigrate[i];
+
+      try {
+        setMigrationProgress(`Migrating expiry dates (${i + 1}/${recordsToMigrate.length})...`);
+
+        // Query the Bee API for stamp info
+        const stampInfo = await fetchStampInfo(record.stampId, DEFAULT_BEE_API_URL);
+
+        if (stampInfo && stampInfo.batchTTL) {
+          // Calculate correct expiry date from current time + TTL
+          const correctExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
+
+          // Find and update the record in our array
+          const recordIndex = updatedRecords.findIndex(
+            r => r.reference === record.reference && r.stampId === record.stampId
+          );
+
+          if (recordIndex !== -1) {
+            updatedRecords[recordIndex] = {
+              ...updatedRecords[recordIndex],
+              expiryDate: correctExpiryDate,
+            };
+            migratedCount++;
+
+            console.log(
+              `✅ Migrated ${record.filename || 'unnamed'}: ${formatStampId(record.stampId)} -> expires ${formatDateEU(correctExpiryDate)}`
+            );
+          }
+        } else {
+          // API returned no data - set default expiry in the past (13 days ago)
+          const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+          // Find and update the record in our array
+          const recordIndex = updatedRecords.findIndex(
+            r => r.reference === record.reference && r.stampId === record.stampId
+          );
+
+          if (recordIndex !== -1) {
+            updatedRecords[recordIndex] = {
+              ...updatedRecords[recordIndex],
+              expiryDate: defaultExpiryDate,
+            };
+            migratedCount++;
+
+            console.log(
+              `⚠️ No API data for ${formatStampId(record.stampId)} - set default expiry (13 days ago) for ${record.filename || 'unnamed'}`
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error migrating expiry for ${formatStampId(record.stampId)}:`, error);
+
+        // On error, set default expiry in the past (13 days ago)
+        const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+        const recordIndex = updatedRecords.findIndex(
+          r => r.reference === record.reference && r.stampId === record.stampId
+        );
+
+        if (recordIndex !== -1) {
+          updatedRecords[recordIndex] = {
+            ...updatedRecords[recordIndex],
+            expiryDate: defaultExpiryDate,
+          };
+          migratedCount++;
+
+          console.log(
+            `⚠️ Error migrating ${record.filename || 'unnamed'} - set default expiry (13 days ago)`
+          );
+        }
+      }
+
+      // Add a small delay between API calls to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // If any records were migrated, update localStorage and state
+    if (migratedCount > 0) {
+      console.log(`✅ Successfully migrated ${migratedCount} expiry dates`);
+      setMigrationProgress(`Successfully migrated ${migratedCount} expiry dates!`);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[userAddress] = updatedRecords;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+
+      // Update component state to reflect the changes
+      setHistory(updatedRecords);
+
+      // Clear the migration message after a few seconds
+      setTimeout(() => {
+        setIsMigrating(false);
+        setMigrationProgress('');
+      }, 3000);
+    } else {
+      setIsMigrating(false);
+      setMigrationProgress('');
+    }
+  };
+
   React.useEffect(() => {
     if (address) {
       const savedHistory = localStorage.getItem('uploadHistory');
       if (savedHistory) {
         const parsedHistory: UploadHistory = JSON.parse(savedHistory);
-        setHistory(parsedHistory[address] || []);
+        const userHistory = parsedHistory[address] || [];
+
+        // Deduplicate based on reference + stampId, keeping the most recent entry
+        const uniqueHistory = userHistory.reduce((acc: UploadRecord[], record) => {
+          const key = `${record.reference}_${record.stampId}`;
+          const existingIndex = acc.findIndex(r => `${r.reference}_${r.stampId}` === key);
+
+          if (existingIndex === -1) {
+            // Not found, add it
+            acc.push(record);
+          } else {
+            // Found, keep the one with the more recent timestamp
+            if (record.timestamp > acc[existingIndex].timestamp) {
+              acc[existingIndex] = record;
+            }
+          }
+
+          return acc;
+        }, []);
+
+        setHistory(uniqueHistory);
+
+        // Save deduplicated history back to localStorage if duplicates were found
+        if (uniqueHistory.length < userHistory.length) {
+          const allHistory: UploadHistory = parsedHistory;
+          allHistory[address] = uniqueHistory;
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+          console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
+        }
+
+        // Auto-migrate old expiry dates
+        migrateOldExpiryDates(uniqueHistory, address);
       }
     }
   }, [address]);
 
   const formatDate = (timestamp: number) => {
     if (timestamp === undefined) return 'Unknown';
-    return new Date(timestamp).toLocaleDateString();
+    return formatDateEU(timestamp);
   };
 
-  const formatExpiryDays = (ttl: number) => {
-    return `${Math.floor(ttl / 86400)} days`;
+  const formatExpiryDays = (expiryDate: number) => {
+    // expiryDate is a timestamp, we need to calculate remaining time in seconds
+    const now = Date.now();
+    const remainingMs = expiryDate - now;
+    const remainingSeconds = Math.floor(remainingMs / 1000);
+    return formatExpiryTime(remainingSeconds);
   };
 
   const isArchiveFile = (filename?: string) => {
     if (!filename) return false;
-    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lz4', '.zst'];
     return archiveExtensions.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
@@ -163,9 +353,42 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     // Archive files
-    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
+    const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lz4', '.zst'];
     if (archiveExtensions.some(ext => extension.endsWith(ext))) {
       return 'archives';
+    }
+
+    // Document files
+    const documentExtensions = [
+      '.pdf',
+      '.doc',
+      '.docx',
+      '.xls',
+      '.xlsx',
+      '.ppt',
+      '.pptx',
+      '.txt',
+      '.rtf',
+      '.csv',
+      '.md',
+      '.xml',
+      '.yaml',
+      '.yml',
+    ];
+    if (documentExtensions.some(ext => extension.endsWith(ext))) {
+      return 'documents';
+    }
+
+    // Disk images and system files
+    const diskImageExtensions = ['.iso', '.img', '.dmg', '.vhd', '.vmdk', '.qcow2'];
+    if (diskImageExtensions.some(ext => extension.endsWith(ext))) {
+      return 'other';
+    }
+
+    // Executable and binary files
+    const executableExtensions = ['.exe', '.msi', '.deb', '.rpm', '.pkg', '.app', '.bin'];
+    if (executableExtensions.some(ext => extension.endsWith(ext))) {
+      return 'other';
     }
 
     // Website files (common web file extensions)
@@ -190,6 +413,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         return 'Archive';
       case 'websites':
         return 'Website';
+      case 'documents':
+        return 'Document';
+      case 'other':
+        return 'File';
       default:
         return 'File';
     }
@@ -216,6 +443,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       audio: 0,
       archives: 0,
       websites: 0,
+      documents: 0,
+      other: 0,
     };
 
     history.forEach(record => {
@@ -247,7 +476,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Reference',
       'Stamp ID',
       'Date Created',
-      'Expiry (Days)',
+      'Expiry Date',
       'Filename',
       'File Type',
       'Is Webpage',
@@ -260,8 +489,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const csvRows = dataToExport.map(record => [
       record.reference,
       record.stampId,
-      formatDate(record.timestamp),
-      formatExpiryDays(record.expiryDate),
+      formatDateForCSV(record.timestamp), // Use machine-readable format for CSV
+      formatDateForCSV(record.expiryDate), // Export expiry as timestamp too
       record.filename || 'Unnamed upload',
       getFileTypeLabel(record),
       record.isWebpageUpload ? 'Yes' : 'No',
@@ -293,12 +522,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     document.body.removeChild(link);
   };
 
-  const uploadCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !address) return;
 
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const csvContent = e.target?.result as string;
         const lines = csvContent.split('\n');
@@ -307,7 +536,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         const dataLines = lines.slice(1).filter(line => line.trim());
 
         const newRecords: UploadRecord[] = [];
-        const existingReferences = new Set(history.map(record => record.reference));
+        const existingKeys = new Set(
+          history.map(record => `${record.reference}_${record.stampId}`)
+        );
+
+        // Track stamps that need API lookup and their associated records
+        const stampToRecordIndices: Map<string, number[]> = new Map();
 
         dataLines.forEach(line => {
           // Parse CSV line (handle quoted fields)
@@ -318,7 +552,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               reference,
               stampId,
               dateCreated,
-              expiryDays,
+              expiryField, // Can be timestamp or legacy "X days" format
               filename,
               fileType,
               isWebpage,
@@ -327,23 +561,50 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               fullLink,
             ] = fields;
 
-            // Skip if reference already exists (prevent duplicates)
-            if (existingReferences.has(reference)) {
-              console.log(`Skipping duplicate reference: ${reference}`);
+            // Skip if reference + stampId combination already exists (prevent duplicates)
+            const key = `${reference}_${stampId}`;
+            if (existingKeys.has(key)) {
+              console.log(`Skipping duplicate: ${reference} with stamp ${stampId}`);
               return;
             }
 
-            // Parse date and expiry
-            const timestamp = new Date(dateCreated).getTime();
-            const expiryInSeconds = parseInt(expiryDays.replace(' days', '')) * 86400;
+            // Parse date
+            const timestamp = parseDateFromCSV(dateCreated);
 
-            if (!isNaN(timestamp) && !isNaN(expiryInSeconds)) {
+            // Check if expiry is in valid format
+            let expiryDate: number;
+            const expiryTimestamp = parseInt(expiryField);
+            const hasValidExpiry =
+              !isNaN(expiryTimestamp) &&
+              expiryTimestamp > 1000000000000 && // Must be after Sep 9, 2001
+              expiryTimestamp < 32503680000000; // Must be before year 3000
+
+            if (hasValidExpiry) {
+              // Valid timestamp - use it directly
+              expiryDate = expiryTimestamp;
+            } else {
+              // Invalid format - mark with placeholder, will query API later
+              expiryDate = 0; // Placeholder value
+
+              // Track this stamp for API lookup
+              const recordIndex = newRecords.length;
+              if (!stampToRecordIndices.has(stampId)) {
+                stampToRecordIndices.set(stampId, []);
+              }
+              stampToRecordIndices.get(stampId)!.push(recordIndex);
+
+              console.log(
+                `⚠️ Invalid expiry format for ${formatStampId(stampId)} - will query API`
+              );
+            }
+
+            if (!isNaN(timestamp)) {
               const record: UploadRecord = {
                 reference,
                 stampId,
                 timestamp,
                 filename: filename === 'Unnamed upload' ? undefined : filename,
-                expiryDate: expiryInSeconds,
+                expiryDate: expiryDate,
                 isWebpageUpload: isWebpage === 'Yes',
                 isFolderUpload: isFolder === 'Yes',
               };
@@ -358,32 +619,117 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
               newRecords.push(record);
 
-              // Add to existing references set to prevent duplicates within the same upload
-              existingReferences.add(reference);
+              // Add to existing keys set to prevent duplicates within the same upload
+              existingKeys.add(key);
             }
           }
         });
 
-        if (newRecords.length > 0) {
-          // Merge with existing history
-          const updatedHistory = [...newRecords, ...history];
-          setHistory(updatedHistory);
-
-          // Save to localStorage
-          const savedHistory = localStorage.getItem('uploadHistory');
-          const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
-          allHistory[address] = updatedHistory;
-          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
-
-          alert(
-            `Successfully imported ${newRecords.length} new records. Skipped duplicates if any.`
-          );
-        } else {
+        if (newRecords.length === 0) {
           alert('No new records found or all records were duplicates.');
+          return;
+        }
+
+        // Query API for stamps with invalid expiry dates
+        if (stampToRecordIndices.size > 0) {
+          console.log(
+            `🔄 Querying API for ${stampToRecordIndices.size} unique stamps with invalid expiry dates...`
+          );
+          setIsMigrating(true);
+          setMigrationProgress(`Fetching expiry dates for ${stampToRecordIndices.size} stamps...`);
+
+          let queriedCount = 0;
+          const uniqueStamps = Array.from(stampToRecordIndices.keys());
+
+          for (const stampId of uniqueStamps) {
+            try {
+              queriedCount++;
+              setMigrationProgress(
+                `Fetching expiry dates (${queriedCount}/${uniqueStamps.length})...`
+              );
+
+              const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
+
+              if (stampInfo && stampInfo.batchTTL) {
+                // Calculate correct expiry date
+                const correctExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
+
+                // Apply to all records with this stamp
+                const recordIndices = stampToRecordIndices.get(stampId)!;
+                recordIndices.forEach(index => {
+                  newRecords[index].expiryDate = correctExpiryDate;
+                });
+
+                console.log(
+                  `✅ Fetched expiry for ${formatStampId(stampId)}: ${formatDateEU(correctExpiryDate)} (applied to ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`
+                );
+              } else {
+                // API returned no data - set default expiry in the past (13 days ago)
+                const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+
+                // Apply to all records with this stamp
+                const recordIndices = stampToRecordIndices.get(stampId)!;
+                recordIndices.forEach(index => {
+                  newRecords[index].expiryDate = defaultExpiryDate;
+                });
+
+                console.log(
+                  `⚠️ No API data for ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
+                );
+              }
+
+              // Rate limiting
+              await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+              console.error(`❌ Error fetching expiry for ${formatStampId(stampId)}:`, error);
+
+              // On error, set default expiry in the past (13 days ago)
+              const defaultExpiryDate = Date.now() - 13 * 24 * 60 * 60 * 1000; // 13 days ago
+              const recordIndices = stampToRecordIndices.get(stampId)!;
+              recordIndices.forEach(index => {
+                newRecords[index].expiryDate = defaultExpiryDate;
+              });
+
+              console.log(
+                `⚠️ Error fetching ${formatStampId(stampId)} - set default expiry (13 days ago) for ${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''}`
+              );
+            }
+          }
+
+          setMigrationProgress(`Successfully fetched ${queriedCount} stamp expiry dates!`);
+          setTimeout(() => {
+            setIsMigrating(false);
+            setMigrationProgress('');
+          }, 2000);
+        }
+
+        // Merge with existing history
+        const updatedHistory = [...newRecords, ...history];
+        setHistory(updatedHistory);
+
+        // Save to localStorage
+        const savedHistory = localStorage.getItem('uploadHistory');
+        const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
+        allHistory[address] = updatedHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+
+        alert(
+          `Successfully imported ${newRecords.length} new records. ${stampToRecordIndices.size > 0 ? `Fetched expiry dates for ${stampToRecordIndices.size} unique stamps.` : ''}`
+        );
+
+        // Auto-migrate any remaining records with invalid expiry dates (e.g., if API failed)
+        const stillNeedMigration = updatedHistory.filter(r => needsExpiryMigration(r.expiryDate));
+        if (stillNeedMigration.length > 0) {
+          console.log(
+            `🔄 ${stillNeedMigration.length} records still need migration - running auto-migration...`
+          );
+          migrateOldExpiryDates(updatedHistory, address);
         }
       } catch (error) {
         console.error('Error parsing CSV:', error);
         alert('Error parsing CSV file. Please check the format.');
+        setIsMigrating(false);
+        setMigrationProgress('');
       }
     };
 
@@ -411,8 +757,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
-  const startEditingFilename = (reference: string, currentFilename: string) => {
-    setEditingFilename(reference);
+  const startEditingFilename = (
+    index: number,
+    reference: string,
+    stampId: string,
+    currentFilename: string
+  ) => {
+    const uniqueId = `${index}_${reference}_${stampId}`;
+    setEditingFilename(uniqueId);
     setTempFilename(currentFilename || 'Unnamed upload');
   };
 
@@ -421,25 +773,29 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     setTempFilename('');
   };
 
-  const saveFilename = (reference: string) => {
+  const saveFilename = (index: number, reference: string, stampId: string) => {
     if (!tempFilename.trim()) {
       cancelEditingFilename();
       return;
     }
 
-    // Update the history state
+    // Update the history state - match by both reference AND stampId
     const updatedHistory = history.map(record =>
-      record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+      record.reference === reference && record.stampId === stampId
+        ? { ...record, filename: tempFilename.trim() }
+        : record
     );
     setHistory(updatedHistory);
 
-    // Update localStorage
+    // Update localStorage - match by both reference AND stampId
     const savedHistory = localStorage.getItem('uploadHistory');
-    if (savedHistory) {
+    if (savedHistory && address) {
       const allHistory: UploadHistory = JSON.parse(savedHistory);
       if (allHistory[address]) {
-        allHistory[address] = allHistory[address].map(record =>
-          record.reference === reference ? { ...record, filename: tempFilename.trim() } : record
+        allHistory[address] = allHistory[address].map((record: UploadRecord) =>
+          record.reference === reference && record.stampId === stampId
+            ? { ...record, filename: tempFilename.trim() }
+            : record
         );
         localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
       }
@@ -450,11 +806,45 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     setTempFilename('');
   };
 
-  const handleFilenameKeyPress = (e: React.KeyboardEvent, reference: string) => {
+  const handleFilenameKeyPress = (
+    e: React.KeyboardEvent,
+    index: number,
+    reference: string,
+    stampId: string
+  ) => {
     if (e.key === 'Enter') {
-      saveFilename(reference);
+      saveFilename(index, reference, stampId);
     } else if (e.key === 'Escape') {
       cancelEditingFilename();
+    }
+  };
+
+  const deleteRecord = (reference: string, stampId: string) => {
+    if (!address) return;
+
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this upload from history? This action cannot be undone. Back it up if still possible.'
+    );
+
+    if (confirmed) {
+      // Remove from state
+      const updatedHistory = history.filter(
+        record => !(record.reference === reference && record.stampId === stampId)
+      );
+      setHistory(updatedHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        if (allHistory[address]) {
+          allHistory[address] = allHistory[address].filter(
+            (record: UploadRecord) =>
+              !(record.reference === reference && record.stampId === stampId)
+          );
+          localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+        }
+      }
     }
   };
 
@@ -464,7 +854,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         <h2 className={styles.title}>Upload History</h2>
         <div className={styles.buttonGroup}>
           {filteredHistory.length > 0 && (
-            <button className={styles.downloadButton} onClick={downloadCSV} title="Download CSV">
+            <button className={styles.downloadButton} onClick={downloadCSV} title="Export History ">
               <svg
                 width="20"
                 height="20"
@@ -482,7 +872,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {address && (
-            <label className={styles.uploadButton} title="Upload CSV">
+            <label className={styles.uploadButton} title="Import History">
               <input
                 type="file"
                 accept=".csv"
@@ -547,6 +937,24 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         </div>
       </div>
 
+      {/* Migration progress indicator */}
+      {isMigrating && (
+        <div
+          style={{
+            padding: '10px 15px',
+            marginBottom: '15px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px',
+            color: '#856404',
+            fontSize: '14px',
+            textAlign: 'center',
+          }}
+        >
+          🔄 {migrationProgress}
+        </div>
+      )}
+
       {/* Filter buttons */}
       {history.length > 0 && (
         <div className={styles.filterContainer}>
@@ -592,6 +1000,20 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             >
               Websites ({getFilterCounts.websites})
             </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'documents' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('documents')}
+              disabled={getFilterCounts.documents === 0}
+            >
+              Documents ({getFilterCounts.documents})
+            </button>
+            <button
+              className={`${styles.filterButton} ${selectedFilter === 'other' ? styles.activeFilter : ''}`}
+              onClick={() => setSelectedFilter('other')}
+              disabled={getFilterCounts.other === 0}
+            >
+              Other ({getFilterCounts.other})
+            </button>
           </div>
         </div>
       )}
@@ -611,20 +1033,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
-                    {editingFilename === record.reference ? (
+                    {editingFilename === `${index}_${record.reference}_${record.stampId}` ? (
                       <div className={styles.filenameEdit}>
                         <input
                           type="text"
                           value={tempFilename}
                           onChange={e => setTempFilename(e.target.value)}
-                          onKeyDown={e => handleFilenameKeyPress(e, record.reference)}
-                          onBlur={() => saveFilename(record.reference)}
+                          onKeyDown={e =>
+                            handleFilenameKeyPress(e, index, record.reference, record.stampId)
+                          }
+                          onBlur={() => saveFilename(index, record.reference, record.stampId)}
                           className={styles.filenameInput}
                           autoFocus
                           placeholder="Enter filename..."
                         />
                         <button
-                          onClick={() => saveFilename(record.reference)}
+                          onClick={() => saveFilename(index, record.reference, record.stampId)}
                           className={styles.saveButton}
                           title="Save"
                         >
@@ -641,18 +1065,28 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     ) : (
                       <span
                         className={styles.filename}
-                        onClick={() =>
-                          startEditingFilename(record.reference, record.filename || '')
-                        }
-                        title="Click to rename"
+                        onClick={e => {
+                          e.stopPropagation(); // Prevent event bubbling
+                          startEditingFilename(
+                            index,
+                            record.reference,
+                            record.stampId,
+                            record.filename || ''
+                          );
+                        }}
+                        title="Click to rename locally"
                       >
                         {record.filename || 'Unnamed upload'}
                       </span>
                     )}
+                  </div>
+                  <div className={styles.tagContainer}>
+                    <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}
-                        onClick={() => {
+                        onClick={e => {
+                          e.stopPropagation(); // Prevent event bubbling
                           setSelectedReference(record.reference);
                           setShowENSModal(true);
                         }}
@@ -661,31 +1095,59 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         ENS
                       </button>
                     )}
-                  </div>
-                  <div className={styles.tagContainer}>
-                    <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
                     {record.fileSize && (
                       <span className={styles.fileSize}>{formatFileSize(record.fileSize)}</span>
                     )}
                   </div>
                 </div>
-                <span className={styles.date}>{formatDate(record.timestamp)}</span>
+                <div className={styles.dateContainer}>
+                  <span className={styles.date}>{formatDate(record.timestamp)}</span>
+                  <a
+                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.openFileButton}
+                    title="Open file in new tab"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                </div>
               </div>
               <div className={styles.itemDetails}>
                 <div className={styles.referenceRow}>
                   <span className={styles.label}>Reference:</span>
-                  <a
-                    href={getReferenceUrl(record)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.link}
+                  <span
+                    className={styles.stampId}
                     title={record.reference}
+                    onClick={() => {
+                      navigator.clipboard.writeText(record.reference);
+                      // Show temporary "Copied!" message
+                      const uniqueId = `ref-${record.reference}-${record.stampId}`;
+                      const element = document.querySelector(`[data-unique-id="${uniqueId}"]`);
+                      if (element) {
+                        element.setAttribute('data-copied', 'true');
+                        setTimeout(() => {
+                          element.setAttribute('data-copied', 'false');
+                        }, 2000);
+                      }
+                    }}
+                    data-unique-id={`ref-${record.reference}-${record.stampId}`}
+                    data-copied="false"
                   >
                     {formatReference(record.reference)}
-                    {record.filename && !isArchiveFile(record.filename)
-                      ? `/${record.filename}`
-                      : ''}
-                  </a>
+                  </span>
                 </div>
                 <div className={styles.stampRow}>
                   <span className={styles.label}>Stamps ID:</span>
@@ -695,7 +1157,9 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     onClick={() => {
                       navigator.clipboard.writeText(record.stampId);
                       // Show temporary "Copied!" message
-                      const element = document.querySelector(`[data-stamp-id="${record.stampId}"]`);
+                      const element = document.querySelector(
+                        `[data-stamp-id="${index}_${record.stampId}"]`
+                      );
                       if (element) {
                         element.setAttribute('data-copied', 'true');
                         setTimeout(() => {
@@ -703,7 +1167,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         }, 2000);
                       }
                     }}
-                    data-stamp-id={record.stampId}
+                    data-stamp-id={`${index}_${record.stampId}`}
                     data-copied="false"
                   >
                     {formatStampId(record.stampId)}
@@ -711,7 +1175,22 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.expiryRow}>
                   <span className={styles.label}>Expires:</span>
-                  <span className={styles.expiryDate}>{formatExpiryDays(record.expiryDate)}</span>
+                  <span
+                    className={
+                      record.expiryDate < Date.now() ? styles.expiryExpired : styles.expiryDate
+                    }
+                  >
+                    {formatExpiryDays(record.expiryDate)}
+                  </span>
+                  {record.expiryDate < Date.now() && (
+                    <button
+                      className={styles.deleteButton}
+                      onClick={() => deleteRecord(record.reference, record.stampId)}
+                      title="Delete from history"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 {record.associatedDomains && record.associatedDomains.length > 0 && (
                   <div className={styles.associatedDomainsRow}>

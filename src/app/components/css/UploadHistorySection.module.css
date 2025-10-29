@@ -127,10 +127,43 @@
   border-radius: 8px;
   border: 1px solid #30363d;
   transition: border-color 0.2s;
+  position: relative;
 }
 
 .historyItem:hover {
   border-color: #424a53;
+}
+
+.deleteButton {
+  background-color: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  border-radius: 4px;
+  color: #f85149;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.historyItem:hover .deleteButton {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.deleteButton:hover {
+  background-color: rgba(248, 81, 73, 0.2);
+  border-color: #f85149;
+  transform: scale(1.1);
 }
 
 .itemHeader {
@@ -157,20 +190,61 @@
   word-break: break-all;
   cursor: pointer;
   transition: color 0.2s ease;
-  padding: 2px 4px;
+  padding: 2px 0px 10px 4px;
   border-radius: 4px;
+  flex: 1; /* Take available space */
+  min-width: 0; /* Allow shrinking if needed */
+  user-select: none; /* Prevent text selection on click */
+  display: block; /* Ensure it's a block element for better click area */
+  position: relative; /* Ensure proper layering */
+  z-index: 1; /* Ensure it's above other elements */
 }
 
 .filename:hover {
   color: #58a6ff;
-  background-color: rgba(88, 166, 255, 0.1);
 }
 
 .filenameRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* Prevent wrapping to avoid layout issues */
+}
+
+.openFileButton {
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.openFileButton:hover {
+  background-color: rgba(255, 122, 0, 0.1);
+  border-color: #ff7a00;
+  color: #ff7a00;
+}
+
+.openFileButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dateContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .filenameEdit {
@@ -461,6 +535,10 @@
   .date {
     margin-left: 0;
   }
+
+  .dateContainer {
+    align-items: flex-start;
+  }
   
   .filename {
     font-size: 16px;
@@ -477,4 +555,23 @@
   .label {
     width: auto;
   }
+
+  .deleteButton {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.expiryWarning {
+  color: #f85149 !important;
+  font-weight: 600;
+  background-color: rgba(248, 81, 73, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.expiryExpired {
+  color: #f85149 !important;
+  font-weight: 600;
 }

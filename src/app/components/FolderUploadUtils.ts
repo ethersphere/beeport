@@ -48,7 +48,9 @@ const generateIndexHtml = (files: FileList, folderName: string): string => {
       continue;
     }
 
-    fileList.push(relativePath);
+    // Use the same TAR-compatible path that we use when adding files to the archive
+    const tarCompatiblePath = ensureTarCompatiblePath(relativePath);
+    fileList.push(tarCompatiblePath);
   }
 
   // Sort files alphabetically
@@ -65,7 +67,8 @@ const generateIndexHtml = (files: FileList, folderName: string): string => {
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return `<!-- Swarm Directory Index -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -443,6 +446,11 @@ export interface TarProcessingParams {
   setStatusMessage: (status: { step: string; message: string }) => void;
 }
 
+export interface TarProcessingResult {
+  file: File;
+  hasOrWillHaveIndex: boolean; // true if original had index.html or we added one
+}
+
 /**
  * Extract files from TAR buffer using a simple TAR parser
  * @param tarBuffer The TAR file buffer
@@ -539,8 +547,11 @@ const ensureTarCompatiblePath = (path: string): string => {
 
   // Split filename into name and extension
   const lastDotIndex = filename.lastIndexOf('.');
-  const name = lastDotIndex > 0 ? filename.substring(0, lastDotIndex) : filename;
-  const extension = lastDotIndex > 0 ? filename.substring(lastDotIndex) : '';
+  const name = lastDotIndex >= 0 ? filename.substring(0, lastDotIndex) : filename;
+  const extension = lastDotIndex >= 0 ? filename.substring(lastDotIndex) : '';
+
+  // Ensure we always have an extension if the original had one
+  const hasExtension = lastDotIndex >= 0 && extension.length > 1; // .ext must be at least 2 chars
 
   // Calculate available space for name (accounting for directory and extension)
   const availableSpace = TAR_FILENAME_LIMIT - directory.length - extension.length;
@@ -550,7 +561,9 @@ const ensureTarCompatiblePath = (path: string): string => {
     const shortHash = Math.abs(
       path.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
     ).toString(36);
-    return `file_${shortHash}${extension}`;
+    // Always preserve extension if it exists
+    const finalExtension = hasExtension ? extension : '';
+    return `file_${shortHash}${finalExtension}`;
   }
 
   // Truncate the name part and add a hash to maintain uniqueness
@@ -561,10 +574,12 @@ const ensureTarCompatiblePath = (path: string): string => {
 
   if (maxNameLength > 0) {
     const truncatedName = name.substring(0, maxNameLength);
-    return `${directory}${truncatedName}_${shortHash}${extension}`;
+    const finalExtension = hasExtension ? extension : '';
+    return `${directory}${truncatedName}_${shortHash}${finalExtension}`;
   } else {
     // Fallback: just use hash with extension
-    return `${directory}${shortHash}${extension}`;
+    const finalExtension = hasExtension ? extension : '';
+    return `${directory}${shortHash}${finalExtension}`;
   }
 };
 
@@ -669,7 +684,8 @@ const generateIndexHtmlForTar = (
     )
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return `<!-- Swarm Directory Index -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -893,9 +909,9 @@ ${fileListHtml}
 /**
  * Process a TAR file to add index.html if missing
  * @param params TAR processing parameters
- * @returns Promise<File> The processed TAR file (original or modified)
+ * @returns Promise<TarProcessingResult> The processed TAR file and index info
  */
-export const processTarFile = async (params: TarProcessingParams): Promise<File> => {
+export const processTarFile = async (params: TarProcessingParams): Promise<TarProcessingResult> => {
   const { tarFile, setUploadProgress, setStatusMessage } = params;
 
   setStatusMessage({ step: 'analyzing_tar', message: 'Analyzing TAR archive...' });
@@ -917,7 +933,7 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     if (hasIndex) {
       setStatusMessage({ step: 'tar_ready', message: 'TAR archive ready for upload' });
       setUploadProgress(100);
-      return tarFile;
+      return { file: tarFile, hasOrWillHaveIndex: true };
     }
 
     setStatusMessage({
@@ -971,7 +987,7 @@ export const processTarFile = async (params: TarProcessingParams): Promise<File>
     setUploadProgress(100);
     setStatusMessage({ step: 'tar_enhanced', message: 'TAR archive enhanced with index.html!' });
 
-    return processedFile;
+    return { file: processedFile, hasOrWillHaveIndex: true };
   } catch (error) {
     console.error('Error processing TAR file:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

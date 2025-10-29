@@ -1,6 +1,6 @@
 import { type PublicClient } from 'viem';
 import { ExecutionStatus, UploadStep } from './types';
-import { processArchiveFile } from './ArchiveProcessor';
+import { processArchiveFile, ArchiveProcessingResult } from './ArchiveProcessor';
 import { StampInfo } from './types';
 import {
   STORAGE_OPTIONS,
@@ -9,7 +9,40 @@ import {
   UPLOAD_TIMEOUT_CONFIG,
   SWARM_DEFERRED_UPLOAD,
 } from './constants';
-import { processTarFile } from './FolderUploadUtils';
+import { processTarFile, TarProcessingResult } from './FolderUploadUtils';
+import { getStampUsage, formatDateEU } from './utils';
+
+/**
+ * Convert technical error messages to user-friendly ones
+ */
+export const getUserFriendlyErrorMessage = (error: Error): string => {
+  const errorMessage = error.message.toLowerCase();
+
+  // Check for non-Latin character encoding errors
+  if (
+    errorMessage.includes('iso-8859-1') ||
+    errorMessage.includes('code point') ||
+    errorMessage.includes('string contains non')
+  ) {
+    return 'Upload failed: File names must use only Latin characters (A-Z, 0-9). Please rename your files to remove special characters, emojis, or accented letters.';
+  }
+
+  // Check for other common upload errors
+  if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+    return 'Upload failed: Network connection issue. Please check your internet connection and try again.';
+  }
+
+  if (errorMessage.includes('timeout')) {
+    return 'Upload failed: Upload timed out. Please try again with a smaller file or check your connection.';
+  }
+
+  if (errorMessage.includes('file too large') || errorMessage.includes('size')) {
+    return 'Upload failed: File is too large. Please try a smaller file.';
+  }
+
+  // Return original error for unrecognized errors
+  return error.message;
+};
 
 /**
  * Interface for parameters needed for file upload function
@@ -85,6 +118,7 @@ export interface MultiFileResult {
   filename: string;
   reference: string;
   success: boolean;
+  isWebsite?: boolean; // Flag indicating this upload should be treated as a website
   error?: string;
 }
 
@@ -309,31 +343,76 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
     // Process TAR files - always upload as website with index.html check
     let shouldUploadAsWebsite = isWebpageUpload;
+    let hasIndexFile = false;
+
     if (isTarArchive) {
       setUploadProgress(0);
-      processedFile = await processTarFile({
+      const tarResult = await processTarFile({
         tarFile: selectedFile,
         setUploadProgress,
         setStatusMessage,
       });
+      processedFile = tarResult.file;
+      hasIndexFile = tarResult.hasOrWillHaveIndex;
       shouldUploadAsWebsite = true;
     }
     // Process ZIP/GZ archives when serveUncompressed is enabled
     else if (isArchive && serveUncompressed) {
       setUploadProgress(0);
-      processedFile = await processArchiveFile(selectedFile);
+      const archiveResult = await processArchiveFile(selectedFile);
+      processedFile = archiveResult.file;
+      hasIndexFile = archiveResult.hasOrWillHaveIndex;
       shouldUploadAsWebsite = true;
     }
 
     const messageToSign = `${processedFile.name}:${postageBatchId}`;
 
-    const signedMessage = await walletClient.signMessage({
-      message: messageToSign, // Just sign the plain string directly
-    });
+    // Helper function to sign with timeout
+    const signWithTimeout = async (message: string, timeoutMs: number = 5000): Promise<string> => {
+      return new Promise(async (resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('WALLET_UNLOCK_REQUIRED'));
+        }, timeoutMs);
+
+        try {
+          const signature = await walletClient.signMessage({ message });
+          clearTimeout(timeout);
+          resolve(signature);
+        } catch (error) {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      });
+    };
+
+    let signedMessage: string;
+    try {
+      signedMessage = await signWithTimeout(messageToSign);
+    } catch (error: any) {
+      if (error.message === 'WALLET_UNLOCK_REQUIRED') {
+        setStatusMessage({
+          step: 'Wallet Locked',
+          message: 'Please unlock your wallet to sign the message',
+          error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
+          isError: true,
+        });
+        throw new Error('Wallet unlock required - please unlock your wallet and try again');
+      }
+      throw error;
+    }
+
+    // Determine Content-Type with fallback for unsupported file types
+    let contentType: string;
+    if (serveUncompressed && (isTarFile || isArchive)) {
+      contentType = 'application/x-tar';
+    } else {
+      // Use file MIME type, fallback to application/octet-stream if not set or empty
+      // This fallback supports all file types including ISO files, executables, etc.
+      contentType = processedFile.type || 'application/octet-stream';
+    }
 
     const baseHeaders: Record<string, string> = {
-      'Content-Type':
-        serveUncompressed && (isTarFile || isArchive) ? 'application/x-tar' : processedFile.type,
+      'Content-Type': contentType,
       'swarm-postage-batch-id': postageBatchId,
       'swarm-pin': 'false',
       'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
@@ -466,24 +545,32 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
         // Get the human-readable total size from the options
         const totalSizeString = getSizeForDepth(stamp.depth);
 
-        // Calculate the used and remaining sizes as percentages for display
-        const utilizationPercent = stamp.utilization;
+        // Calculate the real used capacity percentage
+        const realUtilizationPercent = getStampUsage(
+          stamp.utilization,
+          stamp.depth,
+          stamp.bucketDepth || 16
+        );
 
         // Update state with stamp info
         setUploadStampInfo({
           ...stamp,
           totalSize: totalSizeString,
-          usedSize: `${utilizationPercent.toFixed(1)}%`,
-          remainingSize: `${(100 - utilizationPercent).toFixed(1)}%`,
-          utilizationPercent: utilizationPercent,
+          usedSize: `${realUtilizationPercent.toFixed(1)}%`,
+          remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
+          utilizationPercent: realUtilizationPercent,
+          createdDate: formatDateEU(new Date()),
         });
+
+        // Calculate expiry timestamp from batchTTL (which is in seconds)
+        const expiryDate = Date.now() + stamp.batchTTL * 1000;
 
         saveUploadReference(
           parsedReference.reference,
           postageBatchId,
-          stamp.batchTTL,
+          expiryDate,
           processedFile?.name,
-          isWebpageUpload,
+          shouldUploadAsWebsite || hasIndexFile, // Mark as website if it contains or will contain index.html
           selectedFile.size,
           isFolderUpload
         );
@@ -497,10 +584,12 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     return parsedReference.reference;
   } catch (error) {
     console.error('Upload error:', error);
+    const friendlyError =
+      error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error';
     setStatusMessage({
       step: 'Error',
       message: 'Upload failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: friendlyError,
       isError: true,
     });
     setUploadStep('idle');
@@ -558,6 +647,10 @@ export const handleMultiFileUpload = async (
   ): Promise<MultiFileResult> => {
     const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
+    // Initialize website flags outside try block so they're available in catch
+    let shouldUploadAsWebsite = isWebpageUpload;
+    let hasIndexFile = false;
+
     try {
       // Check if it's an archive file that needs processing
       let processedFile = file;
@@ -570,10 +663,8 @@ export const handleMultiFileUpload = async (
       const isTarArchive =
         file.type === 'application/x-tar' || file.name.toLowerCase().endsWith('.tar');
 
-      // Process TAR files - always upload as website with index.html check
-      let shouldUploadAsWebsite = isWebpageUpload;
       if (isTarArchive) {
-        processedFile = await processTarFile({
+        const tarResult = await processTarFile({
           tarFile: file,
           setUploadProgress: progress => {
             // For multi-file, we need to calculate the overall progress
@@ -582,11 +673,15 @@ export const handleMultiFileUpload = async (
           },
           setStatusMessage,
         });
+        processedFile = tarResult.file;
+        hasIndexFile = tarResult.hasOrWillHaveIndex;
         shouldUploadAsWebsite = true;
       }
       // Process ZIP/GZ archives when serveUncompressed is enabled
       else if (isArchive && serveUncompressed) {
-        processedFile = await processArchiveFile(file);
+        const archiveResult = await processArchiveFile(file);
+        processedFile = archiveResult.file;
+        hasIndexFile = archiveResult.hasOrWillHaveIndex;
         shouldUploadAsWebsite = true;
       }
 
@@ -595,13 +690,55 @@ export const handleMultiFileUpload = async (
       // Only sign message for the very first file
       let signedMessage = '';
       if (fileIndex === 0) {
-        signedMessage = await walletClient.signMessage({
-          message: messageToSign,
-        });
+        // Helper function to sign with timeout
+        const signWithTimeout = async (
+          message: string,
+          timeoutMs: number = 5000
+        ): Promise<string> => {
+          return new Promise(async (resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('WALLET_UNLOCK_REQUIRED'));
+            }, timeoutMs);
+
+            try {
+              const signature = await walletClient.signMessage({ message });
+              clearTimeout(timeout);
+              resolve(signature);
+            } catch (error) {
+              clearTimeout(timeout);
+              reject(error);
+            }
+          });
+        };
+
+        try {
+          signedMessage = await signWithTimeout(messageToSign);
+        } catch (error: any) {
+          if (error.message === 'WALLET_UNLOCK_REQUIRED') {
+            setStatusMessage({
+              step: 'Wallet Locked',
+              message: 'Please unlock your wallet to sign the message',
+              error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
+              isError: true,
+            });
+            throw new Error('Wallet unlock required - please unlock your wallet and try again');
+          }
+          throw error;
+        }
+      }
+
+      // Determine Content-Type with fallback for unsupported file types
+      let contentType: string;
+      if (serveUncompressed && isArchive) {
+        contentType = 'application/x-tar';
+      } else {
+        // Use file MIME type, fallback to application/octet-stream if not set or empty
+        // This fallback supports all file types including ISO files, executables, etc.
+        contentType = processedFile.type || 'application/octet-stream';
       }
 
       const baseHeaders: Record<string, string> = {
-        'Content-Type': serveUncompressed && isArchive ? 'application/x-tar' : processedFile.type,
+        'Content-Type': contentType,
         'swarm-postage-batch-id': postageBatchId,
         'swarm-pin': 'false',
         'swarm-deferred-upload': SWARM_DEFERRED_UPLOAD,
@@ -639,9 +776,42 @@ export const handleMultiFileUpload = async (
           console.warn(
             `❌ File ${fileIndex + 1}: No session token available, falling back to signature (this should not happen)`
           );
-          signedMessage = await walletClient.signMessage({
-            message: messageToSign,
-          });
+
+          // Helper function to sign with timeout
+          const signWithTimeout = async (
+            message: string,
+            timeoutMs: number = 5000
+          ): Promise<string> => {
+            return new Promise(async (resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('WALLET_UNLOCK_REQUIRED'));
+              }, timeoutMs);
+
+              try {
+                const signature = await walletClient.signMessage({ message });
+                clearTimeout(timeout);
+                resolve(signature);
+              } catch (error) {
+                clearTimeout(timeout);
+                reject(error);
+              }
+            });
+          };
+
+          try {
+            signedMessage = await signWithTimeout(messageToSign);
+          } catch (error: any) {
+            if (error.message === 'WALLET_UNLOCK_REQUIRED') {
+              setStatusMessage({
+                step: 'Wallet Locked',
+                message: 'Please unlock your wallet to sign the message',
+                error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
+                isError: true,
+              });
+              throw new Error('Wallet unlock required - please unlock your wallet and try again');
+            }
+            throw error;
+          }
           baseHeaders['x-upload-signed-message'] = signedMessage;
         }
       }
@@ -767,6 +937,7 @@ export const handleMultiFileUpload = async (
         filename: processedFile.name,
         reference: parsedReference.reference,
         success: true,
+        isWebsite: shouldUploadAsWebsite || hasIndexFile, // Include website flag for saving reference
       };
     } catch (error) {
       console.error(`Upload error for ${file.name} (attempt ${retryCount + 1}):`, error);
@@ -795,7 +966,8 @@ export const handleMultiFileUpload = async (
         filename: file.name,
         reference: '',
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        isWebsite: shouldUploadAsWebsite || hasIndexFile, // Include website flag even for errors
+        error: error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error',
       };
     }
   };
@@ -870,6 +1042,7 @@ export const handleMultiFileUpload = async (
       filename: file.name,
       reference: '',
       success: false,
+      isWebsite: false,
     }));
     setMultiFileResults(initialResults);
 
@@ -931,7 +1104,12 @@ export const handleMultiFileUpload = async (
             };
 
             const totalSize = getSizeForDepth(stampStatus.depth);
-            const usedSizeBytes = (stampStatus.utilization / 100) * Math.pow(2, stampStatus.depth);
+            const realUtilizationPercent = getStampUsage(
+              stampStatus.utilization,
+              stampStatus.depth,
+              stampStatus.bucketDepth || 16
+            );
+            const usedSizeBytes = (realUtilizationPercent / 100) * Math.pow(2, stampStatus.depth);
             const usedSize =
               usedSizeBytes < 1024
                 ? `${usedSizeBytes} bytes`
@@ -945,7 +1123,7 @@ export const handleMultiFileUpload = async (
               postageBatchId,
               expiryDate,
               result.filename,
-              false,
+              result.isWebsite, // Use the website flag from the result
               file.size
             );
 
@@ -960,8 +1138,9 @@ export const handleMultiFileUpload = async (
               batchTTL: stampStatus.batchTTL,
               totalSize,
               usedSize,
-              remainingSize: `${(((100 - stampStatus.utilization) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
-              utilizationPercent: stampStatus.utilization,
+              remainingSize: `${(((100 - realUtilizationPercent) / 100) * Math.pow(2, stampStatus.depth)).toFixed(0)} chunks`,
+              utilizationPercent: realUtilizationPercent,
+              createdDate: formatDateEU(new Date()),
             });
           }
         } catch (stampError) {
@@ -973,7 +1152,7 @@ export const handleMultiFileUpload = async (
             postageBatchId,
             expiryDate,
             result.filename,
-            false,
+            result.isWebsite, // Use the website flag from the result
             file.size
           );
         }
