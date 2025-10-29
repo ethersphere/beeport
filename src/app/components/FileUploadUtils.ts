@@ -90,7 +90,6 @@ export interface MultiFileUploadParams {
   beeApiUrl: string;
   serveUncompressed: boolean;
   isWebpageUpload: boolean;
->>>>>>> origin/main
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -172,10 +171,10 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     beeApiUrl,
     serveUncompressed,
     isTarFile,
-  isWebpageUpload,
-  redundancyLevel = 0,
-  isFolderUpload = false,
-  setUploadProgress,
+    isWebpageUpload,
+    redundancyLevel = 0,
+    isFolderUpload = false,
+    setUploadProgress,
     setStatusMessage,
     setIsDistributing,
     setUploadStep,
