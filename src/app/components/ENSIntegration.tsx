@@ -599,7 +599,9 @@ Your new ENS domain is now registered and ready to use:
 • Use it as your web3 identity across dApps
 • Set records (email, website, social profiles)
 
-💡 **Tip**: Switch to "Set Content Hash" mode to link this domain to your Swarm content!`);
+💡 **Tip**: Switch to "Set Content Hash" mode to link this domain to your Swarm content!
+
+⏱️ **Note**: If you want to set content hash immediately, please wait 1-2 minutes for the resolver to be fully ready, or refresh the page first.`);
 
         // Refresh the domain list to include the newly registered domain
         if (address) {
@@ -1118,8 +1120,30 @@ Your new ENS domain is now registered and ready to use:
 
       console.log('✅ User has permission to manage the domain');
 
+      // Double-check resolver directly from ENS Registry (bypasses cache)
+      let resolverAddress: `0x${string}` | undefined = ensResolver as `0x${string}` | undefined;
+      try {
+        console.log('🔍 Double-checking resolver from ENS Registry...');
+        const registryResolverAddress = (await publicClient.readContract({
+          address: ENS_REGISTRY_ADDRESS,
+          abi: ENS_REGISTRY_ABI,
+          functionName: 'resolver',
+          args: [domainNode],
+        })) as `0x${string}`;
+
+        if (
+          registryResolverAddress &&
+          registryResolverAddress !== '0x0000000000000000000000000000000000000000'
+        ) {
+          resolverAddress = registryResolverAddress;
+          console.log('✅ Resolver confirmed from registry:', resolverAddress);
+        }
+      } catch (registryError) {
+        console.log('⚠️ Could not verify resolver from registry:', registryError);
+      }
+
       // Check if domain has a resolver
-      if (!ensResolver || ensResolver === '0x0000000000000000000000000000000000000000') {
+      if (!resolverAddress || resolverAddress === '0x0000000000000000000000000000000000000000') {
         console.log('❌ No resolver set for domain');
         setError(
           `Domain "${normalizedDomain}" has no resolver set. Please set a resolver first using the ENS manager at app.ens.domains.`
@@ -1128,15 +1152,35 @@ Your new ENS domain is now registered and ready to use:
         return;
       }
 
-      console.log('✅ Resolver found:', ensResolver);
+      console.log('✅ Resolver found:', resolverAddress);
+
+      // Verify the resolver is ready by trying to read from it first
+      console.log('🔍 Verifying resolver is ready...');
+      try {
+        const currentContentHash = await publicClient.readContract({
+          address: resolverAddress as `0x${string}`,
+          abi: ENS_RESOLVER_ABI,
+          functionName: 'contenthash',
+          args: [domainNode],
+        });
+        console.log('✅ Resolver is ready, current contenthash:', currentContentHash);
+      } catch (readError) {
+        console.log('⚠️ Resolver read failed, might not be ready yet:', readError);
+        setError(
+          `The resolver for "${normalizedDomain}" is not ready yet. This can happen immediately after domain registration. Please wait 1-2 minutes and try again, or refresh the page.`
+        );
+        setIsLoading(false);
+        return;
+      }
 
       // Encode the Swarm reference as content hash
       const contentHash = encodeSwarmHash(swarmReference);
       console.log('Encoded content hash:', contentHash);
 
       // Prepare the transaction to set content hash
+      console.log('🔄 Simulating setContenthash transaction...');
       const { request } = await publicClient.simulateContract({
-        address: ensResolver as `0x${string}`,
+        address: resolverAddress as `0x${string}`,
         abi: ENS_RESOLVER_ABI,
         functionName: 'setContenthash',
         args: [domainNode, contentHash],
@@ -1176,8 +1220,10 @@ You can now access your content at:
           errorMessage = 'Insufficient funds to pay for the transaction';
         } else if (err.message.includes('user rejected')) {
           errorMessage = 'Transaction was rejected by user';
-        } else if (err.message.includes('execution reverted')) {
-          errorMessage = 'Transaction failed - you may not have permission to modify this domain';
+        } else if (err.message.includes('execution reverted') || err.message.includes('reverted')) {
+          errorMessage =
+            'Transaction simulation failed. This often happens immediately after domain registration. ' +
+            'Please wait 1-2 minutes for the resolver to be fully ready, or refresh the page and try again.';
         } else if (err.message.includes('returned no data')) {
           errorMessage =
             'Domain lookup failed. Please verify the domain is properly registered and try again';
