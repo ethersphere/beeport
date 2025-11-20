@@ -1713,9 +1713,9 @@ const SwapComponent: React.FC = () => {
           <div className={styles.inputGroup}>
             <label
               className={styles.label}
-              data-tooltip="Duration of storage stamps for which you are paying for"
+              data-tooltip="Approximate storage duration - actual duration varies with BZZ price oracle changes"
             >
-              {isTopUp ? 'Additional duration' : 'Storage duration'}
+              {isTopUp ? 'Additional duration' : 'Storage duration'} (approx.)
             </label>
             <StorageDurationDropdown
               timeOptions={TIME_OPTIONS}
