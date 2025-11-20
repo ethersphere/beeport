@@ -600,8 +600,7 @@ Your new ENS domain is now registered and ready to use:
 • Set records (email, website, social profiles)
 
 💡 **Tip**: Switch to "Set Content Hash" mode to link this domain to your Swarm content!
-
-⏱️ **Note**: If you want to set content hash immediately, please wait 1-2 minutes for the resolver to be fully ready, or refresh the page first.`);
+`);
 
         // Refresh the domain list to include the newly registered domain
         if (address) {
