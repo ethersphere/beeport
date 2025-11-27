@@ -38,6 +38,7 @@ import SearchableChainDropdown from './SearchableChainDropdown';
 import SearchableTokenDropdown from './SearchableTokenDropdown';
 import StorageStampsDropdown from './StorageStampsDropdown';
 import StorageDurationDropdown from './StorageDurationDropdown';
+import TTLDisplay from './TTLDisplay';
 
 import {
   formatErrorMessage,
@@ -50,6 +51,7 @@ import {
   // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
+  fetchBatchInfoFromContract,
   formatExpiryTime,
   isExpiringSoon,
   getStampUsage,
@@ -226,6 +228,15 @@ const SwapComponent: React.FC = () => {
 
   // Add state for original stamp info (used in top-ups)
   const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+
+  // Add state for batch info from contract (TTL and balance)
+  const [contractBatchInfo, setContractBatchInfo] = useState<{
+    ttlSeconds: number;
+    remainingBalance: string;
+  } | null>(null);
+
+  // Add state for TTL display flashing animation
+  const [isTTLFlashing, setIsTTLFlashing] = useState(false);
 
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
@@ -1554,6 +1565,7 @@ const SwapComponent: React.FC = () => {
     // Only fetch if we have a topUpBatchId and we're in top-up mode
     if (topUpBatchId && isTopUp) {
       const getStampInfo = async () => {
+        // Fetch from Bee API for depth info
         const stampInfo = await fetchStampInfoForComponent(topUpBatchId);
         if (stampInfo) {
           console.log('Fetched original stamp info:', stampInfo);
@@ -1568,11 +1580,42 @@ const SwapComponent: React.FC = () => {
             swarmBatchDepth: stampInfo.depth.toString(),
           }));
         }
+
+        // Fetch TTL and balance from contract
+        const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
+        if (batchInfo) {
+          console.log('Fetched contract batch info:', batchInfo);
+          setContractBatchInfo(batchInfo);
+        }
       };
 
       getStampInfo();
     }
   }, [topUpBatchId, isTopUp, fetchStampInfoForComponent]);
+
+  // Add this effect to refresh stamp info periodically (every 60 seconds)
+  useEffect(() => {
+    if (!topUpBatchId || !isTopUp) return;
+
+    const refreshStampInfo = async () => {
+      // Flash before refreshing
+      setIsTTLFlashing(true);
+      setTimeout(() => setIsTTLFlashing(false), 600); // Match flash animation duration
+
+      // Fetch updated TTL and balance from contract
+      const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
+      if (batchInfo) {
+        console.log('Refreshed contract batch info:', batchInfo);
+        setContractBatchInfo(batchInfo);
+      }
+    };
+
+    // Set up interval to refresh every 60 seconds
+    const intervalId = setInterval(refreshStampInfo, 60000);
+
+    // Clean up interval on unmount
+    return () => clearInterval(intervalId);
+  }, [topUpBatchId, isTopUp]);
 
   // Calculate amount for topping up an existing batch
   const calculateTopUpAmount = (originalDepth: number) => {
@@ -1708,6 +1751,14 @@ const SwapComponent: React.FC = () => {
                 disabled={isLoading}
               />
             </div>
+          )}
+
+          {isTopUp && contractBatchInfo && (
+            <TTLDisplay
+              ttlSeconds={contractBatchInfo.ttlSeconds}
+              stampValue={contractBatchInfo.remainingBalance}
+              isFlashing={isTTLFlashing}
+            />
           )}
 
           <div className={styles.inputGroup}>

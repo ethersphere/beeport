@@ -476,6 +476,129 @@ export const isExpiryWarning = (ttlSeconds: number): boolean => {
 };
 
 /**
+ * Format TTL in detailed human-readable format showing two most significant units
+ * Examples: "1 week 3 days", "2 days 1 hr", "3 hrs 45 mins"
+ */
+export const formatDetailedTTL = (ttlSeconds: number): string => {
+  if (ttlSeconds <= 0) {
+    return 'Expired';
+  }
+
+  const weeks = Math.floor(ttlSeconds / 604800); // 7 days
+  const days = Math.floor((ttlSeconds % 604800) / 86400);
+  const hours = Math.floor((ttlSeconds % 86400) / 3600);
+  const minutes = Math.floor((ttlSeconds % 3600) / 60);
+
+  // Show two most significant units
+  if (weeks > 0) {
+    if (days > 0) {
+      return `${weeks} week${weeks === 1 ? '' : 's'} ${days} day${days === 1 ? '' : 's'}`;
+    }
+    return `${weeks} week${weeks === 1 ? '' : 's'}`;
+  } else if (days > 0) {
+    if (hours > 0) {
+      return `${days} day${days === 1 ? '' : 's'} ${hours} hr${hours === 1 ? '' : 's'}`;
+    }
+    return `${days} day${days === 1 ? '' : 's'}`;
+  } else if (hours > 0) {
+    if (minutes > 0) {
+      return `${hours} hr${hours === 1 ? '' : 's'} ${minutes} min${minutes === 1 ? '' : 's'}`;
+    }
+    return `${hours} hr${hours === 1 ? '' : 's'}`;
+  } else if (minutes > 0) {
+    return `${minutes} min${minutes === 1 ? '' : 's'}`;
+  } else {
+    return 'Less than 1 minute';
+  }
+};
+
+/**
+ * Query batch information from PostageStamp contract on Gnosis Chain
+ * @param batchId The batch ID (with or without 0x prefix)
+ * @returns Object containing TTL in seconds and remaining balance in BZZ
+ */
+export const fetchBatchInfoFromContract = async (
+  batchId: string
+): Promise<{ ttlSeconds: number; remainingBalance: string } | null> => {
+  try {
+    const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    const { client } = getGnosisPublicClient(0);
+
+    // Query all necessary data from the contract
+    const [normalizedBalance, totalOutPayment, lastPrice, remainingBalance] = await Promise.all([
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'batchNormalisedBalance',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'currentTotalOutPayment',
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'lastPrice',
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'remainingBalance',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+    ]);
+
+    // Calculate TTL in blocks
+    // TTL (blocks) = (normalizedBalance - totalOutPayment) / lastPrice
+    const normalizedBalanceBigInt = BigInt(normalizedBalance as bigint);
+    const totalOutPaymentBigInt = BigInt(totalOutPayment as bigint);
+    const lastPriceBigInt = BigInt(lastPrice as bigint);
+    const remainingBalanceBigInt = BigInt(remainingBalance as bigint);
+
+    if (lastPriceBigInt === 0n) {
+      console.error('lastPrice is 0, cannot calculate TTL');
+      return null;
+    }
+
+    // Calculate remaining blocks
+    const remainingBlocks =
+      normalizedBalanceBigInt > totalOutPaymentBigInt
+        ? (normalizedBalanceBigInt - totalOutPaymentBigInt) / lastPriceBigInt
+        : 0n;
+
+    // Convert to seconds (Gnosis Chain: ~5 second blocks)
+    const ttlSeconds = Number(remainingBlocks) * 5;
+
+    // Convert remaining balance to BZZ (divide by 10^16)
+    const remainingBalanceString = remainingBalanceBigInt.toString();
+
+    console.log('Contract batch info:', {
+      batchId: formattedBatchId,
+      normalizedBalance: normalizedBalanceBigInt.toString(),
+      totalOutPayment: totalOutPaymentBigInt.toString(),
+      lastPrice: lastPriceBigInt.toString(),
+      remainingBalance: remainingBalanceString,
+      remainingBlocks: remainingBlocks.toString(),
+      ttlSeconds,
+    });
+
+    return {
+      ttlSeconds,
+      remainingBalance: remainingBalanceString,
+    };
+  } catch (error) {
+    console.error('Error fetching batch info from contract:', error);
+    return null;
+  }
+};
+
+/**
  * Calculate the real stamp usage percentage
  * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
  * @param depth Stamp depth from Bee API

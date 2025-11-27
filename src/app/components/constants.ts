@@ -205,6 +205,45 @@ export const GNOSIS_PRICE_ORACLE_ABI = [
   },
 ] as const;
 
+// PostageStamp contract ABI for querying batch information
+export const POSTAGE_STAMP_ABI = [
+  {
+    name: 'remainingBalance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '_batchId', type: 'bytes32' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'batchNormalisedBalance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '_batchId', type: 'bytes32' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'currentTotalOutPayment',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'lastPrice',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint64' }],
+  },
+  {
+    name: 'batchDepth',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '_batchId', type: 'bytes32' }],
+    outputs: [{ type: 'uint8' }],
+  },
+] as const;
+
 // Sushiswap V3 Pool ABI (minimal for price)
 export const V3_POOL_ABI = [
   {
