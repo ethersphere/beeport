@@ -229,10 +229,11 @@ const SwapComponent: React.FC = () => {
   // Add state for original stamp info (used in top-ups)
   const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
 
-  // Add state for batch info from contract (TTL and balance)
+  // Add state for batch info from contract (TTL and remaining balance)
   const [contractBatchInfo, setContractBatchInfo] = useState<{
     ttlSeconds: number;
     remainingBalance: string;
+    depth: number;
   } | null>(null);
 
   // Add state for TTL display flashing animation

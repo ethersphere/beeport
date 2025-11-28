@@ -515,11 +515,11 @@ export const formatDetailedTTL = (ttlSeconds: number): string => {
 /**
  * Query batch information from PostageStamp contract on Gnosis Chain
  * @param batchId The batch ID (with or without 0x prefix)
- * @returns Object containing TTL in seconds and remaining balance in BZZ
+ * @returns Object containing TTL in seconds, remaining balance (total), and depth
  */
 export const fetchBatchInfoFromContract = async (
   batchId: string
-): Promise<{ ttlSeconds: number; remainingBalance: string } | null> => {
+): Promise<{ ttlSeconds: number; remainingBalance: string; depth: number } | null> => {
   try {
     const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
 
@@ -529,53 +529,65 @@ export const fetchBatchInfoFromContract = async (
     const { client } = getGnosisPublicClient(0);
 
     // Query all necessary data from the contract
-    const [normalizedBalance, totalOutPayment, lastPrice, remainingBalance] = await Promise.all([
-      client.readContract({
-        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-        abi: POSTAGE_STAMP_ABI,
-        functionName: 'batchNormalisedBalance',
-        args: [formattedBatchId as `0x${string}`],
-      }),
-      client.readContract({
-        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-        abi: POSTAGE_STAMP_ABI,
-        functionName: 'currentTotalOutPayment',
-      }),
-      client.readContract({
-        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-        abi: POSTAGE_STAMP_ABI,
-        functionName: 'lastPrice',
-      }),
-      client.readContract({
-        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-        abi: POSTAGE_STAMP_ABI,
-        functionName: 'remainingBalance',
-        args: [formattedBatchId as `0x${string}`],
-      }),
-    ]);
+    const [normalizedBalance, totalOutPayment, lastPrice, remainingBalance, depth] =
+      await Promise.all([
+        client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'batchNormalisedBalance',
+          args: [formattedBatchId as `0x${string}`],
+        }),
+        client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'currentTotalOutPayment',
+        }),
+        client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'lastPrice',
+        }),
+        client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'remainingBalance',
+          args: [formattedBatchId as `0x${string}`],
+        }),
+        client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'batchDepth',
+          args: [formattedBatchId as `0x${string}`],
+        }),
+      ]);
 
-    // Calculate TTL in blocks
-    // TTL (blocks) = (normalizedBalance - totalOutPayment) / lastPrice
+    // Calculate TTL and remaining balance following Bee's implementation
+    // From bee/pkg/api/postage.go:
+    // ttl = (normalizedBalance - cumulativePayout) * blockTime / pricePerBlock
     const normalizedBalanceBigInt = BigInt(normalizedBalance as bigint);
     const totalOutPaymentBigInt = BigInt(totalOutPayment as bigint);
     const lastPriceBigInt = BigInt(lastPrice as bigint);
-    const remainingBalanceBigInt = BigInt(remainingBalance as bigint);
+    const depthNumber = Number(depth);
 
     if (lastPriceBigInt === 0n) {
       console.error('lastPrice is 0, cannot calculate TTL');
       return null;
     }
 
-    // Calculate remaining blocks
-    const remainingBlocks =
+    // Calculate remaining balance (same value used for TTL calculation)
+    // This is the normalized balance minus cumulative payout
+    const remainingBalanceBigInt =
       normalizedBalanceBigInt > totalOutPaymentBigInt
-        ? (normalizedBalanceBigInt - totalOutPaymentBigInt) / lastPriceBigInt
+        ? normalizedBalanceBigInt - totalOutPaymentBigInt
         : 0n;
+
+    // Calculate remaining blocks
+    const remainingBlocks = remainingBalanceBigInt / lastPriceBigInt;
 
     // Convert to seconds (Gnosis Chain: ~5 second blocks)
     const ttlSeconds = Number(remainingBlocks) * 5;
 
-    // Convert remaining balance to BZZ (divide by 10^16)
+    // The remaining balance is already the total amount (in PLUR), not per-chunk
     const remainingBalanceString = remainingBalanceBigInt.toString();
 
     console.log('Contract batch info:', {
@@ -583,6 +595,7 @@ export const fetchBatchInfoFromContract = async (
       normalizedBalance: normalizedBalanceBigInt.toString(),
       totalOutPayment: totalOutPaymentBigInt.toString(),
       lastPrice: lastPriceBigInt.toString(),
+      depth: depthNumber,
       remainingBalance: remainingBalanceString,
       remainingBlocks: remainingBlocks.toString(),
       ttlSeconds,
@@ -591,6 +604,7 @@ export const fetchBatchInfoFromContract = async (
     return {
       ttlSeconds,
       remainingBalance: remainingBalanceString,
+      depth: depthNumber,
     };
   } catch (error) {
     console.error('Error fetching batch info from contract:', error);

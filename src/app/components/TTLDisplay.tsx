@@ -23,14 +23,18 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, isFlash
 
   const technicalTTL = formatTechnicalTTL(ttlSeconds);
 
-  // Format stamp value in BZZ (convert from PLUR to BZZ)
+  // Format stamp value in BZZ (BZZ has 16 decimal places: 1 BZZ = 10^16 PLUR)
   const formatStampValue = (amount: string): string => {
     try {
       const amountBigInt = BigInt(amount);
-      const bzz = Number(amountBigInt) / 1e16; // Convert PLUR to BZZ
-      return bzz.toFixed(4);
+      // Convert PLUR to BZZ by dividing by 10^16
+      const bzz = Number(amountBigInt) / 1e16;
+
+      // Format with appropriate decimal places, removing trailing zeros
+      const formatted = bzz.toFixed(6);
+      return formatted.replace(/\.?0+$/, '') || '0';
     } catch (error) {
-      return '0.0000';
+      return '0';
     }
   };
 
@@ -38,16 +42,11 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, isFlash
 
   return (
     <div className={`${styles.ttlContainer} ${isFlashing ? styles.flashing : ''}`}>
-      {/* Label */}
-      <div className={styles.label}>TTL</div>
-
-      {/* Main TTL Display - prominent in the middle */}
-      <div className={styles.mainTTL}>{formattedTTL}</div>
-
-      {/* Details Row */}
+      <div className={styles.mainTTL}>TTL: {formattedTTL}</div>
       <div className={styles.detailsRow}>
-        <div className={styles.leftDetail}>SVL: {bzzValue} BZZ</div>
-        <div className={styles.rightDetail}>TTL: {technicalTTL}</div>
+        <span className={styles.leftDetail}>Remaining Balance: {bzzValue} BZZ</span>
+        <span> • </span>
+        <span className={styles.rightDetail}>TTL: {technicalTTL}</span>
       </div>
     </div>
   );
