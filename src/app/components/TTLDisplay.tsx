@@ -207,7 +207,9 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId
           )}
         </div>
       )}
-      <div className={styles.mainTTL}>{formattedTTL} remaining...</div>
+      <div className={styles.mainTTL}>
+        {formattedTTL} <span className={styles.remainingText}>remaining...</span>
+      </div>
       <div className={styles.detailsRow}>
         <span className={styles.leftDetail}>Balance: {bzzValue} BZZ</span>
         <span> • </span>
