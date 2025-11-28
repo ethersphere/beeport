@@ -5,23 +5,33 @@ import styles from './css/TTLDisplay.module.css';
 interface TTLDisplayProps {
   ttlSeconds: number;
   stampValue: string; // The amount/balance of the stamp
+  stampId?: string; // The stamp/batch ID
+  owner?: string; // The owner of the stamp
+  payer?: string; // The payer (actual buyer if bought through proxy)
   isFlashing?: boolean;
 }
 
-const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, isFlashing = false }) => {
+const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId, owner, payer, isFlashing = false }) => {
   // Format TTL for detailed display
   const formattedTTL = formatDetailedTTL(ttlSeconds);
 
-  // Format TTL for technical display (seconds or minutes)
-  const formatTechnicalTTL = (seconds: number): string => {
-    if (seconds > 100000) {
-      const minutes = Math.floor(seconds / 60);
-      return `${minutes.toLocaleString()} minutes`;
+  // Calculate estimated expiry time
+  const formatExpiryDateTime = (seconds: number): string => {
+    if (seconds <= 0) {
+      return 'Expired';
     }
-    return `${seconds.toLocaleString()} seconds`;
+    const expiryDate = new Date(Date.now() + seconds * 1000);
+    return expiryDate.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
   };
 
-  const technicalTTL = formatTechnicalTTL(ttlSeconds);
+  const estimatedExpiry = formatExpiryDateTime(ttlSeconds);
 
   // Format stamp value in BZZ (BZZ has 16 decimal places: 1 BZZ = 10^16 PLUR)
   const formatStampValue = (amount: string): string => {
@@ -40,13 +50,168 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, isFlash
 
   const bzzValue = formatStampValue(stampValue);
 
+  // Handle copy to clipboard for stamp ID
+  const handleCopyStampId = () => {
+    if (!stampId) return;
+    const idToCopy = stampId.startsWith('0x') ? stampId.slice(2) : stampId;
+    navigator.clipboard.writeText(idToCopy);
+
+    // Show temporary "Copied!" message
+    const element = document.querySelector(`[data-stamp-id="${stampId}"]`);
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
+
+  // Handle copy to clipboard for share link
+  const handleCopyShareLink = () => {
+    if (typeof window === 'undefined') return;
+    const currentUrl = window.location.href;
+    navigator.clipboard.writeText(currentUrl);
+
+    // Show temporary "Copied!" message
+    const element = document.querySelector('[data-share-link]');
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
+
+  // Format stamp ID with truncation (first6...last4)
+  const formatStampId = (id: string): string => {
+    const cleanId = id.startsWith('0x') ? id.slice(2) : id;
+    if (cleanId.length <= 10) return cleanId;
+    return `${cleanId.slice(0, 6)}...${cleanId.slice(-4)}`;
+  };
+
+  // Format address with truncation (first6...last4)
+  const formatAddress = (address: string): string => {
+    const cleanAddress = address.startsWith('0x') ? address.slice(2) : address;
+    if (cleanAddress.length <= 10) return cleanAddress;
+    return `${cleanAddress.slice(0, 6)}...${cleanAddress.slice(-4)}`;
+  };
+
+  // Handle copy to clipboard for owner address
+  const handleCopyOwner = () => {
+    const addressToCopy = getOwnerToCopy();
+    if (!addressToCopy) return;
+    const cleanAddress = addressToCopy.startsWith('0x') ? addressToCopy : `0x${addressToCopy}`;
+    navigator.clipboard.writeText(cleanAddress);
+
+    // Show temporary "Copied!" message
+    const element = document.querySelector('[data-owner-address]');
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
+
+  // Determine which address to show (payer if bought through proxy, otherwise owner)
+  const getOwnerToDisplay = (): string | null => {
+    if (!owner && !payer) return null;
+    // If owner and payer are different, it was bought through proxy - show payer
+    if (owner && payer && owner.toLowerCase() !== payer.toLowerCase()) {
+      return payer;
+    }
+    // Otherwise show owner (or payer if owner is not available)
+    return owner || payer || null;
+  };
+
+  // Get the address to copy (with 0x prefix)
+  const getOwnerToCopy = (): string | null => {
+    const displayAddress = getOwnerToDisplay();
+    if (!displayAddress) return null;
+    return displayAddress.startsWith('0x') ? displayAddress : `0x${displayAddress}`;
+  };
+
+  // Determine the label for the owner field
+  const getOwnerLabel = (): string => {
+    if (!owner || !payer) return 'Owner';
+    // If they're different, it was bought through proxy
+    if (owner.toLowerCase() !== payer.toLowerCase()) {
+      return 'Buyer';
+    }
+    return 'Owner';
+  };
+
+  const ownerToDisplay = getOwnerToDisplay();
+
+  // Debug logging
+  console.log('🖼️ [TTLDisplay] Component props:', { ttlSeconds, stampValue, stampId, owner, payer, isFlashing });
+  console.log('🖼️ [TTLDisplay] Computed values:', {
+    ownerToDisplay,
+    ownerLabel: getOwnerLabel(),
+    ownerToCopy: getOwnerToCopy(),
+    willShowOwner: !!ownerToDisplay,
+  });
+
   return (
     <div className={`${styles.ttlContainer} ${isFlashing ? styles.flashing : ''}`}>
-      <div className={styles.mainTTL}>TTL: {formattedTTL}</div>
+      {(stampId || ownerToDisplay) && (
+        <div className={styles.infoRow}>
+          {stampId && (
+            <div
+              className={styles.stampId}
+              onClick={handleCopyStampId}
+              data-stamp-id={stampId}
+              data-copied="false"
+              title="Click to copy stamp ID"
+            >
+              Stamp: {formatStampId(stampId)}
+            </div>
+          )}
+          {stampId && (
+            <div
+              className={styles.shareButton}
+              onClick={handleCopyShareLink}
+              data-share-link
+              data-copied="false"
+              title="Click to copy share link"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="18" cy="5" r="3"></circle>
+                <circle cx="6" cy="12" r="3"></circle>
+                <circle cx="18" cy="19" r="3"></circle>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+              </svg>
+            </div>
+          )}
+          {ownerToDisplay && (
+            <div
+              className={styles.ownerAddress}
+              onClick={handleCopyOwner}
+              data-owner-address
+              data-copied="false"
+              title="Click to copy owner address"
+            >
+              {getOwnerLabel()}: {formatAddress(ownerToDisplay)}
+            </div>
+          )}
+        </div>
+      )}
+      <div className={styles.mainTTL}>{formattedTTL} remaining...</div>
       <div className={styles.detailsRow}>
-        <span className={styles.leftDetail}>Remaining Balance: {bzzValue} BZZ</span>
+        <span className={styles.leftDetail}>Balance: {bzzValue} BZZ</span>
         <span> • </span>
-        <span className={styles.rightDetail}>TTL: {technicalTTL}</span>
+        <span className={styles.rightDetail}>Expires: {estimatedExpiry}</span>
       </div>
     </div>
   );

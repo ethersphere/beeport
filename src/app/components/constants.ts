@@ -242,6 +242,13 @@ export const POSTAGE_STAMP_ABI = [
     inputs: [{ name: '_batchId', type: 'bytes32' }],
     outputs: [{ type: 'uint8' }],
   },
+  {
+    name: 'batchOwner',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '_batchId', type: 'bytes32' }],
+    outputs: [{ type: 'address' }],
+  },
 ] as const;
 
 // Sushiswap V3 Pool ABI (minimal for price)
@@ -327,5 +334,20 @@ export const REGISTRY_ABI = [
     ],
     stateMutability: 'view',
     type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+      { indexed: true, internalType: 'address', name: 'owner', type: 'address' },
+      { indexed: false, internalType: 'address', name: 'payer', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'totalAmount', type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'normalisedBalance', type: 'uint256' },
+      { indexed: false, internalType: 'uint8', name: 'depth', type: 'uint8' },
+      { indexed: false, internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
+      { indexed: false, internalType: 'bool', name: 'immutableFlag', type: 'bool' },
+    ],
+    name: 'BatchCreated',
+    type: 'event',
   },
 ] as const;

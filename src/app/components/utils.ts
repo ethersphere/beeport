@@ -529,44 +529,30 @@ export const fetchBatchInfoFromContract = async (
     const { client } = getGnosisPublicClient(0);
 
     // Query all necessary data from the contract
-    const [normalizedBalance, totalOutPayment, lastPrice, remainingBalance, depth] =
-      await Promise.all([
-        client.readContract({
-          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-          abi: POSTAGE_STAMP_ABI,
-          functionName: 'batchNormalisedBalance',
-          args: [formattedBatchId as `0x${string}`],
-        }),
-        client.readContract({
-          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-          abi: POSTAGE_STAMP_ABI,
-          functionName: 'currentTotalOutPayment',
-        }),
-        client.readContract({
-          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-          abi: POSTAGE_STAMP_ABI,
-          functionName: 'lastPrice',
-        }),
-        client.readContract({
-          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-          abi: POSTAGE_STAMP_ABI,
-          functionName: 'remainingBalance',
-          args: [formattedBatchId as `0x${string}`],
-        }),
-        client.readContract({
-          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-          abi: POSTAGE_STAMP_ABI,
-          functionName: 'batchDepth',
-          args: [formattedBatchId as `0x${string}`],
-        }),
-      ]);
+    const [lastPrice, remainingBalancePerChunk, depth] = await Promise.all([
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'lastPrice',
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'remainingBalance',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'batchDepth',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+    ]);
 
-    // Calculate TTL and remaining balance following Bee's implementation
-    // From bee/pkg/api/postage.go:
-    // ttl = (normalizedBalance - cumulativePayout) * blockTime / pricePerBlock
-    const normalizedBalanceBigInt = BigInt(normalizedBalance as bigint);
-    const totalOutPaymentBigInt = BigInt(totalOutPayment as bigint);
+    // Use the contract's remainingBalance function result directly
+    // This returns the per-chunk balance (normalizedBalance - currentTotalOutPayment)
     const lastPriceBigInt = BigInt(lastPrice as bigint);
+    const remainingBalancePerChunkBigInt = BigInt(remainingBalancePerChunk as bigint);
     const depthNumber = Number(depth);
 
     if (lastPriceBigInt === 0n) {
@@ -574,40 +560,182 @@ export const fetchBatchInfoFromContract = async (
       return null;
     }
 
-    // Calculate remaining balance (same value used for TTL calculation)
-    // This is the normalized balance minus cumulative payout
-    const remainingBalanceBigInt =
-      normalizedBalanceBigInt > totalOutPaymentBigInt
-        ? normalizedBalanceBigInt - totalOutPaymentBigInt
-        : 0n;
-
-    // Calculate remaining blocks
-    const remainingBlocks = remainingBalanceBigInt / lastPriceBigInt;
+    // Calculate TTL following Bee's implementation
+    // ttl = (remainingBalance) * blockTime / pricePerBlock
+    const remainingBlocks = remainingBalancePerChunkBigInt / lastPriceBigInt;
 
     // Convert to seconds (Gnosis Chain: ~5 second blocks)
     const ttlSeconds = Number(remainingBlocks) * 5;
 
-    // The remaining balance is already the total amount (in PLUR), not per-chunk
-    const remainingBalanceString = remainingBalanceBigInt.toString();
+    // Calculate total remaining balance by multiplying per-chunk balance by number of chunks (2^depth)
+    // Formula from PostageStamp.sol: totalAmount = initialBalancePerChunk * (1 << depth)
+    const totalRemainingBalance = remainingBalancePerChunkBigInt * (1n << BigInt(depthNumber));
+    const remainingBalanceString = totalRemainingBalance.toString();
 
-    console.log('Contract batch info:', {
-      batchId: formattedBatchId,
-      normalizedBalance: normalizedBalanceBigInt.toString(),
-      totalOutPayment: totalOutPaymentBigInt.toString(),
-      lastPrice: lastPriceBigInt.toString(),
-      depth: depthNumber,
-      remainingBalance: remainingBalanceString,
-      remainingBlocks: remainingBlocks.toString(),
-      ttlSeconds,
-    });
-
-    return {
+    const result = {
       ttlSeconds,
       remainingBalance: remainingBalanceString,
       depth: depthNumber,
     };
+
+    console.log('✅ [PostageStamp Contract] Batch info fetched successfully:', {
+      batchId: formattedBatchId,
+      lastPrice: lastPriceBigInt.toString(),
+      depth: depthNumber,
+      remainingBalancePerChunk: remainingBalancePerChunkBigInt.toString(),
+      totalRemainingBalance: remainingBalanceString,
+      remainingBlocks: remainingBlocks.toString(),
+      ttlSeconds,
+      result,
+    });
+
+    return result;
   } catch (error) {
-    console.error('Error fetching batch info from contract:', error);
+    console.error('❌ [PostageStamp Contract] Error fetching batch info from contract:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the owner/payer information for a specific batch from the registry by querying events
+ * @param batchId The batch ID to look up
+ * @returns Owner address and payer address, or null if not found
+ */
+export const fetchBatchOwnerInfo = async (
+  batchId: string
+): Promise<{ owner: string; payer: string } | null> => {
+  try {
+    const { GNOSIS_CUSTOM_REGISTRY_ADDRESS } = await import('./constants');
+    const { REGISTRY_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    console.log('🔍 [Beeport Registry] Starting owner lookup for batch:', formattedBatchId);
+    console.log('🔍 [Beeport Registry] Registry address:', GNOSIS_CUSTOM_REGISTRY_ADDRESS);
+
+    const { client } = getGnosisPublicClient(0);
+
+    const batchCreatedEvent = REGISTRY_ABI.find(item => item.type === 'event' && item.name === 'BatchCreated');
+    console.log('🔍 [Beeport Registry] Event definition found:', batchCreatedEvent ? 'Yes' : 'No');
+
+    // Query the BatchCreated event logs for this specific batchId
+    console.log('🔍 [Beeport Registry] Querying events from block 0 to latest...');
+    const logs = await client.getLogs({
+      address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+      event: batchCreatedEvent!,
+      args: {
+        batchId: formattedBatchId as `0x${string}`,
+      },
+      fromBlock: BigInt(0), // Search from genesis - could optimize with a known start block
+      toBlock: 'latest',
+    });
+
+    console.log(`🔍 [Beeport Registry] Found ${logs.length} BatchCreated event(s) for this batch`);
+
+    if (logs.length === 0) {
+      console.warn(`⚠️ [Beeport Registry] No BatchCreated event found for batchId: ${formattedBatchId}`);
+      console.warn(`⚠️ [Beeport Registry] This stamp was not created through beeport registry`);
+      console.log(`🔍 [PostageStamp Contract] Falling back to PostageStamp contract for owner info...`);
+
+      // Fallback: Try to get owner from PostageStamp contract
+      try {
+        const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
+
+        const owner = await client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'batchOwner',
+          args: [formattedBatchId as `0x${string}`],
+        }) as string;
+
+        console.log(`✅ [PostageStamp Contract] Found batch owner from PostageStamp contract:`, {
+          batchId: formattedBatchId,
+          owner,
+          payer: owner, // For direct stamps, owner and payer are the same
+        });
+
+        return {
+          owner,
+          payer: owner, // For stamps created directly, owner = payer
+        };
+      } catch (error) {
+        console.error('❌ [PostageStamp Contract] Error fetching owner from PostageStamp contract:', error);
+        return null;
+      }
+    }
+
+    // Get the most recent event (in case there are multiple, though there shouldn't be)
+    const latestLog = logs[logs.length - 1];
+    console.log('🔍 [Beeport Registry] Latest event log:', latestLog);
+
+    const owner = latestLog.args.owner as string;
+    const payer = latestLog.args.payer as string;
+
+    console.log(`✅ [Beeport Registry] Found batch owner info:`, {
+      batchId: formattedBatchId,
+      owner,
+      payer,
+      ownerIsPayer: owner?.toLowerCase() === payer?.toLowerCase(),
+    });
+
+    return {
+      owner,
+      payer,
+    };
+  } catch (error) {
+    console.error('❌ [Beeport Registry] Error fetching batch owner info from events:', error);
+    console.error('❌ [Beeport Registry] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    return null;
+  }
+};
+
+/**
+ * Fetch the owner/payer information for a specific batch from the registry
+ * @param batchId The batch ID to look up
+ * @param ownerAddress The address to check if they own this batch
+ * @returns Owner address and payer address, or null if not found in this owner's batches
+ */
+export const fetchBatchOwnerInfoForAddress = async (
+  batchId: string,
+  ownerAddress: string
+): Promise<{ owner: string; payer: string } | null> => {
+  try {
+    // Use static imports from constants
+    const { GNOSIS_CUSTOM_REGISTRY_ADDRESS } = await import('./constants');
+    const { REGISTRY_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    const { client } = getGnosisPublicClient(0);
+
+    // Query the registry for all batches owned by this address
+    const batches = await client.readContract({
+      address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+      abi: REGISTRY_ABI,
+      functionName: 'getOwnerBatches',
+      args: [ownerAddress as `0x${string}`],
+    });
+
+    // Find the batch with matching ID
+    const batch = (batches as any[]).find(
+      b => b.batchId.toLowerCase() === formattedBatchId.toLowerCase()
+    );
+
+    if (!batch) {
+      return null;
+    }
+
+    return {
+      owner: ownerAddress,
+      payer: batch.payer,
+    };
+  } catch (error) {
+    console.error('Error fetching batch owner info for address:', error);
     return null;
   }
 };
