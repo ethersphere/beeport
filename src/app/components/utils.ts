@@ -476,40 +476,82 @@ export const isExpiryWarning = (ttlSeconds: number): boolean => {
 };
 
 /**
- * Format TTL in detailed human-readable format showing two most significant units
- * Examples: "1 week 3 days", "2 days 1 hr", "3 hrs 45 mins"
+ * Format TTL in detailed human-readable format showing smart time units
+ * Shows only the rightmost available units based on magnitude
+ * Examples:
+ *   - 1 year 2 months 3 weeks → shows years, months, weeks (not days, hours, minutes, seconds)
+ *   - 3 months 1 week 3 days → shows months, weeks, days (not hours, minutes, seconds)
+ *   - 3 hours 2 minutes 54 seconds → shows hours, minutes, seconds
+ * @param ttlSeconds The TTL in seconds
+ * @param maxLength Optional maximum character length - will truncate from the right if exceeded
  */
-export const formatDetailedTTL = (ttlSeconds: number): string => {
+export const formatDetailedTTL = (ttlSeconds: number, maxLength?: number): string => {
   if (ttlSeconds <= 0) {
     return 'Expired';
   }
 
-  const weeks = Math.floor(ttlSeconds / 604800); // 7 days
+  // Calculate all time units
+  const years = Math.floor(ttlSeconds / 31536000); // 365 days
+  const months = Math.floor((ttlSeconds % 31536000) / 2592000); // 30 days
+  const weeks = Math.floor((ttlSeconds % 2592000) / 604800); // 7 days
   const days = Math.floor((ttlSeconds % 604800) / 86400);
   const hours = Math.floor((ttlSeconds % 86400) / 3600);
   const minutes = Math.floor((ttlSeconds % 3600) / 60);
+  const seconds = Math.floor(ttlSeconds % 60);
 
-  // Show two most significant units
-  if (weeks > 0) {
-    if (days > 0) {
-      return `${weeks} week${weeks === 1 ? '' : 's'} ${days} day${days === 1 ? '' : 's'}`;
-    }
-    return `${weeks} week${weeks === 1 ? '' : 's'}`;
-  } else if (days > 0) {
-    if (hours > 0) {
-      return `${days} day${days === 1 ? '' : 's'} ${hours} hr${hours === 1 ? '' : 's'}`;
-    }
-    return `${days} day${days === 1 ? '' : 's'}`;
-  } else if (hours > 0) {
-    if (minutes > 0) {
-      return `${hours} hr${hours === 1 ? '' : 's'} ${minutes} min${minutes === 1 ? '' : 's'}`;
-    }
-    return `${hours} hr${hours === 1 ? '' : 's'}`;
-  } else if (minutes > 0) {
-    return `${minutes} min${minutes === 1 ? '' : 's'}`;
-  } else {
-    return 'Less than 1 minute';
+  // Determine which units to show based on the largest unit present
+  const parts: string[] = [];
+
+  // Determine the granularity level based on the largest time unit
+  let showLevel = 0; // 0=seconds, 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years
+
+  if (years > 0) showLevel = 6;
+  else if (months > 0) showLevel = 5;
+  else if (weeks > 0) showLevel = 4;
+  else if (days > 0) showLevel = 3;
+  else if (hours > 0) showLevel = 2;
+  else if (minutes > 0) showLevel = 1;
+  else showLevel = 0;
+
+  // Add parts based on show level (only show 3 levels of granularity)
+  if (showLevel >= 6 && years > 0) {
+    parts.push(`${years} year${years === 1 ? '' : 's'}`);
   }
+  if (showLevel >= 5 && showLevel <= 7 && months > 0) {
+    parts.push(`${months} month${months === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 4 && showLevel <= 6 && weeks > 0) {
+    parts.push(`${weeks} week${weeks === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 3 && showLevel <= 5 && days > 0) {
+    parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 2 && showLevel <= 4 && hours > 0) {
+    parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 1 && showLevel <= 3 && minutes > 0) {
+    parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  }
+  if (showLevel <= 2) {
+    parts.push(`${seconds} second${seconds === 1 ? '' : 's'}`);
+  }
+
+  if (parts.length === 0) {
+    return 'Less than 1 second';
+  }
+
+  // If maxLength is specified and we exceed it, truncate from the right
+  if (maxLength) {
+    let result = parts.join(' ');
+    if (result.length > maxLength) {
+      // Remove parts from the end until we fit
+      while (parts.length > 1 && parts.join(' ').length > maxLength) {
+        parts.pop();
+      }
+    }
+  }
+
+  return parts.join(' ');
 };
 
 /**

@@ -1,5 +1,5 @@
-import React from 'react';
-import { formatDetailedTTL } from './utils';
+import React, { useState, useEffect, useRef } from 'react';
+import { formatDetailedTTL, fetchBatchInfoFromContract } from './utils';
 import styles from './css/TTLDisplay.module.css';
 
 interface TTLDisplayProps {
@@ -9,11 +9,110 @@ interface TTLDisplayProps {
   owner?: string; // The owner of the stamp
   payer?: string; // The payer (actual buyer if bought through proxy)
   isFlashing?: boolean;
+  onTTLUpdate?: (newTTL: number, newBalance: string) => void; // Callback when TTL is updated from blockchain
 }
 
-const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId, owner, payer, isFlashing = false }) => {
-  // Format TTL for detailed display
-  const formattedTTL = formatDetailedTTL(ttlSeconds);
+const TTLDisplay: React.FC<TTLDisplayProps> = ({
+  ttlSeconds: initialTTLSeconds,
+  stampValue: initialStampValue,
+  stampId,
+  owner,
+  payer,
+  isFlashing = false,
+  onTTLUpdate
+}) => {
+  // State for live countdown
+  const [currentTTL, setCurrentTTL] = useState(initialTTLSeconds);
+  const [currentBalance, setCurrentBalance] = useState(initialStampValue);
+  const lastBlockchainSyncRef = useRef<number>(Date.now());
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Constants for character width calculation
+  // Using font-size: 1.2rem with letter-spacing: 0.06rem from CSS
+  // For the countdown string, we need to estimate conservatively
+  // Font: 1.2rem with letter-spacing 0.06rem
+  // Average character width including spacing: ~0.65rem (conservative)
+  // Container typically 600-800px wide, minus padding
+  // "remaining..." text adds ~12 characters worth of space
+  const APPROX_CHAR_WIDTH = 0.65; // in rem (conservative for proportional font)
+  const BASE_FONT_SIZE = 16; // Default browser font size in pixels
+  const CONTAINER_PADDING_REM = 1.5; // 12px * 2 = 24px = ~1.5rem in padding
+  const ESTIMATED_WIDTH_REM = 45; // ~720px container width in rem
+  const REMAINING_TEXT_WIDTH_REM = 8; // "remaining..." takes about 8rem
+  const AVAILABLE_WIDTH_REM = ESTIMATED_WIDTH_REM - CONTAINER_PADDING_REM - REMAINING_TEXT_WIDTH_REM;
+  const MAX_CHARS = Math.floor(AVAILABLE_WIDTH_REM / APPROX_CHAR_WIDTH);
+
+  console.log('🔧 [TTLDisplay] Character limit calculation:', {
+    estimatedWidthRem: ESTIMATED_WIDTH_REM,
+    availableWidthRem: AVAILABLE_WIDTH_REM,
+    maxChars: MAX_CHARS,
+  });
+
+  // Update local state when props change
+  useEffect(() => {
+    setCurrentTTL(initialTTLSeconds);
+    setCurrentBalance(initialStampValue);
+  }, [initialTTLSeconds, initialStampValue]);
+
+  // Client-side countdown - updates every second
+  useEffect(() => {
+    if (currentTTL <= 0) return;
+
+    countdownIntervalRef.current = setInterval(() => {
+      setCurrentTTL(prev => {
+        const newTTL = prev - 1;
+        return newTTL > 0 ? newTTL : 0;
+      });
+    }, 1000);
+
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, [currentTTL]);
+
+  // Periodic blockchain sync - every 1 minute
+  useEffect(() => {
+    if (!stampId) return;
+
+    const syncWithBlockchain = async () => {
+      try {
+        console.log('🔄 [TTLDisplay] Syncing with blockchain for batch:', stampId);
+        const batchInfo = await fetchBatchInfoFromContract(stampId);
+
+        if (batchInfo) {
+          console.log('✅ [TTLDisplay] Blockchain sync successful:', batchInfo);
+          setCurrentTTL(batchInfo.ttlSeconds);
+          setCurrentBalance(batchInfo.remainingBalance);
+          lastBlockchainSyncRef.current = Date.now();
+
+          // Notify parent component of the update
+          if (onTTLUpdate) {
+            onTTLUpdate(batchInfo.ttlSeconds, batchInfo.remainingBalance);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [TTLDisplay] Error syncing with blockchain:', error);
+      }
+    };
+
+    // Initial sync after component mount
+    syncWithBlockchain();
+
+    // Set up periodic sync every 60 seconds
+    syncIntervalRef.current = setInterval(syncWithBlockchain, 60000);
+
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
+  }, [stampId, onTTLUpdate]);
+
+  // Format TTL for detailed display with character limit
+  const formattedTTL = formatDetailedTTL(currentTTL, MAX_CHARS);
 
   // Calculate estimated expiry time
   const formatExpiryDateTime = (seconds: number): string => {
@@ -31,7 +130,7 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId
     });
   };
 
-  const estimatedExpiry = formatExpiryDateTime(ttlSeconds);
+  const estimatedExpiry = formatExpiryDateTime(currentTTL);
 
   // Format stamp value in BZZ (BZZ has 16 decimal places: 1 BZZ = 10^16 PLUR)
   const formatStampValue = (amount: string): string => {
@@ -48,7 +147,46 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId
     }
   };
 
-  const bzzValue = formatStampValue(stampValue);
+  const bzzValue = formatStampValue(currentBalance);
+
+  // Handle copy to clipboard for balance
+  const handleCopyBalance = () => {
+    navigator.clipboard.writeText(`${bzzValue} BZZ`);
+
+    const element = document.querySelector('[data-balance]');
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
+
+  // Handle copy to clipboard for expiration date
+  const handleCopyExpiration = () => {
+    navigator.clipboard.writeText(estimatedExpiry);
+
+    const element = document.querySelector('[data-expiration]');
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
+
+  // Handle copy to clipboard for countdown
+  const handleCopyCountdown = () => {
+    navigator.clipboard.writeText(formattedTTL);
+
+    const element = document.querySelector('[data-countdown]');
+    if (element) {
+      element.setAttribute('data-copied', 'true');
+      setTimeout(() => {
+        element.setAttribute('data-copied', 'false');
+      }, 2000);
+    }
+  };
 
   // Handle copy to clipboard for stamp ID
   const handleCopyStampId = () => {
@@ -144,7 +282,7 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId
   const ownerToDisplay = getOwnerToDisplay();
 
   // Debug logging
-  console.log('🖼️ [TTLDisplay] Component props:', { ttlSeconds, stampValue, stampId, owner, payer, isFlashing });
+  console.log('🖼️ [TTLDisplay] Component props:', { ttlSeconds: initialTTLSeconds, stampValue: initialStampValue, stampId, owner, payer, isFlashing });
   console.log('🖼️ [TTLDisplay] Computed values:', {
     ownerToDisplay,
     ownerLabel: getOwnerLabel(),
@@ -207,13 +345,35 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({ ttlSeconds, stampValue, stampId
           )}
         </div>
       )}
-      <div className={styles.mainTTL}>
-        {formattedTTL} <span className={styles.remainingText}>remaining...</span>
+      <div
+        className={styles.mainTTL}
+        onClick={handleCopyCountdown}
+        data-countdown
+        data-copied="false"
+        title="Click to copy countdown"
+      >
+        {formattedTTL}
       </div>
       <div className={styles.detailsRow}>
-        <span className={styles.leftDetail}>Balance: {bzzValue} BZZ</span>
+        <span
+          className={styles.leftDetail}
+          onClick={handleCopyBalance}
+          data-balance
+          data-copied="false"
+          title="Click to copy balance"
+        >
+          Balance: {bzzValue} BZZ
+        </span>
         <span> • </span>
-        <span className={styles.rightDetail}>Expires: {estimatedExpiry}</span>
+        <span
+          className={styles.rightDetail}
+          onClick={handleCopyExpiration}
+          data-expiration
+          data-copied="false"
+          title="Click to copy expiration"
+        >
+          Expires: {estimatedExpiry}
+        </span>
       </div>
     </div>
   );
