@@ -2668,8 +2668,10 @@ const SwapComponent: React.FC = () => {
                         if (typeof window !== 'undefined') {
                           const url = new URL(window.location.href);
                           if (url.searchParams.has('topup')) {
-                            // Remove the topup parameter and navigate to clean URL
-                            window.location.href = window.location.origin;
+                            // Get the topup batch ID to preserve in URL
+                            const topupParam = url.searchParams.get('topup');
+                            // Navigate with topup parameter preserved
+                            window.location.href = `${window.location.origin}/?topup=${topupParam}`;
                           }
                         }
                       }}
