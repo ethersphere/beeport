@@ -513,7 +513,7 @@ export const formatDetailedTTL = (ttlSeconds: number, maxLength?: number): strin
   else if (minutes > 0) showLevel = 1;
   else showLevel = 0;
 
-  // Add parts based on show level (only show 3 levels of granularity)
+  // Add parts based on show level (show 4 levels of granularity to include hours/minutes)
   if (showLevel >= 6 && years > 0) {
     parts.push(`${years} year${years === 1 ? '' : 's'}`);
   }
@@ -526,13 +526,13 @@ export const formatDetailedTTL = (ttlSeconds: number, maxLength?: number): strin
   if (showLevel >= 3 && showLevel <= 5 && days > 0) {
     parts.push(`${days} day${days === 1 ? '' : 's'}`);
   }
-  if (showLevel >= 2 && showLevel <= 4 && hours > 0) {
+  if (showLevel >= 2 && showLevel <= 5 && hours > 0) {
     parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
   }
-  if (showLevel >= 1 && showLevel <= 3 && minutes > 0) {
+  if (showLevel >= 1 && showLevel <= 4 && minutes > 0) {
     parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
   }
-  if (showLevel <= 2) {
+  if (showLevel <= 3 && seconds > 0) {
     parts.push(`${seconds} second${seconds === 1 ? '' : 's'}`);
   }
 

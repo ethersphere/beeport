@@ -1731,6 +1731,34 @@ const SwapComponent: React.FC = () => {
 
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
+          {isTopUp && contractBatchInfo && (
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>
+                Stamp expiry:
+              </label>
+              {(() => {
+                console.log('🎨 [SwapComponent] Rendering TTLDisplay with props:', {
+                  ttlSeconds: contractBatchInfo.ttlSeconds,
+                  stampValue: contractBatchInfo.remainingBalance,
+                  stampId: topUpBatchId || undefined,
+                  owner: contractBatchInfo.owner,
+                  payer: contractBatchInfo.payer,
+                  isFlashing: isTTLFlashing,
+                });
+                return (
+                  <TTLDisplay
+                    ttlSeconds={contractBatchInfo.ttlSeconds}
+                    stampValue={contractBatchInfo.remainingBalance}
+                    stampId={topUpBatchId || undefined}
+                    owner={contractBatchInfo.owner}
+                    payer={contractBatchInfo.payer}
+                    isFlashing={isTTLFlashing}
+                  />
+                );
+              })()}
+            </div>
+          )}
+
           <div className={styles.inputGroup}>
             <label className={styles.label} data-tooltip="Select chain with funds">
               From chain
@@ -1786,27 +1814,6 @@ const SwapComponent: React.FC = () => {
               />
             </div>
           )}
-
-          {isTopUp && contractBatchInfo && (() => {
-            console.log('🎨 [SwapComponent] Rendering TTLDisplay with props:', {
-              ttlSeconds: contractBatchInfo.ttlSeconds,
-              stampValue: contractBatchInfo.remainingBalance,
-              stampId: topUpBatchId || undefined,
-              owner: contractBatchInfo.owner,
-              payer: contractBatchInfo.payer,
-              isFlashing: isTTLFlashing,
-            });
-            return (
-              <TTLDisplay
-                ttlSeconds={contractBatchInfo.ttlSeconds}
-                stampValue={contractBatchInfo.remainingBalance}
-                stampId={topUpBatchId || undefined}
-                owner={contractBatchInfo.owner}
-                payer={contractBatchInfo.payer}
-                isFlashing={isTTLFlashing}
-              />
-            );
-          })()}
 
           <div className={styles.inputGroup}>
             <label
