@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styles from './css/StampListSection.module.css';
 import { formatUnits } from 'viem';
 import { UploadStep } from './types';
@@ -182,7 +182,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     }
   };
 
-  const markStampAsExpired = (batchId: string, stampTimestamp?: number) => {
+  const markStampAsExpired = useCallback((batchId: string, stampTimestamp?: number) => {
     try {
       const cache = getExpiredStampsCache();
       const now = Date.now();
@@ -222,7 +222,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     } catch (error) {
       console.warn('Error updating expired stamps cache:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const isStampKnownExpired = (batchId: string): boolean => {
@@ -399,7 +399,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     fetchStamps();
-  }, [address, beeApiUrl]); // Only dependencies that actually need to trigger re-fetching
+  }, [address, beeApiUrl, markStampAsExpired]); // Only dependencies that actually need to trigger re-fetching
 
   // Function to refresh a specific stamp
   const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {

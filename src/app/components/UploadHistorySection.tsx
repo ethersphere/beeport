@@ -72,12 +72,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   const [isMigrating, setIsMigrating] = React.useState(false);
   const [migrationProgress, setMigrationProgress] = React.useState<string>('');
 
-  const formatStampId = (stampId: string) => {
+  const formatStampId = React.useCallback((stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
       return stampId || 'Invalid Stamp ID';
     }
     return `${stampId.slice(0, 6)}...${stampId.slice(-4)}`;
-  };
+  }, []);
 
   const formatReference = (reference: string) => {
     if (!reference || typeof reference !== 'string' || reference.length < 10) {
@@ -90,20 +90,20 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
    * Checks if an expiry date needs migration
    * Returns true if the expiry date is in an old/invalid format
    */
-  const needsExpiryMigration = (expiryDate: number): boolean => {
+  const needsExpiryMigration = React.useCallback((expiryDate: number): boolean => {
     // Valid timestamp format: Unix timestamp in milliseconds
     // Should be > 1000000000000 (after Sep 9, 2001) and < 32503680000000 (before year 3000)
     if (!isNaN(expiryDate) && expiryDate > 1000000000000 && expiryDate < 32503680000000) {
       return false; // Already in correct format
     }
     return true; // Needs migration
-  };
+  }, []);
 
   /**
    * Auto-migrates old expiry dates by querying the Bee API
    * This runs on every load and updates localStorage when complete
    */
-  const migrateOldExpiryDates = async (records: UploadRecord[], userAddress: string) => {
+  const migrateOldExpiryDates = React.useCallback(async (records: UploadRecord[], userAddress: string) => {
     // Find records that need migration
     const recordsToMigrate = records.filter(record => needsExpiryMigration(record.expiryDate));
 
@@ -221,7 +221,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       setIsMigrating(false);
       setMigrationProgress('');
     }
-  };
+  }, [needsExpiryMigration, formatStampId]);
 
   React.useEffect(() => {
     if (address) {
@@ -262,7 +262,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         migrateOldExpiryDates(uniqueHistory, address);
       }
     }
-  }, [address]);
+  }, [address, migrateOldExpiryDates]);
 
   const formatDate = (timestamp: number) => {
     if (timestamp === undefined) return 'Unknown';

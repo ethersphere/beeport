@@ -542,7 +542,7 @@ export const formatDetailedTTL = (ttlSeconds: number, maxLength?: number): strin
 
   // If maxLength is specified and we exceed it, truncate from the right
   if (maxLength) {
-    let result = parts.join(' ');
+    const result = parts.join(' ');
     if (result.length > maxLength) {
       // Remove parts from the end until we fit
       while (parts.length > 1 && parts.join(' ').length > maxLength) {
