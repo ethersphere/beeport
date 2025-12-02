@@ -43,12 +43,6 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({
   const AVAILABLE_WIDTH_REM = ESTIMATED_WIDTH_REM - CONTAINER_PADDING_REM - REMAINING_TEXT_WIDTH_REM;
   const MAX_CHARS = Math.floor(AVAILABLE_WIDTH_REM / APPROX_CHAR_WIDTH);
 
-  console.log('🔧 [TTLDisplay] Character limit calculation:', {
-    estimatedWidthRem: ESTIMATED_WIDTH_REM,
-    availableWidthRem: AVAILABLE_WIDTH_REM,
-    maxChars: MAX_CHARS,
-  });
-
   // Update local state when props change
   useEffect(() => {
     setCurrentTTL(initialTTLSeconds);
@@ -79,11 +73,9 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({
 
     const syncWithBlockchain = async () => {
       try {
-        console.log('🔄 [TTLDisplay] Syncing with blockchain for batch:', stampId);
         const batchInfo = await fetchBatchInfoFromContract(stampId);
 
         if (batchInfo) {
-          console.log('✅ [TTLDisplay] Blockchain sync successful:', batchInfo);
           setCurrentTTL(batchInfo.ttlSeconds);
           setCurrentBalance(batchInfo.remainingBalance);
           lastBlockchainSyncRef.current = Date.now();
@@ -94,7 +86,7 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({
           }
         }
       } catch (error) {
-        console.error('❌ [TTLDisplay] Error syncing with blockchain:', error);
+        console.error('Error syncing TTL with blockchain:', error);
       }
     };
 
@@ -280,15 +272,6 @@ const TTLDisplay: React.FC<TTLDisplayProps> = ({
   };
 
   const ownerToDisplay = getOwnerToDisplay();
-
-  // Debug logging
-  console.log('🖼️ [TTLDisplay] Component props:', { ttlSeconds: initialTTLSeconds, stampValue: initialStampValue, stampId, owner, payer, isFlashing });
-  console.log('🖼️ [TTLDisplay] Computed values:', {
-    ownerToDisplay,
-    ownerLabel: getOwnerLabel(),
-    ownerToCopy: getOwnerToCopy(),
-    willShowOwner: !!ownerToDisplay,
-  });
 
   return (
     <div className={`${styles.ttlContainer} ${isFlashing ? styles.flashing : ''}`}>

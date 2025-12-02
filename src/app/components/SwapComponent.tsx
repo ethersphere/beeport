@@ -1587,15 +1587,10 @@ const SwapComponent: React.FC = () => {
         }
 
         // Fetch TTL and balance from contract
-        console.log('📊 [SwapComponent] Fetching batch info for topUpBatchId:', topUpBatchId);
         const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
         if (batchInfo) {
-          console.log('📊 [SwapComponent] Received batch info from PostageStamp contract:', batchInfo);
-
           // Fetch owner info from registry by querying events
-          console.log('📊 [SwapComponent] Fetching owner info from registry...');
           const ownerInfo = await fetchBatchOwnerInfo(topUpBatchId);
-          console.log('📊 [SwapComponent] Received owner info from registry:', ownerInfo);
 
           const combinedInfo = {
             ...batchInfo,
@@ -1603,10 +1598,7 @@ const SwapComponent: React.FC = () => {
             payer: ownerInfo?.payer,
           };
 
-          console.log('📊 [SwapComponent] Setting contractBatchInfo state with combined data:', combinedInfo);
           setContractBatchInfo(combinedInfo);
-        } else {
-          console.warn('⚠️ [SwapComponent] No batch info received from PostageStamp contract');
         }
       };
 
@@ -1624,15 +1616,10 @@ const SwapComponent: React.FC = () => {
       setTimeout(() => setIsTTLFlashing(false), 600); // Match flash animation duration
 
       // Fetch updated TTL and balance from contract
-      console.log('🔄 [SwapComponent] Refreshing batch info for topUpBatchId:', topUpBatchId);
       const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
       if (batchInfo) {
-        console.log('🔄 [SwapComponent] Refreshed batch info from PostageStamp contract:', batchInfo);
-
         // Fetch owner info from registry by querying events
-        console.log('🔄 [SwapComponent] Refreshing owner info from registry...');
         const ownerInfo = await fetchBatchOwnerInfo(topUpBatchId);
-        console.log('🔄 [SwapComponent] Refreshed owner info from registry:', ownerInfo);
 
         const combinedInfo = {
           ...batchInfo,
@@ -1640,7 +1627,6 @@ const SwapComponent: React.FC = () => {
           payer: ownerInfo?.payer,
         };
 
-        console.log('🔄 [SwapComponent] Updating contractBatchInfo state with refreshed data:', combinedInfo);
         setContractBatchInfo(combinedInfo);
       }
     };
@@ -1737,26 +1723,14 @@ const SwapComponent: React.FC = () => {
               <label className={styles.label}>
                 Stamp expiry:
               </label>
-              {(() => {
-                console.log('🎨 [SwapComponent] Rendering TTLDisplay with props:', {
-                  ttlSeconds: contractBatchInfo.ttlSeconds,
-                  stampValue: contractBatchInfo.remainingBalance,
-                  stampId: topUpBatchId || undefined,
-                  owner: contractBatchInfo.owner,
-                  payer: contractBatchInfo.payer,
-                  isFlashing: isTTLFlashing,
-                });
-                return (
-                  <TTLDisplay
-                    ttlSeconds={contractBatchInfo.ttlSeconds}
-                    stampValue={contractBatchInfo.remainingBalance}
-                    stampId={topUpBatchId || undefined}
-                    owner={contractBatchInfo.owner}
-                    payer={contractBatchInfo.payer}
-                    isFlashing={isTTLFlashing}
-                  />
-                );
-              })()}
+              <TTLDisplay
+                ttlSeconds={contractBatchInfo.ttlSeconds}
+                stampValue={contractBatchInfo.remainingBalance}
+                stampId={topUpBatchId || undefined}
+                owner={contractBatchInfo.owner}
+                payer={contractBatchInfo.payer}
+                isFlashing={isTTLFlashing}
+              />
             </div>
           )}
 

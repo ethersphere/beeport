@@ -614,26 +614,13 @@ export const fetchBatchInfoFromContract = async (
     const totalRemainingBalance = remainingBalancePerChunkBigInt * (1n << BigInt(depthNumber));
     const remainingBalanceString = totalRemainingBalance.toString();
 
-    const result = {
+    return {
       ttlSeconds,
       remainingBalance: remainingBalanceString,
       depth: depthNumber,
     };
-
-    console.log('✅ [PostageStamp Contract] Batch info fetched successfully:', {
-      batchId: formattedBatchId,
-      lastPrice: lastPriceBigInt.toString(),
-      depth: depthNumber,
-      remainingBalancePerChunk: remainingBalancePerChunkBigInt.toString(),
-      totalRemainingBalance: remainingBalanceString,
-      remainingBlocks: remainingBlocks.toString(),
-      ttlSeconds,
-      result,
-    });
-
-    return result;
   } catch (error) {
-    console.error('❌ [PostageStamp Contract] Error fetching batch info from contract:', error);
+    console.error('Error fetching batch info from contract:', error);
     return null;
   }
 };
@@ -653,16 +640,11 @@ export const fetchBatchOwnerInfo = async (
     // Ensure batchId has 0x prefix
     const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
 
-    console.log('🔍 [Beeport Registry] Starting owner lookup for batch:', formattedBatchId);
-    console.log('🔍 [Beeport Registry] Registry address:', GNOSIS_CUSTOM_REGISTRY_ADDRESS);
-
     const { client } = getGnosisPublicClient(0);
 
     const batchCreatedEvent = REGISTRY_ABI.find(item => item.type === 'event' && item.name === 'BatchCreated');
-    console.log('🔍 [Beeport Registry] Event definition found:', batchCreatedEvent ? 'Yes' : 'No');
 
     // Query the BatchCreated event logs for this specific batchId
-    console.log('🔍 [Beeport Registry] Querying events from block 0 to latest...');
     const logs = await client.getLogs({
       address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
       event: batchCreatedEvent!,
@@ -673,13 +655,7 @@ export const fetchBatchOwnerInfo = async (
       toBlock: 'latest',
     });
 
-    console.log(`🔍 [Beeport Registry] Found ${logs.length} BatchCreated event(s) for this batch`);
-
     if (logs.length === 0) {
-      console.warn(`⚠️ [Beeport Registry] No BatchCreated event found for batchId: ${formattedBatchId}`);
-      console.warn(`⚠️ [Beeport Registry] This stamp was not created through beeport registry`);
-      console.log(`🔍 [PostageStamp Contract] Falling back to PostageStamp contract for owner info...`);
-
       // Fallback: Try to get owner from PostageStamp contract
       try {
         const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
@@ -691,46 +667,28 @@ export const fetchBatchOwnerInfo = async (
           args: [formattedBatchId as `0x${string}`],
         }) as string;
 
-        console.log(`✅ [PostageStamp Contract] Found batch owner from PostageStamp contract:`, {
-          batchId: formattedBatchId,
-          owner,
-          payer: owner, // For direct stamps, owner and payer are the same
-        });
-
         return {
           owner,
           payer: owner, // For stamps created directly, owner = payer
         };
       } catch (error) {
-        console.error('❌ [PostageStamp Contract] Error fetching owner from PostageStamp contract:', error);
+        console.error('Error fetching owner from PostageStamp contract:', error);
         return null;
       }
     }
 
     // Get the most recent event (in case there are multiple, though there shouldn't be)
     const latestLog = logs[logs.length - 1];
-    console.log('🔍 [Beeport Registry] Latest event log:', latestLog);
 
     const owner = latestLog.args.owner as string;
     const payer = latestLog.args.payer as string;
-
-    console.log(`✅ [Beeport Registry] Found batch owner info:`, {
-      batchId: formattedBatchId,
-      owner,
-      payer,
-      ownerIsPayer: owner?.toLowerCase() === payer?.toLowerCase(),
-    });
 
     return {
       owner,
       payer,
     };
   } catch (error) {
-    console.error('❌ [Beeport Registry] Error fetching batch owner info from events:', error);
-    console.error('❌ [Beeport Registry] Error details:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    console.error('Error fetching batch owner info from events:', error);
     return null;
   }
 };
