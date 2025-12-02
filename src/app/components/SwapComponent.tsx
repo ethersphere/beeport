@@ -643,6 +643,18 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  // Calculate amount for topping up an existing batch
+  const calculateTopUpAmount = useCallback((originalDepth: number) => {
+    if (currentPrice === null || !selectedDays) return 0n;
+
+    // We use the original depth from the stamp, not the currently selected depth
+    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+
+    // Calculate for the original batch depth
+    return totalPricePerDuration * BigInt(2 ** originalDepth);
+  }, [currentPrice, selectedDays]);
+
   // Check approval status when relevant parameters change
   useEffect(() => {
     const checkApprovalStatus = async () => {
@@ -1637,18 +1649,6 @@ const SwapComponent: React.FC = () => {
     // Clean up interval on unmount
     return () => clearInterval(intervalId);
   }, [topUpBatchId, isTopUp]);
-
-  // Calculate amount for topping up an existing batch
-  const calculateTopUpAmount = useCallback((originalDepth: number) => {
-    if (currentPrice === null || !selectedDays) return 0n;
-
-    // We use the original depth from the stamp, not the currently selected depth
-    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-
-    // Calculate for the original batch depth
-    return totalPricePerDuration * BigInt(2 ** originalDepth);
-  }, [currentPrice, selectedDays]);
 
   // Add useEffect to set hasMounted after component mounts
   useEffect(() => {
