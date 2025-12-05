@@ -1164,9 +1164,9 @@ Your new ENS domain is now registered and ready to use:
 Your domain now points to: bzz://${shortenHash(swarmReference)}
 
 You can now access your content at:
-• ${normalizedDomain} (in ENS-compatible browsers)
-• ${normalizedDomain}.limo (via ENS gateway)
-• ${normalizedDomain}.link (via ENS gateway)`);
+• [${normalizedDomain}](https://${normalizedDomain}.limo) (in ENS-compatible browsers)
+• [${normalizedDomain}.limo](https://${normalizedDomain}.limo) (via ENS gateway)
+• [${normalizedDomain}.link](https://${normalizedDomain}.link) (via ENS gateway)`);
     } catch (err) {
       console.error('Error setting content hash:', err);
       let errorMessage = 'Failed to set content hash';
