@@ -17,9 +17,9 @@ BZZ_AMOUNT="${2:-10}" # Default 10 BZZ
 GNOSIS_CHAIN_ID=100
 BZZ_TOKEN="0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da"
 
-# Convert BZZ amount to wei (18 decimals)
+# Convert BZZ amount to wei (BZZ has 16 decimals, not 18!)
 # For bash, we'll use bc for calculation
-AMOUNT_WEI=$(echo "$BZZ_AMOUNT * 1000000000000000000" | bc)
+AMOUNT_WEI=$(echo "$BZZ_AMOUNT * 10000000000000000" | bc)
 
 echo -e "${YELLOW}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║           Relay API Test - Direct curl Request                ║${NC}"

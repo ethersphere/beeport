@@ -26,6 +26,13 @@ node scripts/testSingleRoute.js 137 5 30 5       # Polygon: 5-30 BZZ
 
 **Chain IDs:** 1=Ethereum, 100=Gnosis, 137=Polygon, 42161=Arbitrum, 8453=Base
 
+### Quick curl Test (Base → BZZ)
+```bash
+./scripts/testBaseToBzz.sh 10      # Test 10 BZZ
+./scripts/testBaseToBzz.sh 50      # Test 50 BZZ
+```
+Simple script for quick Base → Gnosis BZZ testing.
+
 ### Test with Your Wallet
 
 ```bash
