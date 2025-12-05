@@ -61,7 +61,7 @@ export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
 
 // Gas top-up configuration for cross-chain swaps
 export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum xDAI balance to skip gas top-up
-export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in USD decimal format (1000000 = $1)
+export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in Relay API format (1000000 = $1 based on default 2000000 = $2)
 
 // Relay and timing configuration
 export const RELAY_TIMER_BUFFER_SECONDS = 5; // Buffer added to estimated time for timer display
