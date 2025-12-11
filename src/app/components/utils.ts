@@ -476,6 +476,271 @@ export const isExpiryWarning = (ttlSeconds: number): boolean => {
 };
 
 /**
+ * Format TTL in detailed human-readable format showing smart time units
+ * Shows only the rightmost available units based on magnitude
+ * Examples:
+ *   - 1 year 2 months 3 weeks → shows years, months, weeks (not days, hours, minutes, seconds)
+ *   - 3 months 1 week 3 days → shows months, weeks, days (not hours, minutes, seconds)
+ *   - 3 hours 2 minutes 54 seconds → shows hours, minutes, seconds
+ * @param ttlSeconds The TTL in seconds
+ * @param maxLength Optional maximum character length - will truncate from the right if exceeded
+ */
+export const formatDetailedTTL = (ttlSeconds: number, maxLength?: number): string => {
+  if (ttlSeconds <= 0) {
+    return 'Expired';
+  }
+
+  // Calculate all time units
+  const years = Math.floor(ttlSeconds / 31536000); // 365 days
+  const months = Math.floor((ttlSeconds % 31536000) / 2592000); // 30 days
+  const weeks = Math.floor((ttlSeconds % 2592000) / 604800); // 7 days
+  const days = Math.floor((ttlSeconds % 604800) / 86400);
+  const hours = Math.floor((ttlSeconds % 86400) / 3600);
+  const minutes = Math.floor((ttlSeconds % 3600) / 60);
+  const seconds = Math.floor(ttlSeconds % 60);
+
+  // Determine which units to show based on the largest unit present
+  const parts: string[] = [];
+
+  // Determine the granularity level based on the largest time unit
+  let showLevel = 0; // 0=seconds, 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years
+
+  if (years > 0) showLevel = 6;
+  else if (months > 0) showLevel = 5;
+  else if (weeks > 0) showLevel = 4;
+  else if (days > 0) showLevel = 3;
+  else if (hours > 0) showLevel = 2;
+  else if (minutes > 0) showLevel = 1;
+  else showLevel = 0;
+
+  // Add parts based on show level (show 4 levels of granularity to include hours/minutes)
+  if (showLevel >= 6 && years > 0) {
+    parts.push(`${years} year${years === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 5 && showLevel <= 7 && months > 0) {
+    parts.push(`${months} month${months === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 4 && showLevel <= 6 && weeks > 0) {
+    parts.push(`${weeks} week${weeks === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 3 && showLevel <= 5 && days > 0) {
+    parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 2 && showLevel <= 5 && hours > 0) {
+    parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  }
+  if (showLevel >= 1 && showLevel <= 4 && minutes > 0) {
+    parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  }
+  if (showLevel <= 3 && seconds > 0) {
+    parts.push(`${seconds} second${seconds === 1 ? '' : 's'}`);
+  }
+
+  if (parts.length === 0) {
+    return 'Less than 1 second';
+  }
+
+  // If maxLength is specified and we exceed it, truncate from the right
+  if (maxLength) {
+    const result = parts.join(' ');
+    if (result.length > maxLength) {
+      // Remove parts from the end until we fit
+      while (parts.length > 1 && parts.join(' ').length > maxLength) {
+        parts.pop();
+      }
+    }
+  }
+
+  return parts.join(' ');
+};
+
+/**
+ * Query batch information from PostageStamp contract on Gnosis Chain
+ * @param batchId The batch ID (with or without 0x prefix)
+ * @returns Object containing TTL in seconds, remaining balance (total), and depth
+ */
+export const fetchBatchInfoFromContract = async (
+  batchId: string
+): Promise<{ ttlSeconds: number; remainingBalance: string; depth: number } | null> => {
+  try {
+    const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    const { client } = getGnosisPublicClient(0);
+
+    // Query all necessary data from the contract
+    const [lastPrice, remainingBalancePerChunk, depth] = await Promise.all([
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'lastPrice',
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'remainingBalance',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+      client.readContract({
+        address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+        abi: POSTAGE_STAMP_ABI,
+        functionName: 'batchDepth',
+        args: [formattedBatchId as `0x${string}`],
+      }),
+    ]);
+
+    // Use the contract's remainingBalance function result directly
+    // This returns the per-chunk balance (normalizedBalance - currentTotalOutPayment)
+    const lastPriceBigInt = BigInt(lastPrice as bigint);
+    const remainingBalancePerChunkBigInt = BigInt(remainingBalancePerChunk as bigint);
+    const depthNumber = Number(depth);
+
+    if (lastPriceBigInt === 0n) {
+      console.error('lastPrice is 0, cannot calculate TTL');
+      return null;
+    }
+
+    // Calculate TTL following Bee's implementation
+    // ttl = (remainingBalance) * blockTime / pricePerBlock
+    const remainingBlocks = remainingBalancePerChunkBigInt / lastPriceBigInt;
+
+    // Convert to seconds (Gnosis Chain: ~5 second blocks)
+    const ttlSeconds = Number(remainingBlocks) * 5;
+
+    // Calculate total remaining balance by multiplying per-chunk balance by number of chunks (2^depth)
+    // Formula from PostageStamp.sol: totalAmount = initialBalancePerChunk * (1 << depth)
+    const totalRemainingBalance = remainingBalancePerChunkBigInt * (1n << BigInt(depthNumber));
+    const remainingBalanceString = totalRemainingBalance.toString();
+
+    return {
+      ttlSeconds,
+      remainingBalance: remainingBalanceString,
+      depth: depthNumber,
+    };
+  } catch (error) {
+    console.error('Error fetching batch info from contract:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the owner/payer information for a specific batch from the registry by querying events
+ * @param batchId The batch ID to look up
+ * @returns Owner address and payer address, or null if not found
+ */
+export const fetchBatchOwnerInfo = async (
+  batchId: string
+): Promise<{ owner: string; payer: string } | null> => {
+  try {
+    const { GNOSIS_CUSTOM_REGISTRY_ADDRESS } = await import('./constants');
+    const { REGISTRY_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    const { client } = getGnosisPublicClient(0);
+
+    const batchCreatedEvent = REGISTRY_ABI.find(item => item.type === 'event' && item.name === 'BatchCreated');
+
+    // Query the BatchCreated event logs for this specific batchId
+    const logs = await client.getLogs({
+      address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+      event: batchCreatedEvent!,
+      args: {
+        batchId: formattedBatchId as `0x${string}`,
+      },
+      fromBlock: BigInt(0), // Search from genesis - could optimize with a known start block
+      toBlock: 'latest',
+    });
+
+    if (logs.length === 0) {
+      // Fallback: Try to get owner from PostageStamp contract
+      try {
+        const { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } = await import('./constants');
+
+        const owner = await client.readContract({
+          address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
+          abi: POSTAGE_STAMP_ABI,
+          functionName: 'batchOwner',
+          args: [formattedBatchId as `0x${string}`],
+        }) as string;
+
+        return {
+          owner,
+          payer: owner, // For stamps created directly, owner = payer
+        };
+      } catch (error) {
+        console.error('Error fetching owner from PostageStamp contract:', error);
+        return null;
+      }
+    }
+
+    // Get the most recent event (in case there are multiple, though there shouldn't be)
+    const latestLog = logs[logs.length - 1];
+
+    const owner = latestLog.args.owner as string;
+    const payer = latestLog.args.payer as string;
+
+    return {
+      owner,
+      payer,
+    };
+  } catch (error) {
+    console.error('Error fetching batch owner info from events:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the owner/payer information for a specific batch from the registry
+ * @param batchId The batch ID to look up
+ * @param ownerAddress The address to check if they own this batch
+ * @returns Owner address and payer address, or null if not found in this owner's batches
+ */
+export const fetchBatchOwnerInfoForAddress = async (
+  batchId: string,
+  ownerAddress: string
+): Promise<{ owner: string; payer: string } | null> => {
+  try {
+    // Use static imports from constants
+    const { GNOSIS_CUSTOM_REGISTRY_ADDRESS } = await import('./constants');
+    const { REGISTRY_ABI } = await import('./constants');
+
+    // Ensure batchId has 0x prefix
+    const formattedBatchId = batchId.startsWith('0x') ? batchId : `0x${batchId}`;
+
+    const { client } = getGnosisPublicClient(0);
+
+    // Query the registry for all batches owned by this address
+    const batches = await client.readContract({
+      address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
+      abi: REGISTRY_ABI,
+      functionName: 'getOwnerBatches',
+      args: [ownerAddress as `0x${string}`],
+    });
+
+    // Find the batch with matching ID
+    const batch = (batches as any[]).find(
+      b => b.batchId.toLowerCase() === formattedBatchId.toLowerCase()
+    );
+
+    if (!batch) {
+      return null;
+    }
+
+    return {
+      owner: ownerAddress,
+      payer: batch.payer,
+    };
+  } catch (error) {
+    console.error('Error fetching batch owner info for address:', error);
+    return null;
+  }
+};
+
+/**
  * Calculate the real stamp usage percentage
  * @param utilization Raw utilization value from Bee API (decimal, e.g., 0.01 for 1%)
  * @param depth Stamp depth from Bee API

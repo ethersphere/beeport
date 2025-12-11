@@ -1,0 +1,330 @@
+.ttlContainer {
+  z-index: 1000;
+  background-color: rgba(30, 30, 30, 0.75);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  padding: 8px 0px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  cursor: default;
+  opacity: 0.85;
+  margin: 0px auto;
+  border: 1px solid #30363d;
+}
+
+.label {
+  display: none;
+}
+
+.infoRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.stampId {
+  font-family: monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.stampId:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.stampId[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: transparent;
+}
+
+.stampId[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #28a745;
+  font-weight: 600;
+}
+
+.shareButton {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  width: 50px;
+}
+
+.shareButton svg {
+  transition: opacity 0.2s ease;
+  opacity: 1;
+}
+
+.shareButton:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.shareButton:hover svg {
+  opacity: 0;
+}
+
+.shareButton:hover::before {
+  content: "Share";
+  position: absolute;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  white-space: nowrap;
+  opacity: 1;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.shareButton[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+}
+
+.shareButton[data-copied="true"] svg {
+  opacity: 0;
+}
+
+.shareButton[data-copied="true"]::before {
+  display: none;
+}
+
+.shareButton[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  font-size: 10px;
+  color: #28a745;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  white-space: nowrap;
+}
+
+.ownerAddress {
+  font-family: monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.ownerAddress:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ownerAddress[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: transparent;
+}
+
+.ownerAddress[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #28a745;
+  font-weight: 600;
+}
+
+.mainTTL {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: #fbba00;
+  text-align: center;
+  margin-bottom: 5px;
+  line-height: 1.8;
+  letter-spacing: 0.06rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.mainTTL:hover {
+  background-color: rgba(251, 186, 0, 0.1);
+  color: #ffd966;
+}
+
+.mainTTL[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: transparent;
+}
+
+.mainTTL[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: #28a745;
+  font-weight: 600;
+}
+
+.mainTTL[data-copied="true"] .remainingText {
+  opacity: 0;
+}
+
+.remainingText {
+  font-size: 0.96rem;
+  opacity: 0.2;
+  font-style: italic;
+  margin-left: 5px;
+  letter-spacing: 0.01rem;
+}
+
+.detailsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.leftDetail {
+  color: #42b883; /* Green shade for remaining balance - matching PriceTracker liquidity color */
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.leftDetail:hover {
+  background-color: rgba(66, 184, 131, 0.1);
+  color: #5dd39e;
+}
+
+.leftDetail[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: transparent;
+}
+
+.leftDetail[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #28a745;
+  font-weight: 600;
+}
+
+.rightDetail {
+  color: #17a2b8; /* Blue shade for technical TTL - matching PriceTracker depth color */
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.rightDetail:hover {
+  background-color: rgba(23, 162, 184, 0.1);
+  color: #20c1e8;
+}
+
+.rightDetail[data-copied="true"] {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: transparent;
+}
+
+.rightDetail[data-copied="true"]::after {
+  content: "Copied!";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #28a745;
+  font-weight: 600;
+}
+
+/* Flash animation before refresh */
+.flashing {
+  animation: flash 2s ease;
+}
+
+@keyframes flash {
+  0% {
+    background-color: rgba(30, 30, 30, 0.75);
+  }
+  15% {
+    background-color: rgba(60, 60, 60, 0.9);
+  }
+  100% {
+    background-color: rgba(30, 30, 30, 0.75);
+  }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+  .mainTTL {
+    font-size: 2rem;
+  }
+
+  .detailsRow {
+    font-size: 0.75rem;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .mainTTL {
+    font-size: 1.5rem;
+  }
+
+  .detailsRow {
+    flex-direction: column;
+    gap: 5px;
+    text-align: center;
+  }
+
+  .leftDetail,
+  .rightDetail {
+    text-align: center;
+  }
+}

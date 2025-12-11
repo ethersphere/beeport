@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styles from './css/StampListSection.module.css';
 import { formatUnits } from 'viem';
 import { UploadStep } from './types';
@@ -58,6 +58,8 @@ interface BatchEvent {
   batchTTL?: number;
   bucketDepth?: number;
   isPropagating?: boolean; // Flag to indicate stamp is still propagating on network
+  payer?: string; // The payer address (actual buyer if bought through proxy)
+  owner?: string; // The owner address (from the registry query)
 }
 
 interface StampInfo {
@@ -180,7 +182,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     }
   };
 
-  const markStampAsExpired = (batchId: string, stampTimestamp?: number) => {
+  const markStampAsExpired = useCallback((batchId: string, stampTimestamp?: number) => {
     try {
       const cache = getExpiredStampsCache();
       const now = Date.now();
@@ -220,7 +222,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     } catch (error) {
       console.warn('Error updating expired stamps cache:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const isStampKnownExpired = (batchId: string): boolean => {
@@ -330,6 +332,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             const stampInfo = await fetchStampInfo(batchId, stampTimestamp);
 
             const depth = Number(contractBatch.depth);
+            const payer = contractBatch.payer?.toString();
 
             // If no stamp info, determine if it's propagating or expired
             if (!stampInfo) {
@@ -349,6 +352,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   batchTTL: 30 * 24 * 60 * 60, // Assume 30 days default
                   bucketDepth: 16, // Standard bucket depth
                   isPropagating: true, // Flag to show propagation message
+                  payer,
+                  owner: address,
                 };
               }
 
@@ -366,6 +371,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
               batchTTL: stampInfo.batchTTL,
               bucketDepth: stampInfo.bucketDepth,
               isPropagating: false, // Not propagating, we have real data
+              payer,
+              owner: address,
             };
           });
 
@@ -392,7 +399,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     fetchStamps();
-  }, [address, beeApiUrl]); // Only dependencies that actually need to trigger re-fetching
+  }, [address, beeApiUrl, markStampAsExpired]); // Only dependencies that actually need to trigger re-fetching
 
   // Function to refresh a specific stamp
   const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
@@ -465,30 +472,93 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           <div className={styles.stampListEmpty}>No stamps found</div>
         ) : (
           <>
-            {stamps.map((stamp, index) => (
-              <div key={index} className={styles.stampListItem}>
-                <div
-                  className={styles.stampListId}
-                  onClick={() => {
-                    const idToCopy = stamp.batchId.startsWith('0x')
-                      ? stamp.batchId.slice(2)
-                      : stamp.batchId;
-                    navigator.clipboard.writeText(idToCopy);
-                    // Show temporary "Copied!" message
-                    const element = document.querySelector(`[data-stamp-id="${stamp.batchId}"]`);
-                    if (element) {
-                      element.setAttribute('data-copied', 'true');
-                      setTimeout(() => {
-                        element.setAttribute('data-copied', 'false');
-                      }, 2000);
-                    }
-                  }}
-                  data-stamp-id={stamp.batchId}
-                  data-copied="false"
-                  title="Click to copy stamp ID"
-                >
-                  ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
-                </div>
+            {stamps.map((stamp, index) => {
+              // Determine which address to show (payer if bought through proxy, otherwise owner)
+              const getOwnerToDisplay = () => {
+                if (!stamp.owner && !stamp.payer) return null;
+                // If owner and payer are different, it was bought through proxy - show payer
+                if (
+                  stamp.owner &&
+                  stamp.payer &&
+                  stamp.owner.toLowerCase() !== stamp.payer.toLowerCase()
+                ) {
+                  return stamp.payer;
+                }
+                // Otherwise show owner (or payer if owner is not available)
+                return stamp.owner || stamp.payer || null;
+              };
+
+              // Determine the label for the owner field
+              const getOwnerLabel = () => {
+                if (!stamp.owner || !stamp.payer) return 'Owner';
+                // If they're different, it was bought through proxy
+                if (stamp.owner.toLowerCase() !== stamp.payer.toLowerCase()) {
+                  return 'Buyer';
+                }
+                return 'Owner';
+              };
+
+              // Format address with truncation (first6...last4)
+              const formatAddress = (address: string) => {
+                const cleanAddress = address.startsWith('0x') ? address.slice(2) : address;
+                if (cleanAddress.length <= 10) return cleanAddress;
+                return `${cleanAddress.slice(0, 6)}...${cleanAddress.slice(-4)}`;
+              };
+
+              const ownerToDisplay = getOwnerToDisplay();
+
+              return (
+                <div key={index} className={styles.stampListItem}>
+                  <div className={styles.stampIdRow}>
+                    <div
+                      className={styles.stampListId}
+                      onClick={() => {
+                        const idToCopy = stamp.batchId.startsWith('0x')
+                          ? stamp.batchId.slice(2)
+                          : stamp.batchId;
+                        navigator.clipboard.writeText(idToCopy);
+                        // Show temporary "Copied!" message
+                        const element = document.querySelector(`[data-stamp-id="${stamp.batchId}"]`);
+                        if (element) {
+                          element.setAttribute('data-copied', 'true');
+                          setTimeout(() => {
+                            element.setAttribute('data-copied', 'false');
+                          }, 2000);
+                        }
+                      }}
+                      data-stamp-id={stamp.batchId}
+                      data-copied="false"
+                      title="Click to copy stamp ID"
+                    >
+                      ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
+                    </div>
+                    {ownerToDisplay && (
+                      <div
+                        className={styles.stampOwner}
+                        onClick={() => {
+                          const addressToCopy = ownerToDisplay.startsWith('0x')
+                            ? ownerToDisplay
+                            : `0x${ownerToDisplay}`;
+                          navigator.clipboard.writeText(addressToCopy);
+                          // Show temporary "Copied!" message
+                          const element = document.querySelector(
+                            `[data-owner-address="${stamp.batchId}"]`
+                          );
+                          if (element) {
+                            element.setAttribute('data-copied', 'true');
+                            setTimeout(() => {
+                              element.setAttribute('data-copied', 'false');
+                            }, 2000);
+                          }
+                        }}
+                        data-owner-address={stamp.batchId}
+                        data-copied="false"
+                        title="Click to copy owner address"
+                      >
+                        {getOwnerLabel()}: {formatAddress(ownerToDisplay)}
+                      </div>
+                    )}
+                  </div>
                 <div className={styles.stampListDetails}>
                   <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
@@ -608,7 +678,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </>
         )}
 

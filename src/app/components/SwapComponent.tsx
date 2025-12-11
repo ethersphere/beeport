@@ -38,6 +38,7 @@ import SearchableChainDropdown from './SearchableChainDropdown';
 import SearchableTokenDropdown from './SearchableTokenDropdown';
 import StorageStampsDropdown from './StorageStampsDropdown';
 import StorageDurationDropdown from './StorageDurationDropdown';
+import TTLDisplay from './TTLDisplay';
 
 import {
   formatErrorMessage,
@@ -50,6 +51,8 @@ import {
   // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
+  fetchBatchInfoFromContract,
+  fetchBatchOwnerInfo,
   formatExpiryTime,
   isExpiringSoon,
   getStampUsage,
@@ -226,6 +229,18 @@ const SwapComponent: React.FC = () => {
 
   // Add state for original stamp info (used in top-ups)
   const [originalStampInfo, setOriginalStampInfo] = useState<StampInfo | null>(null);
+
+  // Add state for batch info from contract (TTL and remaining balance)
+  const [contractBatchInfo, setContractBatchInfo] = useState<{
+    ttlSeconds: number;
+    remainingBalance: string;
+    depth: number;
+    owner?: string;
+    payer?: string;
+  } | null>(null);
+
+  // Add state for TTL display flashing animation
+  const [isTTLFlashing, setIsTTLFlashing] = useState(false);
 
   // Add a ref to track the current wallet client
   const currentWalletClientRef = useRef(walletClient);
@@ -628,6 +643,18 @@ const SwapComponent: React.FC = () => {
     }
   };
 
+  // Calculate amount for topping up an existing batch
+  const calculateTopUpAmount = useCallback((originalDepth: number) => {
+    if (currentPrice === null || !selectedDays) return 0n;
+
+    // We use the original depth from the stamp, not the currently selected depth
+    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+
+    // Calculate for the original batch depth
+    return totalPricePerDuration * BigInt(2 ** originalDepth);
+  }, [currentPrice, selectedDays]);
+
   // Check approval status when relevant parameters change
   useEffect(() => {
     const checkApprovalStatus = async () => {
@@ -673,6 +700,7 @@ const SwapComponent: React.FC = () => {
     originalStampInfo,
     selectedDepth,
     checkBzzApproval,
+    calculateTopUpAmount,
   ]);
 
   useEffect(() => {
@@ -1554,6 +1582,7 @@ const SwapComponent: React.FC = () => {
     // Only fetch if we have a topUpBatchId and we're in top-up mode
     if (topUpBatchId && isTopUp) {
       const getStampInfo = async () => {
+        // Fetch from Bee API for depth info
         const stampInfo = await fetchStampInfoForComponent(topUpBatchId);
         if (stampInfo) {
           console.log('Fetched original stamp info:', stampInfo);
@@ -1568,23 +1597,58 @@ const SwapComponent: React.FC = () => {
             swarmBatchDepth: stampInfo.depth.toString(),
           }));
         }
+
+        // Fetch TTL and balance from contract
+        const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
+        if (batchInfo) {
+          // Fetch owner info from registry by querying events
+          const ownerInfo = await fetchBatchOwnerInfo(topUpBatchId);
+
+          const combinedInfo = {
+            ...batchInfo,
+            owner: ownerInfo?.owner,
+            payer: ownerInfo?.payer,
+          };
+
+          setContractBatchInfo(combinedInfo);
+        }
       };
 
       getStampInfo();
     }
   }, [topUpBatchId, isTopUp, fetchStampInfoForComponent]);
 
-  // Calculate amount for topping up an existing batch
-  const calculateTopUpAmount = (originalDepth: number) => {
-    if (currentPrice === null || !selectedDays) return 0n;
+  // Add this effect to refresh stamp info periodically (every 60 seconds)
+  useEffect(() => {
+    if (!topUpBatchId || !isTopUp) return;
 
-    // We use the original depth from the stamp, not the currently selected depth
-    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+    const refreshStampInfo = async () => {
+      // Flash before refreshing
+      setIsTTLFlashing(true);
+      setTimeout(() => setIsTTLFlashing(false), 600); // Match flash animation duration
 
-    // Calculate for the original batch depth
-    return totalPricePerDuration * BigInt(2 ** originalDepth);
-  };
+      // Fetch updated TTL and balance from contract
+      const batchInfo = await fetchBatchInfoFromContract(topUpBatchId);
+      if (batchInfo) {
+        // Fetch owner info from registry by querying events
+        const ownerInfo = await fetchBatchOwnerInfo(topUpBatchId);
+
+        const combinedInfo = {
+          ...batchInfo,
+          owner: ownerInfo?.owner,
+          payer: ownerInfo?.payer,
+        };
+
+        setContractBatchInfo(combinedInfo);
+      }
+    };
+
+    // Set up interval to refresh every 60 seconds
+    const intervalId = setInterval(refreshStampInfo, 60000);
+
+    // Clean up interval on unmount
+    return () => clearInterval(intervalId);
+  }, [topUpBatchId, isTopUp]);
 
   // Add useEffect to set hasMounted after component mounts
   useEffect(() => {
@@ -1654,6 +1718,22 @@ const SwapComponent: React.FC = () => {
 
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
+          {isTopUp && contractBatchInfo && (
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>
+                Stamp expiry:
+              </label>
+              <TTLDisplay
+                ttlSeconds={contractBatchInfo.ttlSeconds}
+                stampValue={contractBatchInfo.remainingBalance}
+                stampId={topUpBatchId || undefined}
+                owner={contractBatchInfo.owner}
+                payer={contractBatchInfo.payer}
+                isFlashing={isTTLFlashing}
+              />
+            </div>
+          )}
+
           <div className={styles.inputGroup}>
             <label className={styles.label} data-tooltip="Select chain with funds">
               From chain
@@ -2563,8 +2643,10 @@ const SwapComponent: React.FC = () => {
                         if (typeof window !== 'undefined') {
                           const url = new URL(window.location.href);
                           if (url.searchParams.has('topup')) {
-                            // Remove the topup parameter and navigate to clean URL
-                            window.location.href = window.location.origin;
+                            // Get the topup batch ID to preserve in URL
+                            const topupParam = url.searchParams.get('topup');
+                            // Navigate with topup parameter preserved
+                            window.location.href = `${window.location.origin}/?topup=${topupParam}`;
                           }
                         }
                       }}
