@@ -870,6 +870,41 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
+  const clearExpiredHistory = () => {
+    if (!address) return;
+
+    const now = Date.now();
+    const expiredCount = history.filter(record => record.expiryDate < now).length;
+
+    if (expiredCount === 0) {
+      window.alert('No expired items to clear.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your upload history? This action cannot be undone.`
+    );
+    if (confirmed) {
+      // Filter out expired items
+      const nonExpiredHistory = history.filter(record => record.expiryDate >= now);
+      setHistory(nonExpiredHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[address] = nonExpiredHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+    }
+  };
+
+  // Count expired items for button visibility
+  const expiredCount = React.useMemo(() => {
+    const now = Date.now();
+    return history.filter(record => record.expiryDate < now).length;
+  }, [history]);
+
   const startEditingFilename = (
     index: number,
     reference: string,
@@ -1007,6 +1042,28 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             </label>
+          )}
+          {expiredCount > 0 && (
+            <button
+              className={styles.clearExpiredButton}
+              onClick={clearExpiredHistory}
+              title={`Clear ${expiredCount} Expired Item${expiredCount > 1 ? 's' : ''}`}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12,6 12,12 16,14" />
+                <line x1="4" y1="4" x2="20" y2="20" />
+              </svg>
+            </button>
           )}
           {history.length > 0 && (
             <button className={styles.clearButton} onClick={clearHistory} title="Clear History">
