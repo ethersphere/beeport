@@ -43,6 +43,7 @@ interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
   address: string | undefined;
   beeApiUrl: string;
+  nodeAddress: string; // The node address to filter stamps by
   setPostageBatchId: (id: string) => void;
   setShowOverlay: (show: boolean) => void;
   setUploadStep: (step: UploadStep) => void;
@@ -78,6 +79,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setShowStampList,
   address,
   beeApiUrl,
+  nodeAddress,
   setPostageBatchId,
   setShowOverlay,
   setUploadStep,
@@ -304,8 +306,25 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         // Process the batches data with optimized batching
         console.log(`📊 Processing ${(batchesData as any[]).length} stamps from contract...`);
 
+        // Filter batches to only include those for the current node
+        const batchesForCurrentNode = (batchesData as any[]).filter(batch => {
+          const batchNodeAddress = batch.nodeAddress?.toLowerCase();
+          const currentNodeAddress = nodeAddress?.toLowerCase();
+          const isForCurrentNode = batchNodeAddress === currentNodeAddress;
+          if (!isForCurrentNode) {
+            console.log(
+              `🔀 Skipping stamp ${batch.batchId.toString().slice(0, 10)}... (node: ${batchNodeAddress?.slice(0, 10)}... != current: ${currentNodeAddress?.slice(0, 10)}...)`
+            );
+          }
+          return isForCurrentNode;
+        });
+
+        console.log(
+          `🎯 Found ${batchesForCurrentNode.length} stamps for current node (${(batchesData as any[]).length - batchesForCurrentNode.length} for other nodes)`
+        );
+
         // Filter out known expired stamps before making API calls
-        const batchesToCheck = (batchesData as any[]).filter(batch => {
+        const batchesToCheck = batchesForCurrentNode.filter(batch => {
           const batchId = batch.batchId.toString();
           const isExpired = isStampKnownExpired(batchId);
           if (isExpired) {
@@ -315,7 +334,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         });
 
         console.log(
-          `🔍 Making API calls for ${batchesToCheck.length} stamps (${(batchesData as any[]).length - batchesToCheck.length} skipped from cache)`
+          `🔍 Making API calls for ${batchesToCheck.length} stamps (${batchesForCurrentNode.length - batchesToCheck.length} skipped from cache)`
         );
 
         // Process stamps in smaller batches to avoid overwhelming the API
@@ -392,7 +411,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     fetchStamps();
-  }, [address, beeApiUrl]); // Only dependencies that actually need to trigger re-fetching
+  }, [address, beeApiUrl, nodeAddress]); // Re-fetch when address, API URL, or node changes
 
   // Function to refresh a specific stamp
   const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {

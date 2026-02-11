@@ -2594,6 +2594,7 @@ const SwapComponent: React.FC = () => {
           setShowStampList={setShowStampList}
           address={address}
           beeApiUrl={beeApiUrl}
+          nodeAddress={nodeAddress}
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
