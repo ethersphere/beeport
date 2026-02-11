@@ -410,23 +410,26 @@
 }
 
 /* ENS Integration Styles */
-.ensInfo {
+.ensNote {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 6px;
   color: #8b949e;
-  position: relative;
-  margin-left: 8px;
+  font-size: 13px;
 }
 
-.ensInfo svg {
+.ensNote svg {
   color: #3b82f6;
+  flex-shrink: 0;
 }
 
-.ensTooltip {
-  font-size: 12px;
-  color: #8b949e;
-  font-weight: 500;
+.ensNote span {
+  color: #c9d1d9;
 }
 
 .ensButton {

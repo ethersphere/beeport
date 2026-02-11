@@ -1027,26 +1027,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               </svg>
             </button>
           )}
-          {address && (
-            <div className={styles.ensInfo}>
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
-              </svg>
-              <span className={styles.ensTooltip}>
-                Click on ENS button to link reference to your ENS domain
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1128,6 +1108,27 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               Other ({getFilterCounts.other})
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ENS Note */}
+      {address && history.length > 0 && (
+        <div className={styles.ensNote}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>Click on ENS button to link reference to your ENS domain</span>
         </div>
       )}
 
