@@ -53,6 +53,7 @@ import {
   formatExpiryTime,
   isExpiringSoon,
   getStampUsage,
+  updateHistoryAfterTopUp,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
@@ -907,6 +908,11 @@ const SwapComponent: React.FC = () => {
             message: 'Batch Topped Up Successfully',
             isSuccess: true,
           });
+
+          // Update upload history with new expiry date immediately
+          if (address && topUpBatchId && selectedDays) {
+            updateHistoryAfterTopUp(topUpBatchId as string, selectedDays, address);
+          }
           // Don't set upload step for top-ups
         } else {
           try {
@@ -1128,6 +1134,11 @@ const SwapComponent: React.FC = () => {
               message: 'Batch Topped Up Successfully',
               isSuccess: true,
             });
+
+            // Update upload history with new expiry date immediately
+            if (address && selectedDays) {
+              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
+            }
           } else {
             // Calculate the batch ID for new batch creation
             const calculatedBatchId = readBatchId(

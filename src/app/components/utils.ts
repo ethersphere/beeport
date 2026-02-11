@@ -422,6 +422,76 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
 };
 
 /**
+ * Update upload history expiry dates for a specific stamp after top-up
+ * @param stampId The stamp batch ID that was topped up
+ * @param additionalDays The number of days added by the top-up
+ * @param address The wallet address whose history to update
+ * @returns boolean True if history was updated, false otherwise
+ */
+export const updateHistoryAfterTopUp = (
+  stampId: string,
+  additionalDays: number,
+  address: string
+): boolean => {
+  try {
+    console.log(`🔄 Updating upload history for topped-up stamp: ${stampId} (+${additionalDays} days)`);
+
+    // Get the upload history from localStorage
+    const savedHistory = localStorage.getItem('uploadHistory');
+    if (!savedHistory) {
+      console.log('No upload history found');
+      return false;
+    }
+
+    const allHistory = JSON.parse(savedHistory);
+    const addressHistory = allHistory[address];
+
+    if (!addressHistory || addressHistory.length === 0) {
+      console.log('No upload history found for this address');
+      return false;
+    }
+
+    // Format stamp ID for comparison (remove 0x prefix if present)
+    const formattedStampId = stampId.startsWith('0x') ? stampId.slice(2) : stampId;
+
+    // Calculate additional milliseconds
+    const additionalMs = additionalDays * 24 * 60 * 60 * 1000;
+
+    // Update all records with this stamp ID
+    let updatedCount = 0;
+    const updatedHistory = addressHistory.map((record: any) => {
+      // Format record's stampId for comparison
+      const recordStampId = record.stampId?.startsWith('0x')
+        ? record.stampId.slice(2)
+        : record.stampId;
+
+      if (recordStampId?.toLowerCase() === formattedStampId.toLowerCase()) {
+        updatedCount++;
+        // Add the additional days to the existing expiry date
+        const newExpiryDate = record.expiryDate + additionalMs;
+        console.log(`📅 Updated expiry: ${new Date(newExpiryDate).toLocaleDateString()}`);
+        return { ...record, expiryDate: newExpiryDate };
+      }
+      return record;
+    });
+
+    if (updatedCount > 0) {
+      // Save updated history
+      allHistory[address] = updatedHistory;
+      localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      console.log(`✅ Updated ${updatedCount} history record(s) with new expiry date`);
+      return true;
+    } else {
+      console.log('No matching history records found for this stamp');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error updating history after top-up:', error);
+    return false;
+  }
+};
+
+/**
  * Format TTL (Time To Live) in seconds to a human-readable string
  * Shows hours/minutes for < 1 day, otherwise shows days
  * Handles expired stamps (negative values) by showing "Expired X time ago"
