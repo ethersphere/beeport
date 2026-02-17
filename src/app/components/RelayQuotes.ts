@@ -694,6 +694,11 @@ export const executeRelaySteps = async (
  * Monitors the status of a Relay operation
  * Status types: waiting, pending, success, failure, refund
  * https://docs.relay.link/references/api/step-execution
+ *
+ * Note: 'unknown' status can occur when:
+ * 1. The deposit transaction hasn't been indexed by Relay yet
+ * 2. Gas top-up operations are being processed (takes longer)
+ * We don't count 'unknown' status toward the max attempts to avoid premature timeouts.
  */
 const monitorRelayStatus = async (
   statusEndpoint: string,
@@ -702,6 +707,8 @@ const monitorRelayStatus = async (
 ): Promise<void> => {
   const maxAttempts = RELAY_STATUS_MAX_ATTEMPTS;
   let attempts = 0;
+  let unknownStatusCount = 0;
+  const maxUnknownStatusAttempts = 24; // Allow up to 2 minutes of 'unknown' status (24 * 5 seconds)
 
   console.log(`🔍 Starting status monitoring for step ${stepId}: ${statusEndpoint}`);
 
@@ -740,6 +747,8 @@ const monitorRelayStatus = async (
             step: stepId,
             message: 'Confirming your transaction...',
           });
+          // Reset unknown counter since we got a valid status
+          unknownStatusCount = 0;
           break;
 
         case 'pending':
@@ -748,6 +757,8 @@ const monitorRelayStatus = async (
             step: stepId,
             message: 'Processing cross-chain transfer...',
           });
+          // Reset unknown counter since we got a valid status
+          unknownStatusCount = 0;
           break;
 
         case 'failure':
@@ -758,8 +769,31 @@ const monitorRelayStatus = async (
           console.error(`💸 Funds were refunded due to failure for step ${stepId}`);
           throw new Error(`Swap failed and funds were refunded`);
 
+        case 'unknown':
+          // 'unknown' status means Relay hasn't indexed the transaction yet
+          // This is common for gas top-up operations which take longer to process
+          // Don't count toward max attempts, but track separately to avoid infinite loops
+          unknownStatusCount++;
+          console.log(
+            `⏳ Unknown status for step ${stepId} (${unknownStatusCount}/${maxUnknownStatusAttempts}), waiting for Relay to index...`
+          );
+          setStatusMessage({
+            step: stepId,
+            message: 'Waiting for transaction to be indexed...',
+          });
+
+          if (unknownStatusCount >= maxUnknownStatusAttempts) {
+            throw new Error(
+              `Transaction indexing timed out for step ${stepId}. The transaction may still complete - please check your wallet.`
+            );
+          }
+
+          // Don't increment main attempts counter for unknown status
+          await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
+          continue; // Skip the attempts++ at the end
+
         default:
-          console.log(`🔄 Unknown status '${statusData.status}' for step ${stepId}, continuing...`);
+          console.log(`🔄 Unexpected status '${statusData.status}' for step ${stepId}, continuing...`);
           setStatusMessage({
             step: stepId,
             message: 'Processing your swap...',
@@ -770,7 +804,11 @@ const monitorRelayStatus = async (
       await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
       attempts++;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Relay operation failed')) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('Relay operation failed') ||
+          error.message.includes('Transaction indexing timed out'))
+      ) {
         // Re-throw Relay-specific errors
         throw error;
       }
