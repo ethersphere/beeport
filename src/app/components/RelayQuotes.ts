@@ -298,6 +298,8 @@ export interface RelayQuoteParams {
   topUpBatchId?: string;
   setEstimatedTime?: (time: number) => void;
   isForEstimation?: boolean;
+  /** Slippage in percent (e.g. 5 = 5%, 0.5 = 0.5%). When set, overrides DEFAULT_SLIPPAGE. Relay API receives basis points (percent × 100). */
+  slippagePercent?: number;
 }
 
 /**
@@ -313,6 +315,7 @@ export const getRelayQuote = async ({
   topUpBatchId,
   setEstimatedTime,
   isForEstimation = false,
+  slippagePercent,
 }: RelayQuoteParams): Promise<{
   relayQuoteResponse: RelayQuoteResponse;
   totalAmountUSD: number;
@@ -469,7 +472,8 @@ export const getRelayQuote = async ({
     amount: bzzAmount,
     tradeType: 'EXACT_OUTPUT', // We need exact BZZ amount
     txs,
-    slippageTolerance: (DEFAULT_SLIPPAGE * 100).toString(), // Convert to integer percentage (5 for 5%)
+    // Relay API expects basis points (1/100th of a percent): 5% → "500", 0.5% → "50". See https://docs.relay.link/references/api/get-quote
+    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
     refundOnOrigin: true,
     topupGas: shouldTopupGas, // Conditionally enable gas forwarding
     ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }), // Gas top-up amount from constants
