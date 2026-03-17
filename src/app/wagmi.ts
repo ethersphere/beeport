@@ -35,19 +35,19 @@ import {
 // 3 RPCs per chain — each verified with eth_chainId; failed ones replaced
 const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [mainnet.id]: [
+    'https://eth-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
     'https://eth.drpc.org',
     'https://ethereum.publicnode.com',
-    'https://1rpc.io/eth',
   ],
   [gnosis.id]: [
+    'https://gnosis-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
     'https://rpc.gnosischain.com',
     'https://gnosis.drpc.org',
-    'https://gnosis-rpc.publicnode.com',
   ],
   [base.id]: [
+    'https://base-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
     'https://base.drpc.org',
     'https://mainnet.base.org',
-    'https://base-rpc.publicnode.com',
   ],
   [arbitrum.id]: [
     'https://arb1.arbitrum.io/rpc',
