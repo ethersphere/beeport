@@ -60,7 +60,7 @@ export const MIN_BRIDGE_USD_VALUE = 0.1;
 /** Default slippage in percent: 5 means 5%. Custom slippage (Settings) can use 0.5 steps. Relay API expects basis points; we convert in RelayQuotes (percent × 100 = bps). */
 export const DEFAULT_SLIPPAGE = 5;
 export const MIN_SLIPPAGE_PERCENT = 0.5;
-export const MAX_SLIPPAGE_PERCENT = 50;
+export const MAX_SLIPPAGE_PERCENT = 20;
 
 // Gas top-up configuration for cross-chain swaps
 export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum xDAI balance to skip gas top-up
