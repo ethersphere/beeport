@@ -502,7 +502,7 @@ const ENSIntegration: React.FC<ENSIntegrationProps> = ({ swarmReference, onClose
         setSuccess('Commitment submitted! Waiting for confirmation...');
 
         // Wait for transaction confirmation
-        await publicClient.waitForTransactionReceipt({ hash: commitHash });
+        await publicClient.waitForTransactionReceipt({ hash: commitHash, pollingInterval: 6_000 });
         console.log('✅ Commitment confirmed');
 
         // Store commitment data for registration step
@@ -574,7 +574,7 @@ This waiting period is required by ENS to prevent front-running attacks where so
         setSuccess('Registration submitted! Waiting for confirmation...');
 
         // Wait for transaction confirmation
-        await publicClient.waitForTransactionReceipt({ hash: registerHash });
+        await publicClient.waitForTransactionReceipt({ hash: registerHash, pollingInterval: 6_000 });
         console.log('✅ Registration confirmed');
 
         // Clean up stored secret
@@ -1194,7 +1194,7 @@ Your new ENS domain is now registered and ready to use:
       // Wait for transaction confirmation
       setSuccess('Transaction submitted! Waiting for confirmation...');
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, pollingInterval: 6_000 });
       console.log('Transaction confirmed:', receipt);
 
       // Save the domain association to history

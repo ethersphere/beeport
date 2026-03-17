@@ -11,6 +11,7 @@ import {
   TRANSACTION_TIMEOUT_MS,
 } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
+import { getPollingInterval } from '@/app/wagmi';
 
 // Relay API Error Codes and Messages
 // Based on: https://docs.relay.link/references/api/handling-errors
@@ -634,6 +635,7 @@ export const executeRelaySteps = async (
           const receipt = await publicClient.waitForTransactionReceipt({
             hash: txHash,
             timeout: TRANSACTION_TIMEOUT_MS,
+            pollingInterval: getPollingInterval(item.data.chainId),
           });
 
           if (receipt.status === 'success') {
