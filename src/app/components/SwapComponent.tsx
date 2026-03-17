@@ -116,6 +116,7 @@ const SwapComponent: React.FC = () => {
 
   // Add state to track if component has mounted to prevent hydration mismatches
   const [hasMounted, setHasMounted] = useState(false);
+  const [badgeLabel, setBadgeLabel] = useState<'LOCAL' | 'TEST' | 'BETA'>('BETA');
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [executionResult, setExecutionResult] = useState<any | null>(null);
@@ -1586,14 +1587,19 @@ const SwapComponent: React.FC = () => {
     return totalPricePerDuration * BigInt(2 ** originalDepth);
   };
 
-  // Add useEffect to set hasMounted after component mounts
+  // Set hasMounted and badge label by host: LOCAL (localhost), TEST (beeport.xyz), BETA (elsewhere)
   useEffect(() => {
     setHasMounted(true);
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') setBadgeLabel('LOCAL');
+    else if (host === 'beeport.xyz') setBadgeLabel('TEST');
+    else setBadgeLabel('BETA');
   }, []);
 
   return (
     <div className={styles.container}>
-      <div className={styles.betaBadge}>BETA</div>
+      <div className={styles.betaBadge}>{badgeLabel}</div>
       <div className={styles.tabContainer}>
         <button
           className={`${styles.tabButton} ${
