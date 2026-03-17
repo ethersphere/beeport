@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { config } from '@/app/wagmi';
+import { config, getPollingInterval } from '@/app/wagmi';
 import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
 import { parseAbi, formatUnits } from 'viem';
@@ -602,7 +602,7 @@ const SwapComponent: React.FC = () => {
 
       const approveReceipt = await publicClient.waitForTransactionReceipt({
         hash: approveTxHash,
-        pollingInterval: 8_000,
+        pollingInterval: getPollingInterval(chainId),
       });
 
       if (approveReceipt.status !== 'success') {
@@ -888,7 +888,7 @@ const SwapComponent: React.FC = () => {
       // Wait for batch transaction to be mined
       const batchReceipt = await publicClient.waitForTransactionReceipt({
         hash: batchTxHash,
-        pollingInterval: 8_000,
+        pollingInterval: getPollingInterval(chainId),
       });
 
       if (batchReceipt.status === 'success') {

@@ -70,6 +70,49 @@ const HTTP_TRANSPORT_OPTIONS = {
   timeout: 30_000,
 };
 
+// Polling intervals tuned to each chain's block time (ms).
+// Polling faster than block time wastes requests; polling slower delays UX.
+const CHAIN_POLLING_INTERVALS: Record<number, number> = {
+  [mainnet.id]: 6_000,      // ~12s blocks — poll twice per block
+  [sepolia.id]: 6_000,      // testnet, same as mainnet
+  [gnosis.id]: 4_000,       // ~5s blocks
+  [base.id]: 2_000,         // 2s blocks
+  [arbitrum.id]: 1_000,     // 0.25s blocks
+  [optimism.id]: 2_000,     // 2s blocks
+  [avalanche.id]: 2_000,    // ~2s blocks
+  [bsc.id]: 3_000,          // 3s blocks
+  [celo.id]: 4_000,         // 5s blocks
+  [polygon.id]: 2_000,      // ~2s blocks
+  [mantle.id]: 2_000,       // ~2s blocks (L2)
+  [zksync.id]: 2_000,       // ~1-2s blocks
+  [ink.id]: 2_000,          // L2
+  [boba.id]: 4_000,         // ~1 min L1 batches but L2 is faster
+  [cronos.id]: 4_000,       // ~5s blocks
+  [gravity.id]: 2_000,      // L2
+  [linea.id]: 4_000,        // ~3-4s blocks
+  [lisk.id]: 2_000,         // L2
+  [metis.id]: 4_000,        // ~4s blocks
+  [mode.id]: 2_000,         // L2 on Base stack
+  [polygonZkEvm.id]: 4_000, // batched ~5-10s
+  [scroll.id]: 3_000,       // ~3s blocks
+  [sei.id]: 1_000,          // ~0.4s blocks
+  [sonic.id]: 2_000,        // L2
+  [soneium.id]: 2_000,      // L2
+  [taiko.id]: 3_000,        // ~3s blocks
+  [unichain.id]: 2_000,     // L2
+  [worldchain.id]: 2_000,   // L2
+};
+
+const DEFAULT_POLLING_INTERVAL = 4_000;
+
+/**
+ * Returns the appropriate polling interval (ms) for a given chain ID,
+ * tuned to block time so we don't spam RPCs on slow chains or lag on fast ones.
+ */
+export function getPollingInterval(chainId: number): number {
+  return CHAIN_POLLING_INTERVALS[chainId] ?? DEFAULT_POLLING_INTERVAL;
+}
+
 function transportForChain(chainId: number) {
   const urls = RPC_FALLBACKS[chainId];
   if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
@@ -118,6 +161,6 @@ export const config = getDefaultConfig({
       transportForChain(Number(chainId)),
     ])
   ),
-  pollingInterval: 8_000,
+  pollingInterval: 6_000,
   ssr: false,
 });
