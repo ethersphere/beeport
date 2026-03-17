@@ -23,7 +23,7 @@ export const GNOSIS_STAMP_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_STAMP_ADDRESS || '0x45a1502382541Cd610CC9068e88727426b696293';
 
 export const DEFAULT_BEE_API_URL =
-  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://swarming.site';
+  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://beeport.xyz';
 
 // Check if we're running on production domains
 const isProductionDomain =
@@ -31,10 +31,10 @@ const isProductionDomain =
   (window.location.hostname === 'beeport.ethswarm.org' ||
     window.location.hostname === 'beeport.eth.limo');
 
-// BEE Gateway URL - use swarming.site for development, bzz.link for production
+// BEE Gateway URL - use beeport.xyz for development, bzz.link for production
 export const BEE_GATEWAY_URL =
   process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
-  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://swarming.site/bzz/');
+  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://beeport.xyz/bzz/');
 
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
