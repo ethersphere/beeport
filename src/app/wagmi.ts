@@ -64,10 +64,16 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [sepolia.id]: ['https://rpc.sepolia.org', 'https://ethereum-sepolia.drpc.org', 'https://sepolia.drpc.org'],
 };
 
+const HTTP_TRANSPORT_OPTIONS = {
+  retryCount: 3,
+  retryDelay: 1000,
+  timeout: 30_000,
+};
+
 function transportForChain(chainId: number) {
   const urls = RPC_FALLBACKS[chainId];
-  if (!urls) return http();
-  return fallback(urls.map((url) => http(url)));
+  if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
+  return fallback(urls.map((url) => http(url, HTTP_TRANSPORT_OPTIONS)));
 }
 
 export const config = getDefaultConfig({
@@ -112,5 +118,6 @@ export const config = getDefaultConfig({
       transportForChain(Number(chainId)),
     ])
   ),
+  pollingInterval: 8_000,
   ssr: false,
 });

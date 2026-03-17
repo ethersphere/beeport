@@ -634,6 +634,7 @@ export const executeRelaySteps = async (
           const receipt = await publicClient.waitForTransactionReceipt({
             hash: txHash,
             timeout: TRANSACTION_TIMEOUT_MS,
+            pollingInterval: 8_000,
           });
 
           if (receipt.status === 'success') {

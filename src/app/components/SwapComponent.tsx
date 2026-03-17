@@ -602,6 +602,7 @@ const SwapComponent: React.FC = () => {
 
       const approveReceipt = await publicClient.waitForTransactionReceipt({
         hash: approveTxHash,
+        pollingInterval: 8_000,
       });
 
       if (approveReceipt.status !== 'success') {
@@ -887,6 +888,7 @@ const SwapComponent: React.FC = () => {
       // Wait for batch transaction to be mined
       const batchReceipt = await publicClient.waitForTransactionReceipt({
         hash: batchTxHash,
+        pollingInterval: 8_000,
       });
 
       if (batchReceipt.status === 'success') {
