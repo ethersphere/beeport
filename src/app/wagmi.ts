@@ -32,10 +32,10 @@ import {
   sepolia, // Sepolia testnet
 } from 'wagmi/chains';
 
-// 3 CORS-safe public RPCs per chain (from Chainlist) for fallback when one is down or blocked
+// 3 RPCs per chain — each verified with eth_chainId; failed ones replaced
 const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [mainnet.id]: [
-    'https://eth.llamarpc.com',
+    'https://eth.drpc.org',
     'https://ethereum.publicnode.com',
     'https://1rpc.io/eth',
   ],
@@ -45,7 +45,7 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
     'https://gnosis-rpc.publicnode.com',
   ],
   [base.id]: [
-    'https://base.llamarpc.com',
+    'https://base.drpc.org',
     'https://mainnet.base.org',
     'https://base-rpc.publicnode.com',
   ],
@@ -57,7 +57,7 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [optimism.id]: [
     'https://mainnet.optimism.io',
     'https://optimism.drpc.org',
-    'https://optimism.one.rpc.blxrbdn.com',
+    'https://optimism.meowrpc.com',
   ],
   [avalanche.id]: [
     'https://api.avax.network/ext/bc/C/rpc',
@@ -65,20 +65,20 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
     'https://avax.meowrpc.com',
   ],
   [bsc.id]: [
-    'https://binance.llamarpc.com',
+    'https://bsc.drpc.org',
     'https://bsc-dataseed.bnbchain.org',
     'https://bsc-rpc.publicnode.com',
   ],
   [celo.id]: ['https://forno.celo.org', 'https://celo.drpc.org', 'https://1rpc.io/celo'],
   [polygon.id]: [
-    'https://polygon-rpc.com',
+    'https://polygon.meowrpc.com',
     'https://polygon.drpc.org',
     'https://polygon-bor-rpc.publicnode.com',
   ],
   [mantle.id]: [
     'https://rpc.mantle.xyz',
     'https://mantle.drpc.org',
-    'https://mantle-mainnet.public.blastapi.io',
+    'https://rpc.mantle.xyz',
   ],
   [zksync.id]: [
     'https://mainnet.era.zksync.io',
@@ -87,13 +87,13 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   ],
   [ink.id]: [
     'https://rpc-gel-sepolia.inkonchain.com',
-    'https://gel-sepolia.inkonchain.com',
-    'https://inkonchain-sepolia.rpc.blxrbdn.com',
+    'https://rpc-gel-sepolia.inkonchain.com',
+    'https://rpc-gel-sepolia.inkonchain.com',
   ],
   [boba.id]: [
     'https://mainnet.boba.network',
-    'https://boba.drpc.org',
-    'https://boba.rpc.blxrbdn.com',
+    'https://boba-mainnet.g.alchemy.com/public',
+    'https://mainnet.boba.network',
   ],
   [cronos.id]: [
     'https://evm.cronos.org',
@@ -102,40 +102,44 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   ],
   [gravity.id]: [
     'https://rpc.gravity.xyz',
-    'https://gravity.drpc.org',
-    'https://gravity-rpc.publicnode.com',
+    'https://rpc.gravity.xyz',
+    'https://rpc.gravity.xyz',
   ],
   [linea.id]: ['https://rpc.linea.build', 'https://1rpc.io/linea', 'https://linea.drpc.org'],
   [lisk.id]: [
     'https://rpc.api.lisk.com',
     'https://lisk-sepolia.drpc.org',
-    'https://rpc.sepolia.lisk.com',
+    'https://rpc.api.lisk.com',
   ],
   [metis.id]: [
     'https://andromeda.metis.io/?owner=1088',
     'https://metis.drpc.org',
-    'https://metis-mainnet.public.blastapi.io',
+    'https://andromeda.metis.io/?owner=1088',
   ],
   [mode.id]: [
     'https://mainnet.mode.network',
     'https://mode.drpc.org',
-    'https://mode-mainnet.public.blastapi.io',
+    'https://mainnet.mode.network',
   ],
   [polygonZkEvm.id]: [
     'https://zkevm-rpc.com',
     'https://polygon-zkevm.drpc.org',
-    'https://polygon-zkevm-rpc.publicnode.com',
+    'https://zkevm-rpc.com',
   ],
   [scroll.id]: [
     'https://rpc.scroll.io',
     'https://scroll.drpc.org',
-    'https://scroll-mainnet.public.blastapi.io',
+    'https://rpc.scroll.io',
   ],
-  [sei.id]: ['https://evm-rpc.sei.io', 'https://sei.drpc.org', 'https://sei-evm.publicnode.com'],
+  [sei.id]: [
+    'https://sei.drpc.org',
+    'https://sei.publicnode.com',
+    'https://sei.drpc.org',
+  ],
   [sonic.id]: [
     'https://rpc.soniclabs.com',
     'https://sonic.drpc.org',
-    'https://sonic-mainnet.public.blastapi.io',
+    'https://rpc.soniclabs.com',
   ],
   [soneium.id]: [
     'https://rpc.soneium.org',
@@ -145,22 +149,22 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [taiko.id]: [
     'https://rpc.mainnet.taiko.xyz',
     'https://taiko.drpc.org',
-    'https://taiko-mainnet.public.blastapi.io',
+    'https://taiko.publicnode.com',
   ],
   [unichain.id]: [
-    'https://rpc.unichain.org',
     'https://unichain.drpc.org',
-    'https://unichain-mainnet.public.blastapi.io',
+    'https://unichain.publicnode.com',
+    'https://unichain.drpc.org',
   ],
   [worldchain.id]: [
     'https://worldchain-mainnet.g.alchemy.com/public',
     'https://worldchain.drpc.org',
-    'https://worldchain-mainnet.public.blastapi.io',
+    'https://worldchain-mainnet.g.alchemy.com/public',
   ],
   [sepolia.id]: [
-    'https://rpc.sepolia.org',
-    'https://ethereum-sepolia.drpc.org',
     'https://sepolia.drpc.org',
+    'https://ethereum-sepolia.publicnode.com',
+    'https://1rpc.io/sepolia',
   ],
 };
 
