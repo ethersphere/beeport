@@ -168,9 +168,9 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   ],
 };
 
+// No retries per URL so fallback kicks in immediately (e.g. 403 from whitelisted Alchemy on localhost).
 const HTTP_TRANSPORT_OPTIONS = {
-  retryCount: 3,
-  retryDelay: 1000,
+  retryCount: 0,
   timeout: 30_000,
 };
 
@@ -217,10 +217,15 @@ export function getPollingInterval(chainId: number): number {
   return CHAIN_POLLING_INTERVALS[chainId] ?? DEFAULT_POLLING_INTERVAL;
 }
 
+// In development, use public RPCs first so whitelisted RPCs (e.g. Alchemy) don't get 403 on localhost.
+const USE_PUBLIC_RPC_FIRST =
+  typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
+
 function transportForChain(chainId: number) {
   const urls = RPC_FALLBACKS[chainId];
   if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
-  return fallback(urls.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
+  const ordered = USE_PUBLIC_RPC_FIRST ? ([...urls].reverse() as [string, string, string]) : urls;
+  return fallback(ordered.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
 }
 
 export const config = getDefaultConfig({
