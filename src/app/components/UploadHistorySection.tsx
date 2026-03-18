@@ -870,6 +870,41 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
+  const clearExpiredHistory = () => {
+    if (!address) return;
+
+    const now = Date.now();
+    const expiredCount = history.filter(record => record.expiryDate < now).length;
+
+    if (expiredCount === 0) {
+      window.alert('No expired items to clear.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your upload history? This action cannot be undone.`
+    );
+    if (confirmed) {
+      // Filter out expired items
+      const nonExpiredHistory = history.filter(record => record.expiryDate >= now);
+      setHistory(nonExpiredHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[address] = nonExpiredHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+    }
+  };
+
+  // Count expired items for button visibility
+  const expiredCount = React.useMemo(() => {
+    const now = Date.now();
+    return history.filter(record => record.expiryDate < now).length;
+  }, [history]);
+
   const startEditingFilename = (
     index: number,
     reference: string,
@@ -1008,6 +1043,29 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               </svg>
             </label>
           )}
+          {expiredCount > 0 && (
+            <button
+              className={styles.clearExpiredButton}
+              onClick={clearExpiredHistory}
+              title={`Clear ${expiredCount} Expired Item${expiredCount > 1 ? 's' : ''}`}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 22h14" />
+                <path d="M5 2h14" />
+                <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+                <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+              </svg>
+            </button>
+          )}
           {history.length > 0 && (
             <button className={styles.clearButton} onClick={clearHistory} title="Clear History">
               <svg
@@ -1026,26 +1084,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>
             </button>
-          )}
-          {address && (
-            <div className={styles.ensInfo}>
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
-              </svg>
-              <span className={styles.ensTooltip}>
-                Click on ENS button to link reference to your ENS domain
-              </span>
-            </div>
           )}
         </div>
       </div>
@@ -1128,6 +1166,27 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               Other ({getFilterCounts.other})
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ENS Note */}
+      {address && history.length > 0 && (
+        <div className={styles.ensNote}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>Click on ENS button to link reference to your ENS domain</span>
         </div>
       )}
 
