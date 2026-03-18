@@ -75,11 +75,7 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
     'https://polygon.drpc.org',
     'https://polygon-bor-rpc.publicnode.com',
   ],
-  [mantle.id]: [
-    'https://rpc.mantle.xyz',
-    'https://mantle.drpc.org',
-    'https://rpc.mantle.xyz',
-  ],
+  [mantle.id]: ['https://rpc.mantle.xyz', 'https://mantle.drpc.org', 'https://rpc.mantle.xyz'],
   [zksync.id]: [
     'https://mainnet.era.zksync.io',
     'https://zksync.drpc.org',
@@ -100,11 +96,7 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
     'https://cronos.drpc.org',
     'https://cronos-evm.publicnode.com',
   ],
-  [gravity.id]: [
-    'https://rpc.gravity.xyz',
-    'https://rpc.gravity.xyz',
-    'https://rpc.gravity.xyz',
-  ],
+  [gravity.id]: ['https://rpc.gravity.xyz', 'https://rpc.gravity.xyz', 'https://rpc.gravity.xyz'],
   [linea.id]: ['https://rpc.linea.build', 'https://1rpc.io/linea', 'https://linea.drpc.org'],
   [lisk.id]: [
     'https://rpc.api.lisk.com',
@@ -126,21 +118,9 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
     'https://polygon-zkevm.drpc.org',
     'https://zkevm-rpc.com',
   ],
-  [scroll.id]: [
-    'https://rpc.scroll.io',
-    'https://scroll.drpc.org',
-    'https://rpc.scroll.io',
-  ],
-  [sei.id]: [
-    'https://sei.drpc.org',
-    'https://sei.publicnode.com',
-    'https://sei.drpc.org',
-  ],
-  [sonic.id]: [
-    'https://rpc.soniclabs.com',
-    'https://sonic.drpc.org',
-    'https://rpc.soniclabs.com',
-  ],
+  [scroll.id]: ['https://rpc.scroll.io', 'https://scroll.drpc.org', 'https://rpc.scroll.io'],
+  [sei.id]: ['https://sei.drpc.org', 'https://sei.publicnode.com', 'https://sei.drpc.org'],
+  [sonic.id]: ['https://rpc.soniclabs.com', 'https://sonic.drpc.org', 'https://rpc.soniclabs.com'],
   [soneium.id]: [
     'https://rpc.soneium.org',
     'https://soneium.drpc.org',
@@ -168,9 +148,9 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   ],
 };
 
+// No retries per URL so fallback kicks in immediately (e.g. 403 from whitelisted Alchemy on localhost).
 const HTTP_TRANSPORT_OPTIONS = {
-  retryCount: 3,
-  retryDelay: 1000,
+  retryCount: 0,
   timeout: 30_000,
 };
 
@@ -225,10 +205,15 @@ export function getPollingInterval(chainId: number): number {
   return CHAIN_POLLING_INTERVALS[chainId] ?? DEFAULT_POLLING_INTERVAL;
 }
 
+// On localhost, try public RPCs first so whitelisted RPCs (e.g. Alchemy) don't 403.
+const USE_PUBLIC_RPC_FIRST =
+  typeof window !== 'undefined' && window.location?.hostname === 'localhost';
+
 function transportForChain(chainId: number) {
   const urls = RPC_FALLBACKS[chainId];
   if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
-  return fallback(urls.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
+  const ordered = USE_PUBLIC_RPC_FIRST ? ([...urls].reverse() as [string, string, string]) : urls;
+  return fallback(ordered.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
 }
 
 export const config = getDefaultConfig({
