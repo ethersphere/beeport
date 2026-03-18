@@ -194,7 +194,7 @@ const SwapComponent: React.FC = () => {
     isTokensLoading,
     fetchTokensAndBalances,
     resetTokens,
-  } = useTokenManagement(address, isConnected);
+  } = useTokenManagement(address, isConnected, publicClient);
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
 

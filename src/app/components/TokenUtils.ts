@@ -1,7 +1,47 @@
 import { ChainType, getTokenBalancesByChain, getTokens, TokensResponse } from '@lifi/sdk';
 import { useState, useCallback } from 'react';
-import { formatUnits } from 'viem';
+import { type PublicClient, formatUnits, parseAbi } from 'viem';
 import { performWithRetry, toChecksumAddress } from './utils';
+
+const BALANCE_OF_ABI = parseAbi(['function balanceOf(address owner) view returns (uint256)']);
+
+const MULTICALL_BATCH_SIZE = 100;
+
+/**
+ * Fetches token balances in one or few RPC calls via multicall instead of N separate calls.
+ * Returns same shape as getTokenBalancesByChain for a single chain.
+ */
+async function getTokenBalancesViaMulticall(
+  publicClient: PublicClient,
+  address: string,
+  tokens: any[],
+  chainId: number
+): Promise<Record<number, any[]>> {
+  if (tokens.length === 0) return { [chainId]: [] };
+
+  const results: Record<number, any[]> = { [chainId]: [] };
+  const userAddress = address as `0x${string}`;
+
+  for (let i = 0; i < tokens.length; i += MULTICALL_BATCH_SIZE) {
+    const chunk = tokens.slice(i, i + MULTICALL_BATCH_SIZE);
+    const multicallResults = await publicClient.multicall({
+      contracts: chunk.map((token) => ({
+        address: token.address as `0x${string}`,
+        abi: BALANCE_OF_ABI,
+        functionName: 'balanceOf',
+        args: [userAddress],
+      })),
+    });
+
+    for (let j = 0; j < chunk.length; j++) {
+      const token = chunk[j];
+      const amount = (multicallResults[j]?.result as bigint) ?? 0n;
+      results[chainId].push({ ...token, amount });
+    }
+  }
+
+  return results;
+}
 
 // List of popular tokens to prioritize when wallet is not connected
 const POPULAR_TOKENS = [
@@ -51,11 +91,13 @@ export interface TokenManagementResult {
  *
  * @param address User wallet address
  * @param isConnected Connection status
+ * @param publicClient Optional viem public client for current chain; when set, balances are fetched via multicall (1–2 RPCs) instead of LiFi SDK (many RPCs)
  * @returns TokenManagementResult object with token state and methods
  */
 export const useTokenManagement = (
   address: string | undefined,
-  isConnected: boolean
+  isConnected: boolean,
+  publicClient?: PublicClient | null
 ): TokenManagementResult => {
   const [fromToken, setFromToken] = useState('0x0000000000000000000000000000000000000000');
   const [selectedTokenInfo, setSelectedTokenInfo] = useState<TokenInfo | null>(null);
@@ -103,20 +145,28 @@ export const useTokenManagement = (
 
         // Only fetch balances if wallet is connected
         if (address && isConnected) {
-          // Then get balances for these tokens with retry
-          const tokensByChain = {
-            [currentChainId]: tokens.tokens[currentChainId],
-          };
+          const chainTokens = tokens.tokens[currentChainId] ?? [];
+          let balances: Record<number, any[]>;
 
-          const balances = await performWithRetry(
-            () => getTokenBalancesByChain(address, tokensByChain),
-            'getTokenBalances',
-            result => {
-              // Validate that we have a non-empty balance result for the selected chain
-              const chainBalances = result?.[currentChainId];
-              return Boolean(chainBalances && chainBalances.length > 0);
-            }
-          );
+          if (publicClient && chainTokens.length > 0) {
+            // One or two multicall RPCs instead of many separate calls
+            balances = await getTokenBalancesViaMulticall(
+              publicClient,
+              address,
+              chainTokens,
+              currentChainId
+            );
+          } else {
+            const tokensByChain = { [currentChainId]: chainTokens };
+            balances = await performWithRetry(
+              () => getTokenBalancesByChain(address, tokensByChain),
+              'getTokenBalances',
+              result => {
+                const chainBalances = result?.[currentChainId];
+                return Boolean(chainBalances && chainBalances.length > 0);
+              }
+            );
+          }
           console.log('Token balances:', balances);
           setTokenBalances(balances);
 
@@ -196,7 +246,7 @@ export const useTokenManagement = (
         setIsTokensLoading(false);
       }
     },
-    [address, isConnected, resetTokens]
+    [address, isConnected, publicClient, resetTokens]
   );
 
   return {
