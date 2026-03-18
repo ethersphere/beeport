@@ -210,6 +210,14 @@ const CHAIN_POLLING_INTERVALS: Record<number, number> = {
 const DEFAULT_POLLING_INTERVAL = 4_000;
 
 /**
+ * Returns the RPC URL list for a chain (same order as wagmi transport fallbacks).
+ * Use this so Gnosis and other chain RPCs stay in sync with wagmi config.
+ */
+export function getRpcUrlsForChain(chainId: number): readonly [string, string, string] | undefined {
+  return RPC_FALLBACKS[chainId];
+}
+
+/**
  * Returns the appropriate polling interval (ms) for a given chain ID,
  * tuned to block time so we don't spam RPCs on slow chains or lag on fast ones.
  */
