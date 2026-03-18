@@ -17,6 +17,27 @@ interface PriceInfo {
 const USDC_DECIMALS = 6; // USDC has 6 decimals
 const BZZ_DECIMALS = 16; // BZZ has 16 decimals
 
+const POOL_ABI_WITH_LIQUIDITY = [
+  ...V3_POOL_ABI,
+  {
+    name: 'liquidity',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint128', name: '' }],
+  },
+] as const;
+
+const BALANCE_OF_ABI = [
+  {
+    constant: true,
+    inputs: [{ name: '_owner', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: 'balance', type: 'uint256' }],
+    type: 'function',
+  },
+] as const;
+
 const PriceTracker = () => {
   const [prices, setPrices] = useState<PriceInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,82 +49,43 @@ const PriceTracker = () => {
     const fetchPrices = async () => {
       setLoading(true);
       try {
-        // Get Gnosis client
         const publicClient = getGnosisPublicClient().client;
+        const pool = BZZ_USDC_POOL_ADDRESS as `0x${string}`;
 
-        // First, determine the token order in the pool (token0 vs token1)
-        // This is important for calculating the price correctly
-        const token0 = (await publicClient.readContract({
-          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
-          abi: V3_POOL_ABI,
-          functionName: 'token0',
-        })) as `0x${string}`;
+        // Batch 1: pool token0, token1, slot0, liquidity (1 RPC instead of 4)
+        const [token0Result, token1Result, slot0Result, liquidityResult] = await publicClient.multicall({
+          contracts: [
+            { address: pool, abi: V3_POOL_ABI, functionName: 'token0' },
+            { address: pool, abi: V3_POOL_ABI, functionName: 'token1' },
+            { address: pool, abi: V3_POOL_ABI, functionName: 'slot0' },
+            { address: pool, abi: POOL_ABI_WITH_LIQUIDITY, functionName: 'liquidity' },
+          ],
+        });
 
-        const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
-
-        // Get token1 address for USDC
-        const token1Address = (await publicClient.readContract({
-          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
-          abi: V3_POOL_ABI,
-          functionName: 'token1',
-        })) as `0x${string}`;
-
-        // Get the current price from slot0
-        const slot0Data = (await publicClient.readContract({
-          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
-          abi: V3_POOL_ABI,
-          functionName: 'slot0',
-        })) as [bigint, number, number, number, number, number, boolean];
+        const token0 = token0Result.result as `0x${string}`;
+        const token1Address = token1Result.result as `0x${string}`;
+        const slot0Data = slot0Result.result as [bigint, number, number, number, number, number, boolean];
+        const liquidity = liquidityResult.result as bigint;
+        if (token0 == null || token1Address == null || slot0Data == null || liquidity == null) {
+          throw new Error('Multicall pool data failed');
+        }
 
         const sqrtPriceX96 = slot0Data[0];
+        const isBzzToken0 = token0.toLowerCase() === BZZ_ADDRESS.toLowerCase();
 
-        // Get the current liquidity
-        const liquidity = (await publicClient.readContract({
-          address: BZZ_USDC_POOL_ADDRESS as `0x${string}`,
-          abi: [
-            ...V3_POOL_ABI,
-            {
-              name: 'liquidity',
-              type: 'function',
-              stateMutability: 'view',
-              inputs: [],
-              outputs: [{ type: 'uint128', name: '' }],
-            },
+        // Batch 2: BZZ and USDC balances (1 RPC instead of 2)
+        const otherToken = isBzzToken0 ? token1Address : token0;
+        const [bzzBalanceResult, usdcBalanceResult] = await publicClient.multicall({
+          contracts: [
+            { address: BZZ_ADDRESS as `0x${string}`, abi: BALANCE_OF_ABI, functionName: 'balanceOf', args: [pool] },
+            { address: otherToken, abi: BALANCE_OF_ABI, functionName: 'balanceOf', args: [pool] },
           ],
-          functionName: 'liquidity',
-        })) as bigint;
-
-        // Get token balances in the pool for better liquidity estimation
-        const [bzzBalance, usdcBalance] = await Promise.all([
-          publicClient.readContract({
-            address: BZZ_ADDRESS as `0x${string}`,
-            abi: [
-              {
-                constant: true,
-                inputs: [{ name: '_owner', type: 'address' }],
-                name: 'balanceOf',
-                outputs: [{ name: 'balance', type: 'uint256' }],
-                type: 'function',
-              },
-            ],
-            functionName: 'balanceOf',
-            args: [BZZ_USDC_POOL_ADDRESS as `0x${string}`],
-          }) as Promise<bigint>,
-          publicClient.readContract({
-            address: isBzzToken0 ? token1Address : token0,
-            abi: [
-              {
-                constant: true,
-                inputs: [{ name: '_owner', type: 'address' }],
-                name: 'balanceOf',
-                outputs: [{ name: 'balance', type: 'uint256' }],
-                type: 'function',
-              },
-            ],
-            functionName: 'balanceOf',
-            args: [BZZ_USDC_POOL_ADDRESS as `0x${string}`],
-          }) as Promise<bigint>,
-        ]);
+        });
+        const bzzBalance = bzzBalanceResult.result as bigint;
+        const usdcBalance = usdcBalanceResult.result as bigint;
+        if (bzzBalance == null || usdcBalance == null) {
+          throw new Error('Multicall balance data failed');
+        }
 
         // Convert sqrtPriceX96 to price
         const price = calculatePriceFromSqrtX96(sqrtPriceX96, isBzzToken0);
