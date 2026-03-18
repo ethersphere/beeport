@@ -68,6 +68,10 @@ server {
     root /var/www/beeport/out/;
     index index.html;
 
+    # Clickjacking protection (X-Frame-Options + CSP frame-ancestors)
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+
     location / {
         try_files $uri /index.html;
     }
@@ -301,6 +305,17 @@ sudo nginx -t
 # If test passes, reload nginx
 sudo systemctl reload nginx
 ```
+
+## Security: Clickjacking (X-Frame-Options)
+
+To prevent clickjacking, the nginx example includes:
+
+- **X-Frame-Options: DENY** – tells the browser not to render the site in a frame/iframe.
+- **Content-Security-Policy: frame-ancestors 'none'** – modern equivalent; use both for broad browser support.
+
+Set these once in the main HTTPS `server` block that serves the frontend HTML. They do not need to be duplicated in API proxy locations such as `/bzz`, `/stamps`, `/wallet`, `/tags`, or `/health`.
+
+If you serve Beeport from another host (e.g. beeport.ethswarm.org), ensure the same headers are set in that server’s nginx or CDN config so the app cannot be embedded in malicious iframes.
 
 ## Troubleshooting CORS Issues
 
