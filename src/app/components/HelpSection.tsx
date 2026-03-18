@@ -1,6 +1,11 @@
 import React from 'react';
 import styles from './css/HelpSection.module.css';
-import { DEFAULT_BEE_API_URL } from './constants';
+import {
+  DEFAULT_BEE_API_URL,
+  DEFAULT_SLIPPAGE,
+  MIN_SLIPPAGE_PERCENT,
+  MAX_SLIPPAGE_PERCENT,
+} from './constants';
 
 interface HelpSectionProps {
   nodeAddress: string;
@@ -12,6 +17,10 @@ interface HelpSectionProps {
   setIsCustomRpc: (value: boolean) => void;
   customRpcUrl: string;
   setCustomRpcUrl: (value: string) => void;
+  useCustomSlippage: boolean;
+  setUseCustomSlippage: (value: boolean) => void;
+  customSlippagePercent: number;
+  setCustomSlippagePercent: (value: number) => void;
 }
 
 const HelpSection: React.FC<HelpSectionProps> = ({
@@ -24,6 +33,10 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setIsCustomRpc,
   customRpcUrl,
   setCustomRpcUrl,
+  useCustomSlippage,
+  setUseCustomSlippage,
+  customSlippagePercent,
+  setCustomSlippagePercent,
 }) => {
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
@@ -52,6 +65,26 @@ const HelpSection: React.FC<HelpSectionProps> = ({
     if (!checked) {
       // Reset to default when turning off custom RPC
       setCustomRpcUrl('');
+    }
+  };
+
+  const handleCustomSlippageToggle = (checked: boolean) => {
+    setUseCustomSlippage(checked);
+    if (!checked) {
+      setCustomSlippagePercent(DEFAULT_SLIPPAGE);
+    }
+  };
+
+  const handleCustomSlippageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (raw === '') {
+      setCustomSlippagePercent(DEFAULT_SLIPPAGE);
+      return;
+    }
+    const num = parseFloat(raw);
+    if (!Number.isNaN(num)) {
+      const clamped = Math.min(MAX_SLIPPAGE_PERCENT, Math.max(MIN_SLIPPAGE_PERCENT, num));
+      setCustomSlippagePercent(clamped);
     }
   };
 
@@ -122,6 +155,41 @@ const HelpSection: React.FC<HelpSectionProps> = ({
                 <div className={styles.hint}>
                   Set custom RPC URL for the Gnosis chain. This will be used for all Gnosis chain
                   operations.
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className={styles.switchContainer} style={{ marginTop: '20px' }}>
+            <span className={styles.switchLabel}>Custom slippage</span>
+            <label className={styles.switch}>
+              <input
+                type="checkbox"
+                checked={useCustomSlippage}
+                onChange={e => handleCustomSlippageToggle(e.target.checked)}
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+
+          {useCustomSlippage && (
+            <div className={styles.customNodeConfig}>
+              <div className={styles.formSection}>
+                <label className={styles.label}>Slippage (%)</label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min={MIN_SLIPPAGE_PERCENT}
+                  max={MAX_SLIPPAGE_PERCENT}
+                  step={0.5}
+                  value={customSlippagePercent}
+                  onChange={handleCustomSlippageChange}
+                  placeholder={`${DEFAULT_SLIPPAGE}`}
+                />
+
+                <div className={styles.hint}>
+                  Swap tolerance in percentages. Used for Relay swaps when buying storage. Allows 0.5
+                  steps (e.g. 0.5, 1, 1.5). Default is {DEFAULT_SLIPPAGE}%.
                 </div>
               </div>
             </div>

@@ -23,6 +23,7 @@ import {
   TIME_OPTIONS,
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   DEFAULT_BEE_API_URL,
+  DEFAULT_SLIPPAGE,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
   // Note: LiFi execution constants removed - now using Relay API
@@ -202,6 +203,9 @@ const SwapComponent: React.FC = () => {
 
   const [isCustomNode, setIsCustomNode] = useState(false);
 
+  const [useCustomSlippage, setUseCustomSlippage] = useState(false);
+  const [customSlippagePercent, setCustomSlippagePercent] = useState(DEFAULT_SLIPPAGE);
+
   const [showUploadHistory, setShowUploadHistory] = useState(false);
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -372,6 +376,7 @@ const SwapComponent: React.FC = () => {
           topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
           setEstimatedTime: () => {}, // Don't override estimated time during price estimation
           isForEstimation: true,
+          slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
         });
 
         // If operation was aborted, don't continue
@@ -1066,6 +1071,7 @@ const SwapComponent: React.FC = () => {
           topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
           setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
           isForEstimation: false,
+          slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
         });
 
         console.log('✅ Relay execution quotes ready:', {
@@ -2596,6 +2602,10 @@ const SwapComponent: React.FC = () => {
           setIsCustomRpc={setIsCustomRpc}
           customRpcUrl={customRpcUrl}
           setCustomRpcUrl={setCustomRpcUrl}
+          useCustomSlippage={useCustomSlippage}
+          setUseCustomSlippage={setUseCustomSlippage}
+          customSlippagePercent={customSlippagePercent}
+          setCustomSlippagePercent={setCustomSlippagePercent}
         />
       ) : showStampList ? (
         <StampListSection
