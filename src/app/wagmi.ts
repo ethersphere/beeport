@@ -201,15 +201,10 @@ export function getPollingInterval(chainId: number): number {
   return CHAIN_POLLING_INTERVALS[chainId] ?? DEFAULT_POLLING_INTERVAL;
 }
 
-// On localhost, try public RPCs first so whitelisted RPCs (e.g. Alchemy) don't 403.
-const USE_PUBLIC_RPC_FIRST =
-  typeof window !== 'undefined' && window.location?.hostname === 'localhost';
-
 function transportForChain(chainId: number) {
   const urls = RPC_FALLBACKS[chainId];
   if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
-  const ordered = USE_PUBLIC_RPC_FIRST ? ([...urls].reverse() as [string, string, string]) : urls;
-  return fallback(ordered.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
+  return fallback(urls.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
 }
 
 export const config = getDefaultConfig({
