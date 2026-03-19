@@ -35,20 +35,16 @@ import {
 // 3 RPCs per chain — each verified with eth_chainId; failed ones replaced
 const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   [mainnet.id]: [
-    'https://eth-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
     'https://eth.drpc.org',
+    'https://eth.llamarpc.com',
     'https://ethereum.publicnode.com',
   ],
   [gnosis.id]: [
-    'https://gnosis-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
     'https://rpc.gnosischain.com',
     'https://gnosis.drpc.org',
+    'https://gnosis-rpc.publicnode.com',
   ],
-  [base.id]: [
-    'https://base-mainnet.g.alchemy.com/v2/IVUx4_9ohzDYHxS7mp4gG4FAyOJrggTV',
-    'https://base.drpc.org',
-    'https://mainnet.base.org',
-  ],
+  [base.id]: ['https://base.drpc.org', 'https://base.llamarpc.com', 'https://mainnet.base.org'],
   [arbitrum.id]: [
     'https://arb1.arbitrum.io/rpc',
     'https://1rpc.io/arb',
@@ -148,6 +144,79 @@ const RPC_FALLBACKS: Record<number, [string, string, string]> = {
   ],
 };
 
+/** Optional private RPC per chain from .env.local (e.g. NEXT_PUBLIC_RPC_100). Prepended to fallbacks when set. */
+function getPrivateRpcForChain(chainId: number): string | undefined {
+  switch (chainId) {
+    case mainnet.id:
+      return process.env.NEXT_PUBLIC_RPC_1;
+    case gnosis.id:
+      return process.env.NEXT_PUBLIC_RPC_100;
+    case base.id:
+      return process.env.NEXT_PUBLIC_RPC_8453;
+    case arbitrum.id:
+      return process.env.NEXT_PUBLIC_RPC_42161;
+    case optimism.id:
+      return process.env.NEXT_PUBLIC_RPC_10;
+    case avalanche.id:
+      return process.env.NEXT_PUBLIC_RPC_43114;
+    case bsc.id:
+      return process.env.NEXT_PUBLIC_RPC_56;
+    case celo.id:
+      return process.env.NEXT_PUBLIC_RPC_42220;
+    case polygon.id:
+      return process.env.NEXT_PUBLIC_RPC_137;
+    case mantle.id:
+      return process.env.NEXT_PUBLIC_RPC_5000;
+    case zksync.id:
+      return process.env.NEXT_PUBLIC_RPC_324;
+    case ink.id:
+      return process.env.NEXT_PUBLIC_RPC_57073;
+    case boba.id:
+      return process.env.NEXT_PUBLIC_RPC_288;
+    case cronos.id:
+      return process.env.NEXT_PUBLIC_RPC_25;
+    case gravity.id:
+      return process.env.NEXT_PUBLIC_RPC_1625;
+    case linea.id:
+      return process.env.NEXT_PUBLIC_RPC_59144;
+    case lisk.id:
+      return process.env.NEXT_PUBLIC_RPC_1135;
+    case metis.id:
+      return process.env.NEXT_PUBLIC_RPC_1088;
+    case mode.id:
+      return process.env.NEXT_PUBLIC_RPC_34443;
+    case polygonZkEvm.id:
+      return process.env.NEXT_PUBLIC_RPC_1101;
+    case scroll.id:
+      return process.env.NEXT_PUBLIC_RPC_534352;
+    case sei.id:
+      return process.env.NEXT_PUBLIC_RPC_1329;
+    case sonic.id:
+      return process.env.NEXT_PUBLIC_RPC_146;
+    case soneium.id:
+      return process.env.NEXT_PUBLIC_RPC_1868;
+    case taiko.id:
+      return process.env.NEXT_PUBLIC_RPC_167000;
+    case unichain.id:
+      return process.env.NEXT_PUBLIC_RPC_130;
+    case worldchain.id:
+      return process.env.NEXT_PUBLIC_RPC_480;
+    case sepolia.id:
+      return process.env.NEXT_PUBLIC_RPC_11155111;
+    default:
+      return undefined;
+  }
+}
+
+/** RPC URLs for a chain: optional private RPC from env prepended, then fallbacks. Same order as wagmi transport. */
+function getEffectiveRpcUrls(chainId: number): readonly string[] | undefined {
+  const base = RPC_FALLBACKS[chainId];
+  if (!base) return undefined;
+  const privateUrl = getPrivateRpcForChain(chainId);
+  if (privateUrl?.trim()) return [privateUrl.trim(), ...base];
+  return base;
+}
+
 // No retries per URL so fallback kicks in immediately (e.g. 403 from whitelisted Alchemy on localhost).
 const HTTP_TRANSPORT_OPTIONS = {
   retryCount: 0,
@@ -191,10 +260,10 @@ const DEFAULT_POLLING_INTERVAL = 4_000;
 
 /**
  * Returns the RPC URL list for a chain (same order as wagmi transport fallbacks).
- * Use this so Gnosis and other chain RPCs stay in sync with wagmi config.
+ * If a private RPC is set in env (e.g. NEXT_PUBLIC_RPC_100), it is first in the list.
  */
-export function getRpcUrlsForChain(chainId: number): readonly [string, string, string] | undefined {
-  return RPC_FALLBACKS[chainId];
+export function getRpcUrlsForChain(chainId: number): readonly string[] | undefined {
+  return getEffectiveRpcUrls(chainId);
 }
 
 /**
@@ -205,15 +274,10 @@ export function getPollingInterval(chainId: number): number {
   return CHAIN_POLLING_INTERVALS[chainId] ?? DEFAULT_POLLING_INTERVAL;
 }
 
-// On localhost, try public RPCs first so whitelisted RPCs (e.g. Alchemy) don't 403.
-const USE_PUBLIC_RPC_FIRST =
-  typeof window !== 'undefined' && window.location?.hostname === 'localhost';
-
 function transportForChain(chainId: number) {
-  const urls = RPC_FALLBACKS[chainId];
-  if (!urls) return http(undefined, HTTP_TRANSPORT_OPTIONS);
-  const ordered = USE_PUBLIC_RPC_FIRST ? ([...urls].reverse() as [string, string, string]) : urls;
-  return fallback(ordered.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
+  const urls = getEffectiveRpcUrls(chainId);
+  if (!urls?.length) return http(undefined, HTTP_TRANSPORT_OPTIONS);
+  return fallback(urls.map(url => http(url, HTTP_TRANSPORT_OPTIONS)));
 }
 
 export const config = getDefaultConfig({
