@@ -295,22 +295,19 @@ export const handleExchangeRateUpdate = async (
  * @returns A public client configured for the Gnosis chain
  */
 export const getGnosisPublicClient = (rpcIndex: number = 0) => {
-  // Use global custom RPC URL if set, otherwise fall back to env variable
-  const envRpcUrl = process.env.NEXT_PUBLIC_GNOSIS_RPC;
-
   // Same RPC list as wagmi (single source of truth; no duplicate list here)
   const fallbackRpcs = getRpcUrlsForChain(gnosis.id)!;
 
   let rpcUrl: string;
   if (rpcIndex === 0) {
-    // Primary attempt: use custom/env RPC or first fallback
-    rpcUrl = globalCustomRpcUrl || envRpcUrl || fallbackRpcs[0];
+    // Primary attempt: use global custom RPC or first fallback
+    rpcUrl = globalCustomRpcUrl || fallbackRpcs[0];
   } else {
     // Fallback attempts: use specific fallback RPC
     rpcUrl = fallbackRpcs[rpcIndex] ?? fallbackRpcs[fallbackRpcs.length - 1];
   }
 
-  // We are using public RPC for the Gnosis chain unless a custom RPC is set or env variable is set
+  // We are using public RPC for the Gnosis chain unless a global custom RPC is set
   const client = createPublicClient({
     chain: gnosis,
     transport: rpcUrl ? http(rpcUrl) : http(),
