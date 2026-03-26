@@ -99,8 +99,8 @@ const SwapComponent: React.FC = () => {
   // Log version info on component initialization
   React.useEffect(() => {
     console.log(`
+                               🐝 BEEPORT 🐝    
     ╔════════════════════════════════════════════════════════════════╗
-    ║                          🐝 BEEPORT 🐝                          ║
     ║                         Version: 1.1.8                         ║
     ║                                                                ║
     ║            Multichain Swarm Upload & Stamp Manager             ║
