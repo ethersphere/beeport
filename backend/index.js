@@ -86,6 +86,7 @@ const verifySignature = async (req, res, next) => {
     const messageContent = req.headers['x-message-content'];
     const sessionToken = req.headers['x-upload-session-token']; // New header for session token
     const isMultiFileUpload = req.headers['x-multi-file-upload'] === 'true'; // New header to indicate multi-file upload
+    const redundancyLevel = req.headers['swarm-redundancy-level']; // Erasure coding level
 
     console.log('Headers received:', {
       signedMessage: signedMessage ? 'exists' : 'missing',
@@ -95,6 +96,7 @@ const verifySignature = async (req, res, next) => {
       messageContent,
       sessionToken: sessionToken ? 'exists' : 'missing',
       isMultiFileUpload,
+      redundancyLevel: redundancyLevel || 'not set',
     });
 
     // Check for existing session first (for multi-file uploads)
