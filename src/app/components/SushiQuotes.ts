@@ -92,6 +92,23 @@ const FEE_TIERS = [3000, 500, 10000, 100] as const;
 /** Minimal ABI for reading the fee tier directly from a V3 pool contract. */
 const POOL_FEE_ABI = parseAbi(['function fee() external view returns (uint24)']);
 
+/** V3 pool liquidity; pools can be deployed with no active LPs — Quoter then reverts. */
+const POOL_LIQUIDITY_ABI = parseAbi(['function liquidity() external view returns (uint128)']);
+
+async function v3PoolHasLiquidity(poolAddress: string): Promise<boolean> {
+  try {
+    const { client } = getGnosisPublicClient();
+    const liq = await client.readContract({
+      address: poolAddress as `0x${string}`,
+      abi: POOL_LIQUIDITY_ABI,
+      functionName: 'liquidity',
+    });
+    return liq > 0n;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Known pool addresses for tokens that have a direct BZZ pool.
  * We store only the address — the fee is read from the pool contract at
@@ -130,17 +147,21 @@ async function findDirectBzzPool(
   const knownPoolAddress = KNOWN_BZZ_POOL_ADDRESSES[normalised];
   if (knownPoolAddress && knownPoolAddress !== ZERO_ADDRESS) {
     try {
-      const fee = await client.readContract({
-        address: knownPoolAddress as `0x${string}`,
-        abi: POOL_FEE_ABI,
-        functionName: 'fee',
-      });
-      const result = { pool: knownPoolAddress, fee: Number(fee) };
-      bzzPoolCache[normalised] = result;
-      console.log(`🍣 Pool fee for ${tokenIn}: ${Number(fee)} (${Number(fee) / 10000}%)`);
-      return result;
+      if (!(await v3PoolHasLiquidity(knownPoolAddress))) {
+        console.warn('⚠️ Known BZZ pool has zero liquidity, falling back to factory scan');
+      } else {
+        const fee = await client.readContract({
+          address: knownPoolAddress as `0x${string}`,
+          abi: POOL_FEE_ABI,
+          functionName: 'fee',
+        });
+        const result = { pool: knownPoolAddress, fee: Number(fee) };
+        bzzPoolCache[normalised] = result;
+        console.log(`🍣 Pool fee for ${tokenIn}: ${Number(fee)} (${Number(fee) / 10000}%)`);
+        return result;
+      }
     } catch {
-      console.warn('⚠️ Could not read fee from known pool, falling back to factory scan');
+      console.warn('⚠️ Could not read known BZZ pool, falling back to factory scan');
     }
   }
 
@@ -154,7 +175,7 @@ async function findDirectBzzPool(
         args: [tokenIn as `0x${string}`, GNOSIS_BZZ_ADDRESS as `0x${string}`, fee],
       });
 
-      if (pool && pool !== ZERO_ADDRESS) {
+      if (pool && pool !== ZERO_ADDRESS && (await v3PoolHasLiquidity(pool as string))) {
         const result = { pool: pool as string, fee };
         bzzPoolCache[normalised] = result;
         return result;
@@ -195,7 +216,7 @@ async function findPoolBetween(
         args: [tokenA as `0x${string}`, tokenB as `0x${string}`, fee],
       });
 
-      if (pool && pool !== ZERO_ADDRESS) {
+      if (pool && pool !== ZERO_ADDRESS && (await v3PoolHasLiquidity(pool as string))) {
         const result = { pool: pool as string, fee };
         poolPairCache[key] = result;
         return result;
@@ -245,33 +266,31 @@ function encodeTwoHopPath(
 // ─── Route Resolution ─────────────────────────────────────────────────────────
 
 /**
- * Determines the best swap route from `fromToken` to BZZ.
- * Tries direct pools first, then routes through USDC or WXDAI.
+ * All structurally valid routes (pools exist and have non-zero liquidity), best first.
  */
-export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo | null> {
+export async function findSushiRoutes(fromToken: string): Promise<SushiRouteInfo[]> {
+  const routes: SushiRouteInfo[] = [];
+
   const isNativeXdai =
     fromToken === ZERO_ADDRESS ||
     fromToken === '0x0' ||
     fromToken.toLowerCase() === ZERO_ADDRESS;
 
-  // For native xDAI, use WXDAI as the effective input token.
   const effectiveTokenIn = isNativeXdai ? GNOSIS_WXDAI_ADDRESS : fromToken;
 
-  // ── Case 1: direct BZZ pool ─────────────────────────────────────────────────
   const directPool = await findDirectBzzPool(effectiveTokenIn);
   if (directPool) {
     const path = encodeSingleHopPath(effectiveTokenIn, directPool.fee);
-    return {
+    routes.push({
       path,
       isNative: isNativeXdai,
       fees: [directPool.fee],
       description: isNativeXdai
         ? `xDAI → WXDAI → BZZ (single-hop, ${directPool.fee / 10000}% fee)`
         : `Direct → BZZ (${directPool.fee / 10000}% fee)`,
-    };
+    });
   }
 
-  // ── Case 2: two-hop via USDC (tokenIn → USDC → BZZ) ────────────────────────
   if (effectiveTokenIn.toLowerCase() !== GNOSIS_USDC_ADDRESS.toLowerCase()) {
     const [tokenInUsdcPool, usdcBzzPool] = await Promise.all([
       findPoolBetween(effectiveTokenIn, GNOSIS_USDC_ADDRESS),
@@ -285,18 +304,17 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
         GNOSIS_USDC_ADDRESS,
         usdcBzzPool.fee
       );
-      return {
+      routes.push({
         path,
         isNative: isNativeXdai,
         fees: [tokenInUsdcPool.fee, usdcBzzPool.fee],
         description: isNativeXdai
           ? `xDAI → WXDAI → USDC → BZZ (${tokenInUsdcPool.fee / 10000}% + ${usdcBzzPool.fee / 10000}%)`
           : `tokenIn → USDC → BZZ (${tokenInUsdcPool.fee / 10000}% + ${usdcBzzPool.fee / 10000}%)`,
-      };
+      });
     }
   }
 
-  // ── Case 3: two-hop via WXDAI (tokenIn → WXDAI → BZZ) ─────────────────────
   if (effectiveTokenIn.toLowerCase() !== GNOSIS_WXDAI_ADDRESS.toLowerCase()) {
     const [tokenInWxdaiPool, wxdaiBzzPool] = await Promise.all([
       findPoolBetween(effectiveTokenIn, GNOSIS_WXDAI_ADDRESS),
@@ -310,16 +328,45 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
         GNOSIS_WXDAI_ADDRESS,
         wxdaiBzzPool.fee
       );
-      return {
+      routes.push({
         path,
-        isNative: false,
+        isNative: isNativeXdai,
         fees: [tokenInWxdaiPool.fee, wxdaiBzzPool.fee],
-        description: `tokenIn → WXDAI → BZZ (${tokenInWxdaiPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`,
-      };
+        description: isNativeXdai
+          ? `xDAI → WXDAI (2-hop) → BZZ (${tokenInWxdaiPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`
+          : `tokenIn → WXDAI → BZZ (${tokenInWxdaiPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`,
+      });
     }
   }
 
-  return null;
+  return routes;
+}
+
+/**
+ * Preferred route only (first in {@link findSushiRoutes} order).
+ */
+export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo | null> {
+  const routes = await findSushiRoutes(fromToken);
+  return routes[0] ?? null;
+}
+
+/**
+ * True if this Gnosis "from" token can fund stamps: BZZ (direct) or any token
+ * {@link findSushiRoute} can swap to BZZ via SushiSwap V3.
+ */
+export async function gnosisFromTokenCanReachBzz(fromToken: string): Promise<boolean> {
+  const lower = fromToken.toLowerCase();
+  if (lower === ZERO_ADDRESS || lower === '0x0') {
+    return (await findSushiRoute(fromToken)) !== null;
+  }
+  try {
+    if (getAddress(fromToken).toLowerCase() === getAddress(GNOSIS_BZZ_ADDRESS).toLowerCase()) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return (await findSushiRoute(fromToken)) !== null;
 }
 
 // ─── Quote ────────────────────────────────────────────────────────────────────
@@ -344,49 +391,60 @@ export const getSushiQuote = async (params: SushiQuoteParams): Promise<SushiQuot
     slippagePercent,
   });
 
-  const route = await performWithRetry(
-    () => findSushiRoute(fromToken),
-    'findSushiRoute'
-  );
+  const routes = await performWithRetry(() => findSushiRoutes(fromToken), 'findSushiRoutes');
 
-  if (!route) {
+  if (routes.length === 0) {
     throw new Error(
       `No SushiSwap route found from ${tokenSymbol} to BZZ on Gnosis. ` +
         'Try using USDC or xDAI instead.'
     );
   }
 
-  console.log('🍣 Route found:', route.description);
-
   const { client } = getGnosisPublicClient();
 
-  // Call quoteSingleHop or quoteMultiHop depending on number of hops.
-  // Both are non-view but designed for eth_call (simulate = true).
-  const isSingleHop = route.fees.length === 1;
+  let amountInBeforeSlippage: bigint | undefined;
+  let route: SushiRouteInfo | undefined;
+  let lastQuoteError: unknown;
 
-  let amountInBeforeSlippage: bigint;
+  for (const candidate of routes) {
+    const isSingleHop = candidate.fees.length === 1;
+    try {
+      if (isSingleHop) {
+        const effectiveTokenIn = candidate.isNative ? GNOSIS_WXDAI_ADDRESS : fromToken;
+        const result = await client.simulateContract({
+          address: SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`,
+          abi: SUSHI_STAMPS_ROUTER_ABI,
+          functionName: 'quoteSingleHop',
+          args: [
+            effectiveTokenIn as `0x${string}`,
+            candidate.fees[0],
+            BigInt(bzzAmount),
+          ],
+        });
+        amountInBeforeSlippage = result.result as bigint;
+      } else {
+        const result = await client.simulateContract({
+          address: SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`,
+          abi: SUSHI_STAMPS_ROUTER_ABI,
+          functionName: 'quoteMultiHop',
+          args: [candidate.path, BigInt(bzzAmount)],
+        });
+        amountInBeforeSlippage = result.result as bigint;
+      }
+      route = candidate;
+      console.log('🍣 Route quoted:', route.description);
+      break;
+    } catch (e) {
+      lastQuoteError = e;
+      console.warn('🍣 Quote failed for route, trying next…', candidate.description, e);
+    }
+  }
 
-  if (isSingleHop) {
-    const effectiveTokenIn = route.isNative ? GNOSIS_WXDAI_ADDRESS : fromToken;
-    const result = await client.simulateContract({
-      address: SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`,
-      abi: SUSHI_STAMPS_ROUTER_ABI,
-      functionName: 'quoteSingleHop',
-      args: [
-        effectiveTokenIn as `0x${string}`,
-        route.fees[0],
-        BigInt(bzzAmount),
-      ],
-    });
-    amountInBeforeSlippage = result.result as bigint;
-  } else {
-    const result = await client.simulateContract({
-      address: SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`,
-      abi: SUSHI_STAMPS_ROUTER_ABI,
-      functionName: 'quoteMultiHop',
-      args: [route.path, BigInt(bzzAmount)],
-    });
-    amountInBeforeSlippage = result.result as bigint;
+  if (route === undefined || amountInBeforeSlippage === undefined) {
+    throw new Error(
+      `Could not get a SushiSwap quote from ${tokenSymbol} to BZZ (tried ${routes.length} on-chain route(s)). ` +
+        'Try another token or a smaller stamp size.'
+    );
   }
 
   // Apply slippage buffer.
