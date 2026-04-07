@@ -20,6 +20,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true,
     },
   },
   networks: {
@@ -52,6 +53,12 @@ const config: HardhatUserConfig = {
         },
       },
     ],
+  },
+
+  // Sourcify verification (v2 - supported by GnosisScan / Blockscout natively)
+  // No API key required. Verifies on https://sourcify.dev and mirrors to GnosisScan.
+  sourcify: {
+    enabled: true,
   },
   paths: {
     sources: "./contracts",
