@@ -167,10 +167,23 @@ async function findDirectBzzPool(
   return null;
 }
 
+/** Runtime cache for arbitrary token-pair pools (key = `tokenA:tokenB`). */
+const poolPairCache: Record<string, { pool: string; fee: number } | null> = {};
+
 /**
- * Queries the SushiSwap V3 factory for a WXDAI/USDC pool (needed for xDAI two-hop routing).
+ * Scans the SushiSwap V3 factory for any pool between `tokenA` and `tokenB`
+ * across all common fee tiers. Results are cached by normalised pair key.
  */
-async function findWxdaiUsdcPool(): Promise<{ pool: string; fee: number } | null> {
+async function findPoolBetween(
+  tokenA: string,
+  tokenB: string
+): Promise<{ pool: string; fee: number } | null> {
+  const key = [tokenA.toLowerCase(), tokenB.toLowerCase()].sort().join(':');
+
+  if (key in poolPairCache) {
+    return poolPairCache[key];
+  }
+
   const { client } = getGnosisPublicClient();
 
   for (const fee of FEE_TIERS) {
@@ -179,21 +192,20 @@ async function findWxdaiUsdcPool(): Promise<{ pool: string; fee: number } | null
         address: SUSHI_FACTORY_ADDRESS as `0x${string}`,
         abi: SUSHI_FACTORY_ABI,
         functionName: 'getPool',
-        args: [
-          GNOSIS_WXDAI_ADDRESS as `0x${string}`,
-          GNOSIS_USDC_ADDRESS as `0x${string}`,
-          fee,
-        ],
+        args: [tokenA as `0x${string}`, tokenB as `0x${string}`, fee],
       });
 
       if (pool && pool !== ZERO_ADDRESS) {
-        return { pool: pool as string, fee };
+        const result = { pool: pool as string, fee };
+        poolPairCache[key] = result;
+        return result;
       }
     } catch {
       // Try next fee tier.
     }
   }
 
+  poolPairCache[key] = null;
   return null;
 }
 
@@ -260,67 +272,49 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
   }
 
   // ── Case 2: two-hop via USDC (tokenIn → USDC → BZZ) ────────────────────────
-  const bzzUsdcInfo = KNOWN_BZZ_POOLS[GNOSIS_USDC_ADDRESS.toLowerCase()] ?? {
-    pool: BZZ_USDC_POOL_ADDRESS,
-    fee: 10000,
-  };
+  if (effectiveTokenIn.toLowerCase() !== GNOSIS_USDC_ADDRESS.toLowerCase()) {
+    const [tokenInUsdcPool, usdcBzzPool] = await Promise.all([
+      findPoolBetween(effectiveTokenIn, GNOSIS_USDC_ADDRESS),
+      findDirectBzzPool(GNOSIS_USDC_ADDRESS),
+    ]);
 
-  if (
-    effectiveTokenIn.toLowerCase() !== GNOSIS_USDC_ADDRESS.toLowerCase()
-  ) {
-    // Find tokenIn → USDC pool.
-    const { client } = getGnosisPublicClient();
-    for (const fee of FEE_TIERS) {
-      try {
-        const pool = await client.readContract({
-          address: SUSHI_FACTORY_ADDRESS as `0x${string}`,
-          abi: SUSHI_FACTORY_ABI,
-          functionName: 'getPool',
-          args: [
-            effectiveTokenIn as `0x${string}`,
-            GNOSIS_USDC_ADDRESS as `0x${string}`,
-            fee,
-          ],
-        });
-
-        if (pool && pool !== ZERO_ADDRESS) {
-          const path = encodeTwoHopPath(
-            effectiveTokenIn,
-            fee,                       // fee for tokenIn→USDC
-            GNOSIS_USDC_ADDRESS,
-            bzzUsdcInfo.fee            // fee for USDC→BZZ
-          );
-          return {
-            path,
-            isNative: isNativeXdai,
-            fees: [fee, bzzUsdcInfo.fee],
-            description: isNativeXdai
-              ? `xDAI → WXDAI → USDC → BZZ (${fee / 10000}% + ${bzzUsdcInfo.fee / 10000}%)`
-              : `tokenIn → USDC → BZZ (${fee / 10000}% + ${bzzUsdcInfo.fee / 10000}%)`,
-          };
-        }
-      } catch {
-        // Try next fee tier.
-      }
+    if (tokenInUsdcPool && usdcBzzPool) {
+      const path = encodeTwoHopPath(
+        effectiveTokenIn,
+        tokenInUsdcPool.fee,
+        GNOSIS_USDC_ADDRESS,
+        usdcBzzPool.fee
+      );
+      return {
+        path,
+        isNative: isNativeXdai,
+        fees: [tokenInUsdcPool.fee, usdcBzzPool.fee],
+        description: isNativeXdai
+          ? `xDAI → WXDAI → USDC → BZZ (${tokenInUsdcPool.fee / 10000}% + ${usdcBzzPool.fee / 10000}%)`
+          : `tokenIn → USDC → BZZ (${tokenInUsdcPool.fee / 10000}% + ${usdcBzzPool.fee / 10000}%)`,
+      };
     }
   }
 
   // ── Case 3: two-hop via WXDAI (tokenIn → WXDAI → BZZ) ─────────────────────
-  const wxdaiBzzPool = await findDirectBzzPool(GNOSIS_WXDAI_ADDRESS);
-  if (wxdaiBzzPool && effectiveTokenIn.toLowerCase() !== GNOSIS_WXDAI_ADDRESS.toLowerCase()) {
-    const wxdaiUsdcPool = await findWxdaiUsdcPool();
-    if (wxdaiUsdcPool) {
+  if (effectiveTokenIn.toLowerCase() !== GNOSIS_WXDAI_ADDRESS.toLowerCase()) {
+    const [tokenInWxdaiPool, wxdaiBzzPool] = await Promise.all([
+      findPoolBetween(effectiveTokenIn, GNOSIS_WXDAI_ADDRESS),
+      findDirectBzzPool(GNOSIS_WXDAI_ADDRESS),
+    ]);
+
+    if (tokenInWxdaiPool && wxdaiBzzPool) {
       const path = encodeTwoHopPath(
         effectiveTokenIn,
-        wxdaiUsdcPool.fee,
+        tokenInWxdaiPool.fee,
         GNOSIS_WXDAI_ADDRESS,
         wxdaiBzzPool.fee
       );
       return {
         path,
         isNative: false,
-        fees: [wxdaiUsdcPool.fee, wxdaiBzzPool.fee],
-        description: `tokenIn → WXDAI → BZZ (${wxdaiUsdcPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`,
+        fees: [tokenInWxdaiPool.fee, wxdaiBzzPool.fee],
+        description: `tokenIn → WXDAI → BZZ (${tokenInWxdaiPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`,
       };
     }
   }
