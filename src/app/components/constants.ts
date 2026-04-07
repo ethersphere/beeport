@@ -277,10 +277,11 @@ export const SUSHI_QUOTER_ADDRESS =
 /**
  * SushiSwapStampsRouter – our deployed router that swaps any Gnosis token → BZZ
  * and atomically creates / tops up a Swarm stamp in a single transaction.
- * Set NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS in .env after deploying.
+ * Override with NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS when using another deployment.
  */
 export const SUSHI_STAMPS_ROUTER_ADDRESS =
-  process.env.NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS || '';
+  process.env.NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS ||
+  '0x2a0a54368Bb6b0D8fa31568D092ffBDf350ab553';
 
 /** Minimal ABI for the SushiSwap V3 Factory – only what we need for pool discovery */
 export const SUSHI_FACTORY_ABI = [
