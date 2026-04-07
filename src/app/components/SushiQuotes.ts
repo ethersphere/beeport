@@ -87,34 +87,64 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
  * Common fee tiers to try when auto-discovering pools (SushiSwap V3).
  * Order matters — try the most common first.
  */
-const FEE_TIERS = [10000, 3000, 500, 100] as const;
+const FEE_TIERS = [3000, 500, 10000, 100] as const;
+
+/** Minimal ABI for reading the fee tier directly from a V3 pool contract. */
+const POOL_FEE_ABI = parseAbi(['function fee() external view returns (uint24)']);
 
 /**
- * Known direct BZZ pools on Gnosis (token → pool, fee).
- * These are cached to avoid repeated factory lookups.
+ * Known pool addresses for tokens that have a direct BZZ pool.
+ * We store only the address — the fee is read from the pool contract at
+ * runtime so we never hardcode an assumption about the fee tier.
  */
-const KNOWN_BZZ_POOLS: Record<string, { pool: string; fee: number }> = {
-  [GNOSIS_USDC_ADDRESS.toLowerCase()]: { pool: BZZ_USDC_POOL_ADDRESS, fee: 10000 },
+const KNOWN_BZZ_POOL_ADDRESSES: Record<string, string> = {
+  [GNOSIS_USDC_ADDRESS.toLowerCase()]: BZZ_USDC_POOL_ADDRESS,
 };
+
+/** Runtime cache: normalised token address → { pool, fee } */
+const bzzPoolCache: Record<string, { pool: string; fee: number }> = {};
 
 // ─── Pool Discovery ──────────────────────────────────────────────────────────
 
 /**
- * Queries the SushiSwap V3 factory for a direct BZZ pool for `tokenIn`.
- * Returns the pool address and fee tier, or null if none exists.
+ * Finds a direct BZZ pool for `tokenIn` on SushiSwap V3 (Gnosis).
+ *
+ * Strategy:
+ *  1. Return the runtime cache if already resolved.
+ *  2. If a known pool address exists for this token, read its fee() directly
+ *     from the pool contract — avoids assuming the wrong fee tier.
+ *  3. Fall back to scanning factory.getPool() across all common fee tiers.
  */
 async function findDirectBzzPool(
   tokenIn: string
 ): Promise<{ pool: string; fee: number } | null> {
   const normalised = tokenIn.toLowerCase();
 
-  // Check the cached known pools first.
-  if (KNOWN_BZZ_POOLS[normalised]) {
-    return KNOWN_BZZ_POOLS[normalised];
+  if (bzzPoolCache[normalised]) {
+    return bzzPoolCache[normalised];
   }
 
   const { client } = getGnosisPublicClient();
 
+  // ── Strategy 1: known pool address → read actual fee from contract ─────────
+  const knownPoolAddress = KNOWN_BZZ_POOL_ADDRESSES[normalised];
+  if (knownPoolAddress && knownPoolAddress !== ZERO_ADDRESS) {
+    try {
+      const fee = await client.readContract({
+        address: knownPoolAddress as `0x${string}`,
+        abi: POOL_FEE_ABI,
+        functionName: 'fee',
+      });
+      const result = { pool: knownPoolAddress, fee: Number(fee) };
+      bzzPoolCache[normalised] = result;
+      console.log(`🍣 Pool fee for ${tokenIn}: ${Number(fee)} (${Number(fee) / 10000}%)`);
+      return result;
+    } catch {
+      console.warn('⚠️ Could not read fee from known pool, falling back to factory scan');
+    }
+  }
+
+  // ── Strategy 2: scan factory for all fee tiers ────────────────────────────
   for (const fee of FEE_TIERS) {
     try {
       const pool = await client.readContract({
@@ -126,8 +156,7 @@ async function findDirectBzzPool(
 
       if (pool && pool !== ZERO_ADDRESS) {
         const result = { pool: pool as string, fee };
-        // Cache for subsequent calls.
-        KNOWN_BZZ_POOLS[normalised] = result;
+        bzzPoolCache[normalised] = result;
         return result;
       }
     } catch {
@@ -225,8 +254,8 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
       isNative: isNativeXdai,
       fees: [directPool.fee],
       description: isNativeXdai
-        ? `xDAI → WXDAI → BZZ (single-hop, ${directPool.fee / 100}% fee)`
-        : `Direct → BZZ (${directPool.fee / 100}% fee)`,
+        ? `xDAI → WXDAI → BZZ (single-hop, ${directPool.fee / 10000}% fee)`
+        : `Direct → BZZ (${directPool.fee / 10000}% fee)`,
     };
   }
 
@@ -266,8 +295,8 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
             isNative: isNativeXdai,
             fees: [fee, bzzUsdcInfo.fee],
             description: isNativeXdai
-              ? `xDAI → WXDAI → USDC → BZZ (${fee / 100}% + ${bzzUsdcInfo.fee / 100}%)`
-              : `tokenIn → USDC → BZZ (${fee / 100}% + ${bzzUsdcInfo.fee / 100}%)`,
+              ? `xDAI → WXDAI → USDC → BZZ (${fee / 10000}% + ${bzzUsdcInfo.fee / 10000}%)`
+              : `tokenIn → USDC → BZZ (${fee / 10000}% + ${bzzUsdcInfo.fee / 10000}%)`,
           };
         }
       } catch {
@@ -291,7 +320,7 @@ export async function findSushiRoute(fromToken: string): Promise<SushiRouteInfo 
         path,
         isNative: false,
         fees: [wxdaiUsdcPool.fee, wxdaiBzzPool.fee],
-        description: `tokenIn → WXDAI → BZZ (${wxdaiUsdcPool.fee / 100}% + ${wxdaiBzzPool.fee / 100}%)`,
+        description: `tokenIn → WXDAI → BZZ (${wxdaiUsdcPool.fee / 10000}% + ${wxdaiBzzPool.fee / 10000}%)`,
       };
     }
   }
