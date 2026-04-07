@@ -266,13 +266,20 @@ export const GNOSIS_USDC_ADDRESS =
 
 /**
  * Intermediate token Relay bridges to on Gnosis for cross-chain stamp purchases.
- * Relay has excellent routes to USDC on most chains; the SushiSwapStampsRouter then
- * swaps this token → BZZ and creates the stamp atomically on Gnosis.
- * Override with NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS to use a different token
+ * Relay has excellent routes to this token on most chains; the SushiSwapStampsRouter
+ * then swaps it → BZZ and creates the stamp atomically on Gnosis.
+ *
+ * IMPORTANT: This is Circle's native USDC on Gnosis (0x2a22…), NOT the older Ethereum-
+ * bridged USDC (0xDDAf…).  Relay only supports routing to the native address.
+ * The SushiSwapStampsRouter handles the two-hop: native USDC → bridged USDC → BZZ,
+ * using the fee-100 Sushi V3 pool between the two USDC tokens.
+ *
+ * Override with NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS when using a different token
  * (must have a working Sushi V3 route to BZZ on Gnosis).
  */
 export const RELAY_BRIDGE_TOKEN_ON_GNOSIS =
-  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS || GNOSIS_USDC_ADDRESS;
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS ||
+  '0x2a22f9c3b484c3629090feed35f17ff8f88f76f0'; // native Circle USDC on Gnosis
 
 /** Decimals of {@link RELAY_BRIDGE_TOKEN_ON_GNOSIS}. Override when changing the bridge token. */
 export const RELAY_BRIDGE_TOKEN_DECIMALS = Number(
