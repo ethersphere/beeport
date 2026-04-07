@@ -530,7 +530,7 @@ export const getRelayQuote = async ({
 
   // Step 6: Set estimated time if provided
   if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
-    setEstimatedTime(relayQuoteResponse.details.timeEstimate);
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
   }
 
   console.log(
@@ -978,7 +978,7 @@ export const getRelayCrossChainWithSushiQuote = async ({
   const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
 
   if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
-    setEstimatedTime(relayQuoteResponse.details.timeEstimate);
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
   }
 
   console.log(
