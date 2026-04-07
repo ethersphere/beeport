@@ -264,6 +264,25 @@ export const BZZ_USDC_POOL_ADDRESS =
 export const GNOSIS_USDC_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_USDC_ADDRESS || '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83';
 
+/**
+ * Intermediate token Relay bridges to on Gnosis for cross-chain stamp purchases.
+ * Relay has excellent routes to USDC on most chains; the SushiSwapStampsRouter then
+ * swaps this token → BZZ and creates the stamp atomically on Gnosis.
+ * Override with NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS to use a different token
+ * (must have a working Sushi V3 route to BZZ on Gnosis).
+ */
+export const RELAY_BRIDGE_TOKEN_ON_GNOSIS =
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS || GNOSIS_USDC_ADDRESS;
+
+/** Decimals of {@link RELAY_BRIDGE_TOKEN_ON_GNOSIS}. Override when changing the bridge token. */
+export const RELAY_BRIDGE_TOKEN_DECIMALS = Number(
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_DECIMALS ?? '6'
+);
+
+/** Symbol of {@link RELAY_BRIDGE_TOKEN_ON_GNOSIS} (used for display/logging). */
+export const RELAY_BRIDGE_TOKEN_SYMBOL =
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_SYMBOL || 'USDC';
+
 // ─── SushiSwap V3 on Gnosis ────────────────────────────────────────────────
 
 /** SushiSwap V3 Factory on Gnosis – used for pool discovery */

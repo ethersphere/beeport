@@ -62,6 +62,7 @@ import { useTimer } from './TimerUtils';
 // Note: LiFi quote functions removed - now using Relay API via RelayQuotes.ts
 import {
   getRelaySwapQuotes,
+  getRelayCrossChainWithSushiQuote,
   executeRelaySteps,
   RelayQuoteResponse,
   parseRelayError,
@@ -375,6 +376,11 @@ const SwapComponent: React.FC = () => {
           getAddress(fromToken) !== getAddress(GNOSIS_BZZ_ADDRESS) &&
           SUSHI_STAMPS_ROUTER_ADDRESS !== '';
 
+        // ── Cross-chain + router deployed: Relay → USDC → Sushi → BZZ → stamp ──
+        const isCrossChainWithSushi =
+          selectedChainId !== ChainId.DAI &&
+          SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+
         let totalAmountUSD: number;
 
         if (isGnosisNonBzz) {
@@ -399,8 +405,29 @@ const SwapComponent: React.FC = () => {
 
           totalAmountUSD = sushiQuote.totalAmountUSD;
           console.log(`💰 SushiSwap quote: $${totalAmountUSD.toFixed(2)}`);
+        } else if (isCrossChainWithSushi) {
+          // ── Cross-chain: Relay bridges to USDC, SushiRouter swaps → BZZ → stamp
+          console.log('🌉 Using Relay→USDC→Sushi quote for cross-chain…');
+
+          const crossChainResult = await getRelayCrossChainWithSushiQuote({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount,
+            nodeAddress,
+            swarmConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: true,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          if (abortSignal.aborted) return;
+
+          totalAmountUSD = crossChainResult.totalAmountUSD;
+          console.log(`💰 Cross-chain USDC+Sushi estimate: $${totalAmountUSD.toFixed(2)}`);
         } else {
-          // ── All other cases: Relay (same-chain BZZ or cross-chain) ──────────────
+          // ── Gnosis + BZZ direct (or fallback): use Relay ───────────────────────
           const relayQuoteResult = await getRelaySwapQuotes({
             selectedChainId,
             fromToken,
@@ -1187,30 +1214,67 @@ const SwapComponent: React.FC = () => {
           });
         }
       } else {
-        // ── Branch 3: cross-chain → Relay ──────────────────────────────────────
+        // ── Branch 3: cross-chain ───────────────────────────────────────────────
+        // Prefer Relay → USDC → SushiRouter → BZZ → stamp (better routing).
+        // Fall back to legacy Relay → BZZ path if router is not deployed.
+        const useSushiBridge = SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+
         setStatusMessage({
           step: 'Quoting',
           message: 'Getting quote...',
         });
 
-        const relayQuoteResult = await getRelaySwapQuotes({
-          selectedChainId,
-          fromToken,
-          address,
-          bzzAmount: updatedConfig.swarmBatchTotal,
-          nodeAddress,
-          swarmConfig: updatedConfig,
-          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          setEstimatedTime: () => {},
-          isForEstimation: false,
-          slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
-        });
+        let crossChainRelayResponse: RelayQuoteResponse;
+        let crossChainEstimatedTime: number;
 
-        console.log('✅ Relay execution quotes ready:', {
-          totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
-          steps: relayQuoteResult.steps.length,
-          estimatedTime: relayQuoteResult.estimatedTime,
-        });
+        if (useSushiBridge) {
+          console.log('🌉 Cross-chain via Relay→USDC→SushiRouter→BZZ→stamp…');
+
+          const result = await getRelayCrossChainWithSushiQuote({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            nodeAddress,
+            swarmConfig: updatedConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: false,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          crossChainRelayResponse = result.relayQuoteResponse;
+          crossChainEstimatedTime = result.estimatedTime;
+
+          console.log('✅ Cross-chain USDC+Sushi quotes ready:', {
+            totalUSD: `$${result.totalAmountUSD.toFixed(2)}`,
+            steps: result.steps.length,
+            estimatedTime: result.estimatedTime,
+          });
+        } else {
+          // Legacy: Relay bridges directly to BZZ
+          const relayQuoteResult = await getRelaySwapQuotes({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            nodeAddress,
+            swarmConfig: updatedConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: false,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          crossChainRelayResponse = relayQuoteResult.relayQuoteResponse;
+          crossChainEstimatedTime = relayQuoteResult.estimatedTime;
+
+          console.log('✅ Relay execution quotes ready:', {
+            totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
+            steps: relayQuoteResult.steps.length,
+            estimatedTime: relayQuoteResult.estimatedTime,
+          });
+        }
 
         setStatusMessage({
           step: 'Preparing',
@@ -1218,17 +1282,17 @@ const SwapComponent: React.FC = () => {
         });
 
         await executeRelaySteps(
-          relayQuoteResult.relayQuoteResponse,
+          crossChainRelayResponse,
           walletClient,
           publicClient,
           setStatusMessage,
           () => {
             console.log(
               '🚀 Transaction confirmed! Starting timer:',
-              relayQuoteResult.estimatedTime,
+              crossChainEstimatedTime,
               'seconds'
             );
-            setEstimatedTime(relayQuoteResult.estimatedTime);
+            setEstimatedTime(crossChainEstimatedTime);
             setStatusMessage({
               step: 'Relay',
               message: 'Executing cross-chain swap...',
