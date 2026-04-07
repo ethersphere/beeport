@@ -66,6 +66,11 @@ import {
   parseRelayError,
 } from './RelayQuotes';
 import {
+  getLiFiExactOutQuote,
+  executeLiFiSwap,
+  shouldFallbackToLiFi,
+} from './LiFiFallback';
+import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
   isArchiveFile,
@@ -246,6 +251,8 @@ const SwapComponent: React.FC = () => {
 
   // Add a ref for the abort controller
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
+  /** Set to true when Relay fails at estimation and LI.FI is used instead — skip Relay on swap. */
+  const relayEstimationFailedRef = useRef(false);
 
   // Add state for custom RPC
   const [isCustomRpc, setIsCustomRpc] = useState(false);
@@ -353,10 +360,11 @@ const SwapComponent: React.FC = () => {
       setInsufficientFunds(false);
       setLiquidityError(false);
       setAggregatorDown(false);
+      relayEstimationFailedRef.current = false;
+
+      const bzzAmount = calculateTotalAmount().toString();
 
       try {
-        const bzzAmount = calculateTotalAmount().toString();
-
         console.log('🔍 Relay price estimation:', {
           bzzAmount: formatUnits(BigInt(bzzAmount), 16),
           selectedDays,
@@ -403,9 +411,45 @@ const SwapComponent: React.FC = () => {
           // Set insufficient funds flag if cost exceeds available balance
           setInsufficientFunds(relayQuoteResult.totalAmountUSD > tokenBalanceInUsd);
         }
-      } catch (error) {
+      } catch (relayEstimationError) {
         // Only update error state if not aborted
         if (!abortSignal.aborted) {
+          // ── LI.FI fallback for price estimation ──────────────────────────
+          if (shouldFallbackToLiFi(relayEstimationError)) {
+            console.log('⚡ Relay estimation failed — trying LI.FI for price estimate…');
+            try {
+              const lifiQuote = await getLiFiExactOutQuote({
+                selectedChainId,
+                fromToken,
+                address,
+                bzzAmount,
+                slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+              });
+
+              if (abortSignal.aborted) return;
+
+              const usdAmount = parseFloat(lifiQuote.estimate?.fromAmountUSD || '0');
+              console.log(`💰 LI.FI price estimation: $${usdAmount.toFixed(2)}`);
+              setTotalUsdAmount(usdAmount.toString());
+
+              if (selectedTokenInfo) {
+                const tokenBalanceInUsd =
+                  Number(
+                    formatUnits(selectedTokenInfo.amount || 0n, selectedTokenInfo.decimals)
+                  ) * Number(selectedTokenInfo.priceUSD);
+                setInsufficientFunds(usdAmount > tokenBalanceInUsd);
+              }
+              relayEstimationFailedRef.current = true; // skip Relay on next swap
+              return; // estimation succeeded via LI.FI
+            } catch (lifiEstimationError) {
+              if (abortSignal.aborted) return;
+              console.warn('LI.FI estimation also failed:', lifiEstimationError);
+              // fall through to standard error handling below
+            }
+          }
+
+          // ── Standard Relay error handling ────────────────────────────────
+          const error = relayEstimationError;
           console.error('Error estimating price:', error);
           setTotalUsdAmount(null);
 
@@ -816,9 +860,19 @@ const SwapComponent: React.FC = () => {
     }));
   };
 
-  const handleDirectBzzTransactions = async (updatedConfig: any) => {
+  const handleDirectBzzTransactions = async (
+    updatedConfig: any,
+    options?: {
+      overrideWalletClient?: any;
+      overridePublicClient?: any;
+      doApprovalCheck?: boolean;
+    }
+  ) => {
+    const effectiveWalletClient = options?.overrideWalletClient ?? walletClient;
+    const effectivePublicClient = options?.overridePublicClient ?? publicClient;
+
     // Ensure we have all needed objects and data
-    if (!address || !publicClient || !walletClient) {
+    if (!address || !effectivePublicClient || !effectiveWalletClient) {
       console.error('Missing required objects for direct BZZ transaction');
       return;
     }
@@ -852,7 +906,47 @@ const SwapComponent: React.FC = () => {
           }...${topUpBatchId?.slice(-4)}`
         : 'Buying storage...';
 
-      // Approval is now handled separately, proceed directly to stamp creation
+      // When called from the LI.FI fallback path, BZZ just arrived in the wallet and
+      // was never approved for the registry contract — do it now before the contract call.
+      if (options?.doApprovalCheck) {
+        const MAX_UINT256 =
+          '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+
+        const currentAllowance = await effectivePublicClient.readContract({
+          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+          abi: parseAbi([
+            'function allowance(address owner, address spender) external view returns (uint256)',
+          ]),
+          functionName: 'allowance',
+          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
+        });
+
+        if (BigInt(currentAllowance.toString()) < totalAmount) {
+          console.log('🔐 BZZ approval needed for LI.FI path — approving registry contract…');
+          setStatusMessage({ step: 'Approval', message: 'Approving BZZ for Swarm contract…' });
+
+          const approveTxHash = await effectiveWalletClient.writeContract({
+            address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
+            abi: parseAbi([
+              'function approve(address spender, uint256 amount) external returns (bool)',
+            ]),
+            functionName: 'approve',
+            args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`, BigInt(MAX_UINT256)],
+            account: address,
+          });
+
+          console.log('🔐 BZZ approval tx:', approveTxHash);
+          await effectivePublicClient.waitForTransactionReceipt({
+            hash: approveTxHash,
+            pollingInterval: getPollingInterval(ChainId.DAI),
+          });
+          console.log('✅ BZZ approved for registry contract');
+        } else {
+          console.log('✅ BZZ already approved — skipping approval');
+        }
+      }
+
+      // For the direct BZZ path (UI "Approve BZZ" button), approval is handled separately.
 
       // Prepare contract write parameters - different based on operation type
       let contractWriteParams;
@@ -888,13 +982,13 @@ const SwapComponent: React.FC = () => {
       console.log('Creating transaction with params:', contractWriteParams);
 
       // Execute the batch creation or top-up
-      const batchTxHash = await walletClient.writeContract(contractWriteParams);
+      const batchTxHash = await effectiveWalletClient.writeContract(contractWriteParams);
       console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
 
-      // Wait for batch transaction to be mined
-      const batchReceipt = await publicClient.waitForTransactionReceipt({
+      // Wait for batch transaction to be mined — use Gnosis interval when override is provided
+      const batchReceipt = await effectivePublicClient.waitForTransactionReceipt({
         hash: batchTxHash,
-        pollingInterval: getPollingInterval(chainId),
+        pollingInterval: getPollingInterval(options?.overridePublicClient ? ChainId.DAI : chainId),
       });
 
       if (batchReceipt.status === 'success') {
@@ -924,13 +1018,16 @@ const SwapComponent: React.FC = () => {
           // Don't set upload step for top-ups
         } else {
           try {
-            // Calculate the batch ID for logging
             const calculatedBatchId = readBatchId(
               updatedConfig.swarmBatchNonce,
               GNOSIS_CUSTOM_REGISTRY_ADDRESS
             );
 
             console.log('Batch created successfully with ID:', calculatedBatchId);
+
+            // Explicitly set the batch ID in state — critical for the LI.FI fallback path
+            // where the async createBatchId call from handleSwap start may have been lost.
+            setPostageBatchId(calculatedBatchId);
 
             setStatusMessage({
               step: 'Complete',
@@ -1066,118 +1163,182 @@ const SwapComponent: React.FC = () => {
           message: 'Getting quote...',
         });
 
-        // Use the new Relay system for execution (don't set timer yet)
-        const relayQuoteResult = await getRelaySwapQuotes({
-          selectedChainId,
-          fromToken,
-          address,
-          bzzAmount: updatedConfig.swarmBatchTotal,
-          nodeAddress,
-          swarmConfig: updatedConfig,
-          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
-          isForEstimation: false,
-          slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
-        });
-
-        console.log('✅ Relay execution quotes ready:', {
-          totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
-          steps: relayQuoteResult.steps.length,
-          estimatedTime: relayQuoteResult.estimatedTime,
-        });
-
-        console.log(
-          '⏱️ Timer will be set to:',
-          relayQuoteResult.estimatedTime,
-          'seconds after transaction confirmation'
-        );
-
-        // Set initial status (timer will start after transaction confirmation)
-        setStatusMessage({
-          step: 'Preparing',
-          message: `Preparing cross-chain swap...`,
-        });
-
-        // Execute Relay steps with timer callback
-        await executeRelaySteps(
-          relayQuoteResult.relayQuoteResponse,
-          walletClient,
-          publicClient,
-          setStatusMessage,
-          () => {
-            // Start timer after transaction confirmation
-            console.log(
-              '🚀 Transaction confirmed! Starting timer with duration:',
-              relayQuoteResult.estimatedTime,
-              'seconds'
-            );
-            setEstimatedTime(relayQuoteResult.estimatedTime);
-            setStatusMessage({
-              step: 'Relay',
-              message: `Executing cross-chain swap...`,
-            });
-          }
-        );
-
-        console.log('🎉 Relay swap completed successfully!');
-
-        // Reset timer when done
-        resetTimer();
-
-        // Handle post-swap completion flow (same as original LiFi implementation)
-        try {
-          if (isTopUp && topUpBatchId) {
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId);
-
-            // Set top-up completion info
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
-
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Batch Topped Up Successfully',
-              isSuccess: true,
-            });
-
-            // Update upload history with new expiry date immediately
-            if (address && selectedDays) {
-              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
-            }
-          } else {
-            // Calculate the batch ID for new batch creation
-            const calculatedBatchId = readBatchId(
-              updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS
-            );
-
-            console.log('Batch created successfully with ID:', calculatedBatchId);
-            setPostageBatchId(calculatedBatchId);
-
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Storage Bought Successfully',
-              isSuccess: true,
-              warning:
-                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
-            });
-
-            // Transition to upload step - this was missing!
-            setIsNewStampCreated(true);
-            setUploadStep('ready');
-          }
-        } catch (error) {
-          console.error('Failed to process batch completion:', error);
-          setStatusMessage({
-            step: 'Error',
-            message: 'Failed to process batch completion',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            isError: true,
+        // ── LI.FI execution helper ─────────────────────────────────────────
+        const runLiFiExecution = async () => {
+          const lifiQuote = await getLiFiExactOutQuote({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
           });
+          console.log('✅ LI.FI quote ready:', {
+            tool: lifiQuote.tool,
+            fromAmountUSD: lifiQuote.estimate?.fromAmountUSD,
+          });
+          await executeLiFiSwap(lifiQuote, walletClient, publicClient, setStatusMessage);
+          console.log('✅ LI.FI swap complete — BZZ in wallet, preparing Gnosis contract call…');
+
+          // ── Ensure we are on Gnosis before calling the registry contract ───
+          // Cross-chain swaps leave the wallet on the origin chain; the registry
+          // contract (GNOSIS_CUSTOM_REGISTRY_ADDRESS) lives on Gnosis (DAI).
+          if (selectedChainId !== ChainId.DAI) {
+            setStatusMessage({ step: 'ChainSwitch', message: 'Switching to Gnosis chain…' });
+            if (switchChain) switchChain({ chainId: ChainId.DAI });
+            // Allow the wallet to process the chain switch before requesting a client
+            await new Promise(resolve => setTimeout(resolve, 2500));
+          }
+
+          // Obtain an imperative wallet client for Gnosis — avoids stale closure values
+          // from the wagmi hook which won't have updated yet mid-async-flow.
+          const gnosisWalletClient = await getWalletClient(config, { chainId: ChainId.DAI });
+          const { client: gnosisPublicClient } = getGnosisPublicClient();
+
+          if (!gnosisWalletClient) {
+            throw new Error('Could not obtain Gnosis wallet client after chain switch');
+          }
+
+          // Pass override clients and request an inline approval check.
+          // Relay normally bundles approve() + createBatchRegistry() in one tx list;
+          // for the LI.FI path we must do approval ourselves before calling the contract.
+          setStatusMessage({ step: 'Contract', message: 'Calling Swarm contract…' });
+          await handleDirectBzzTransactions(updatedConfig, {
+            overrideWalletClient: gnosisWalletClient,
+            overridePublicClient: gnosisPublicClient,
+            doApprovalCheck: true,
+          });
+        };
+
+        // If Relay already failed at estimation, skip it and route directly to LI.FI
+        if (relayEstimationFailedRef.current) {
+          console.log('⚡ Relay skipped (failed at estimation) — using LI.FI directly');
+          await runLiFiExecution();
+          return;
+        }
+
+        // ── Try Relay first ──────────────────────────────────────────────────
+        try {
+          // Use the new Relay system for execution (don't set timer yet)
+          const relayQuoteResult = await getRelaySwapQuotes({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            nodeAddress,
+            swarmConfig: updatedConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
+            isForEstimation: false,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          console.log('✅ Relay execution quotes ready:', {
+            totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
+            steps: relayQuoteResult.steps.length,
+            estimatedTime: relayQuoteResult.estimatedTime,
+          });
+
+          console.log(
+            '⏱️ Timer will be set to:',
+            relayQuoteResult.estimatedTime,
+            'seconds after transaction confirmation'
+          );
+
+          // Set initial status (timer will start after transaction confirmation)
+          setStatusMessage({
+            step: 'Preparing',
+            message: `Preparing cross-chain swap...`,
+          });
+
+          // Execute Relay steps with timer callback
+          await executeRelaySteps(
+            relayQuoteResult.relayQuoteResponse,
+            walletClient,
+            publicClient,
+            setStatusMessage,
+            () => {
+              // Start timer after transaction confirmation
+              console.log(
+                '🚀 Transaction confirmed! Starting timer with duration:',
+                relayQuoteResult.estimatedTime,
+                'seconds'
+              );
+              setEstimatedTime(relayQuoteResult.estimatedTime);
+              setStatusMessage({
+                step: 'Relay',
+                message: `Executing cross-chain swap...`,
+              });
+            }
+          );
+
+          console.log('🎉 Relay swap completed successfully!');
+
+          // Reset timer when done
+          resetTimer();
+
+          // Handle post-swap completion flow
+          try {
+            if (isTopUp && topUpBatchId) {
+              console.log('Successfully topped up batch ID:', topUpBatchId);
+              setPostageBatchId(topUpBatchId);
+
+              // Set top-up completion info
+              setTopUpCompleted(true);
+              setTopUpInfo({
+                batchId: topUpBatchId,
+                days: selectedDays || 0,
+                cost: totalUsdAmount || '0',
+              });
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Batch Topped Up Successfully',
+                isSuccess: true,
+              });
+
+              // Update upload history with new expiry date immediately
+              if (address && selectedDays) {
+                updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
+              }
+            } else {
+              // Calculate the batch ID for new batch creation
+              const calculatedBatchId = readBatchId(
+                updatedConfig.swarmBatchNonce,
+                GNOSIS_CUSTOM_REGISTRY_ADDRESS
+              );
+
+              console.log('Batch created successfully with ID:', calculatedBatchId);
+              setPostageBatchId(calculatedBatchId);
+
+              setStatusMessage({
+                step: 'Complete',
+                message: 'Storage Bought Successfully',
+                isSuccess: true,
+                warning:
+                  'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
+              });
+
+              // Transition to upload step - this was missing!
+              setIsNewStampCreated(true);
+              setUploadStep('ready');
+            }
+          } catch (error) {
+            console.error('Failed to process batch completion:', error);
+            setStatusMessage({
+              step: 'Error',
+              message: 'Failed to process batch completion',
+              error: error instanceof Error ? error.message : 'Unknown error',
+              isError: true,
+            });
+          }
+        } catch (relayExecutionError) {
+          // ── LI.FI fallback for execution ──────────────────────────────────
+          if (!shouldFallbackToLiFi(relayExecutionError)) {
+            // Non-recoverable error (user rejection, insufficient funds, etc.) — rethrow
+            throw relayExecutionError;
+          }
+          console.log('⚡ Relay execution failed — falling back to LI.FI', relayExecutionError);
+          await runLiFiExecution();
         }
       }
     } catch (error) {
