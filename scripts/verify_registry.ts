@@ -3,10 +3,14 @@
  *
  * Usage
  * ─────
- *   npx hardhat run scripts/verify_registry.ts --network gnosis
+ *   # Convenience npm script (sets TS_NODE_PROJECT automatically):
+ *   npm run verify:registry
  *
- *   # Or pass the address explicitly:
- *   REGISTRY_ADDRESS=0xYourAddress npx hardhat run scripts/verify_registry.ts --network gnosis
+ *   # Or directly (TS_NODE_PROJECT required for Node 22 + Next.js tsconfig):
+ *   TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry.ts --network gnosis
+ *
+ *   # Pass the address explicitly:
+ *   REGISTRY_ADDRESS=0xYourAddress npm run verify:registry
  */
 
 import { run, deployments } from 'hardhat';

@@ -7,11 +7,14 @@
  *
  * Usage
  * ─────
- *   # From the project root:
- *   npx hardhat run scripts/verify_router.ts --network gnosis
+ *   # Convenience npm script (sets TS_NODE_PROJECT automatically):
+ *   npm run verify:router
  *
- *   # Or pass the address via env variable (overrides the deployments/ cache):
- *   ROUTER_ADDRESS=0xYourDeployedAddress npx hardhat run scripts/verify_router.ts --network gnosis
+ *   # Or directly (TS_NODE_PROJECT required for Node 22 + Next.js tsconfig):
+ *   TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_router.ts --network gnosis
+ *
+ *   # Pass the router address explicitly (overrides the deployments/ cache):
+ *   ROUTER_ADDRESS=0xYourDeployedAddress npm run verify:router
  *
  * Requirements
  * ────────────
