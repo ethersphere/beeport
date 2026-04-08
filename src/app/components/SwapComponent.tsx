@@ -104,7 +104,7 @@ const SwapComponent: React.FC = () => {
     console.log(`
                                🐝 BEEPORT 🐝    
     ╔════════════════════════════════════════════════════════════════╗
-    ║                         Version: 1.1.8                         ║
+    ║                         Version: 1.1.9                         ║
     ║                                                                ║
     ║            Multichain Swarm Upload & Stamp Manager             ║
     ║              https://github.com/ethersphere/beeport            ║
@@ -378,17 +378,14 @@ const SwapComponent: React.FC = () => {
 
         // ── Cross-chain + router deployed: Relay → USDC → Sushi → BZZ → stamp ──
         const isCrossChainWithSushi =
-          selectedChainId !== ChainId.DAI &&
-          SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+          selectedChainId !== ChainId.DAI && SUSHI_STAMPS_ROUTER_ADDRESS !== '';
 
         let totalAmountUSD: number;
 
         if (isGnosisNonBzz) {
           console.log('🍣 Using SushiSwap quote for Gnosis token…');
 
-          const tokenPriceUsd = selectedTokenInfo
-            ? Number(selectedTokenInfo.priceUSD)
-            : 0;
+          const tokenPriceUsd = selectedTokenInfo ? Number(selectedTokenInfo.priceUSD) : 0;
           const tokenDecimals = selectedTokenInfo?.decimals ?? 18;
           const tokenSymbol = selectedTokenInfo?.symbol ?? 'Token';
 
