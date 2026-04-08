@@ -256,9 +256,153 @@ export const V3_POOL_ABI = [
   },
 ] as const;
 
-// Sushiswap V3 Pool address for BZZ/WXDAI on Gnosis
+// Sushiswap V3 Pool address for BZZ/USDC on Gnosis (also used for price display)
 export const BZZ_USDC_POOL_ADDRESS =
   process.env.NEXT_PUBLIC_BZZ_USDC_POOL_ADDRESS || '0x6f30b7cf40cb423c1d23478a9855701ecf43931e';
+
+// USDC token on Gnosis (bridged)
+export const GNOSIS_USDC_ADDRESS =
+  process.env.NEXT_PUBLIC_GNOSIS_USDC_ADDRESS || '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83';
+
+// ─── SushiSwap V3 on Gnosis ────────────────────────────────────────────────
+
+/** SushiSwap V3 Factory on Gnosis – used for pool discovery */
+export const SUSHI_FACTORY_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_FACTORY_ADDRESS || '0xf78031cbca409f2fb6876bdfdbc1b2df24cf9bef';
+
+/** SushiSwap V3 QuoterV2 on Gnosis – used for exact-output price estimation */
+export const SUSHI_QUOTER_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_QUOTER_ADDRESS || '0xb1e835dc2785b52265711e17fccb0fd018226a6e';
+
+/**
+ * SushiSwapStampsRouter – our deployed router that swaps any Gnosis token → BZZ
+ * and atomically creates / tops up a Swarm stamp in a single transaction.
+ * Override with NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS when using another deployment.
+ */
+export const SUSHI_STAMPS_ROUTER_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS ||
+  '0x2a0a54368Bb6b0D8fa31568D092ffBDf350ab553';
+
+/** Minimal ABI for the SushiSwap V3 Factory – only what we need for pool discovery */
+export const SUSHI_FACTORY_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'tokenA', type: 'address' },
+      { internalType: 'address', name: 'tokenB', type: 'address' },
+      { internalType: 'uint24',  name: 'fee',    type: 'uint24'  },
+    ],
+    name: 'getPool',
+    outputs: [{ internalType: 'address', name: 'pool', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+/** Full ABI for the SushiSwapStampsRouter contract */
+export const SUSHI_STAMPS_ROUTER_ABI = [
+  // ── Quote functions (call via eth_call / simulateContract) ─────────────────
+  {
+    inputs: [
+      { internalType: 'address', name: 'tokenIn',      type: 'address' },
+      { internalType: 'uint24',  name: 'fee',          type: 'uint24'  },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+    ],
+    name: 'quoteSingleHop',
+    outputs: [{ internalType: 'uint256', name: 'amountIn', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+    ],
+    name: 'quoteMultiHop',
+    outputs: [{ internalType: 'uint256', name: 'amountIn', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Create batch (ERC20 input) ─────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',  type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+      {
+        components: [
+          { internalType: 'address', name: 'owner',                  type: 'address' },
+          { internalType: 'address', name: 'nodeAddress',            type: 'address' },
+          { internalType: 'uint256', name: 'initialBalancePerChunk', type: 'uint256' },
+          { internalType: 'uint8',   name: 'depth',                  type: 'uint8'   },
+          { internalType: 'uint8',   name: 'bucketDepth',            type: 'uint8'   },
+          { internalType: 'bytes32', name: 'nonce',                  type: 'bytes32' },
+          { internalType: 'bool',    name: 'immutable_',             type: 'bool'    },
+        ],
+        internalType: 'struct SushiSwapStampsRouter.CreateBatchParams',
+        name: 'p',
+        type: 'tuple',
+      },
+    ],
+    name: 'createBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Create batch (native xDAI input) ──────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',  type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+      {
+        components: [
+          { internalType: 'address', name: 'owner',                  type: 'address' },
+          { internalType: 'address', name: 'nodeAddress',            type: 'address' },
+          { internalType: 'uint256', name: 'initialBalancePerChunk', type: 'uint256' },
+          { internalType: 'uint8',   name: 'depth',                  type: 'uint8'   },
+          { internalType: 'uint8',   name: 'bucketDepth',            type: 'uint8'   },
+          { internalType: 'bytes32', name: 'nonce',                  type: 'bytes32' },
+          { internalType: 'bool',    name: 'immutable_',             type: 'bool'    },
+        ],
+        internalType: 'struct SushiSwapStampsRouter.CreateBatchParams',
+        name: 'p',
+        type: 'tuple',
+      },
+    ],
+    name: 'createBatchNative',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  // ── Top up (ERC20 input) ───────────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',               type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',         type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut',        type: 'uint256' },
+      { internalType: 'bytes32', name: 'batchId',             type: 'bytes32' },
+      { internalType: 'uint256', name: 'topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'topUp',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Top up (native xDAI input) ─────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',               type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',         type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut',        type: 'uint256' },
+      { internalType: 'bytes32', name: 'batchId',             type: 'bytes32' },
+      { internalType: 'uint256', name: 'topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'topUpNative',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
 
 /**
  * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.

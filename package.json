@@ -17,7 +17,10 @@
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "deploy:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat deploy --network gnosis --tags SushiSwapStampsRouter",
+    "verify:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_router.ts --network gnosis",
+    "verify:registry": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry.ts --network gnosis"
   },
   "dependencies": {
     "@formbricks/js": "^4.1.0",
@@ -42,6 +45,10 @@
     "viem": "^2.25.0",
     "wagmi": "^2.12.17",
     "zod": "^3.25.76"
+  },
+  "ts-node": {
+    "project": "./tsconfig.hardhat.json",
+    "transpileOnly": true
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
