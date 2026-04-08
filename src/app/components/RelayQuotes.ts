@@ -9,8 +9,14 @@ import {
   RELAY_STATUS_CHECK_INTERVAL_MS,
   RELAY_STATUS_MAX_ATTEMPTS,
   TRANSACTION_TIMEOUT_MS,
+  RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+  RELAY_BRIDGE_TOKEN_DECIMALS,
+  RELAY_BRIDGE_TOKEN_SYMBOL,
+  SUSHI_STAMPS_ROUTER_ADDRESS,
+  SUSHI_STAMPS_ROUTER_ABI,
 } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
+import { getSushiQuote } from './SushiQuotes';
 import { getPollingInterval } from '@/app/wagmi';
 
 // Relay API Error Codes and Messages
@@ -524,7 +530,7 @@ export const getRelayQuote = async ({
 
   // Step 6: Set estimated time if provided
   if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
-    setEstimatedTime(relayQuoteResponse.details.timeEstimate);
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
   }
 
   console.log(
@@ -831,6 +837,162 @@ const monitorRelayStatus = async (
   }
 
   throw new Error(`Operation timed out for step ${stepId} after ${maxAttempts} attempts`);
+};
+
+/**
+ * Cross-chain flow: bridge source token → RELAY_BRIDGE_TOKEN (USDC) on Gnosis via Relay,
+ * then atomically swap USDC → BZZ and create/top-up a Swarm stamp via SushiSwapStampsRouter.
+ *
+ * Why: Relay has reliable routes to USDC on every major chain; routing directly to BZZ is
+ * fragile.  The existing SushiSwapStampsRouter already handles USDC → BZZ → stamp on-chain.
+ *
+ * Relay delivers USDC to its Multicaller which executes two destination txs atomically:
+ *   1. USDC.approve(sushiRouter, maxUsdcIn)
+ *   2. sushiRouter.createBatch / topUp(path, maxUsdcIn, bzzOut, params)
+ */
+export const getRelayCrossChainWithSushiQuote = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  bzzAmount,
+  nodeAddress,
+  swarmConfig,
+  topUpBatchId,
+  setEstimatedTime,
+  isForEstimation = false,
+  slippagePercent,
+}: RelayQuoteParams) => {
+  console.log(
+    `🌉 Cross-chain via USDC+Sushi – ${isForEstimation ? 'estimating' : 'executing'}…`
+  );
+
+  // ── Step 1: Sushi quote for bridge token → BZZ ──────────────────────────────
+  const sushiQuote = await getSushiQuote({
+    fromToken: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+    bzzAmount,
+    slippagePercent: slippagePercent ?? DEFAULT_SLIPPAGE,
+    tokenSymbol: RELAY_BRIDGE_TOKEN_SYMBOL,
+    tokenDecimals: RELAY_BRIDGE_TOKEN_DECIMALS,
+    tokenPriceUsd: 1.0, // USDC ≈ $1 – used only for the internal USD display of the Sushi leg
+  });
+
+  const maxBridgeTokenIn = sushiQuote.maxAmountIn; // includes slippage buffer
+
+  console.log(`🍣 Sushi quote: need ${maxBridgeTokenIn.toString()} ${RELAY_BRIDGE_TOKEN_SYMBOL} for ${bzzAmount} BZZ`);
+
+  // ── Step 2: Encode SushiRouter calldata ─────────────────────────────────────
+  let routerCallData: string;
+  if (topUpBatchId) {
+    routerCallData = encodeFunctionData({
+      abi: SUSHI_STAMPS_ROUTER_ABI,
+      functionName: 'topUp',
+      args: [
+        sushiQuote.route.path,
+        maxBridgeTokenIn,
+        BigInt(bzzAmount),
+        topUpBatchId as `0x${string}`,
+        swarmConfig.swarmBatchInitialBalance,
+      ],
+    });
+  } else {
+    routerCallData = encodeFunctionData({
+      abi: SUSHI_STAMPS_ROUTER_ABI,
+      functionName: 'createBatch',
+      args: [
+        sushiQuote.route.path,
+        maxBridgeTokenIn,
+        BigInt(bzzAmount),
+        {
+          owner: address as `0x${string}`,
+          nodeAddress: nodeAddress as `0x${string}`,
+          initialBalancePerChunk: swarmConfig.swarmBatchInitialBalance,
+          depth: swarmConfig.swarmBatchDepth,
+          bucketDepth: swarmConfig.swarmBatchBucketDepth,
+          nonce: swarmConfig.swarmBatchNonce,
+          immutable_: swarmConfig.swarmBatchImmutable,
+        },
+      ],
+    });
+  }
+
+  // ── Step 3: Encode ERC-20 approval (exact amount; Multicaller is the caller) ─
+  const approvalData = encodeFunctionData({
+    abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
+    functionName: 'approve',
+    args: [SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`, maxBridgeTokenIn],
+  });
+
+  const txs = [
+    { to: RELAY_BRIDGE_TOKEN_ON_GNOSIS, value: '0', data: approvalData },
+    { to: SUSHI_STAMPS_ROUTER_ADDRESS,  value: '0', data: routerCallData },
+  ];
+
+  // ── Step 4: Gas top-up on Gnosis ─────────────────────────────────────────────
+  const hasEnoughGas = await checkGnosisGasBalance(address);
+  const shouldTopupGas = !hasEnoughGas;
+  console.log(`⛽ Gas top-up: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'}`);
+
+  // ── Step 5: Relay quote to bridge source token → USDC on Gnosis ─────────────
+  const relayQuoteRequest: RelayQuoteRequest = {
+    user: address,
+    recipient: address,
+    originChainId: selectedChainId,
+    destinationChainId: ChainId.DAI,
+    originCurrency: fromToken,
+    destinationCurrency: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+    amount: maxBridgeTokenIn.toString(),
+    tradeType: 'EXACT_OUTPUT', // deliver exactly maxBridgeTokenIn USDC
+    txs,
+    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
+    refundOnOrigin: true,
+    topupGas: shouldTopupGas,
+    ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }),
+  };
+
+  const relayQuoteResponse = await performWithRetry(
+    async () => {
+      console.log('🌐 Relay cross-chain USDC quote request:', relayQuoteRequest);
+      const response = await fetch('https://api.relay.link/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(relayQuoteRequest),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        const { userMessage, errorCode } = parseRelayError(errorText);
+        const err = new Error(userMessage);
+        (err as any).relayErrorCode = errorCode;
+        (err as any).originalError = errorText;
+        throw err;
+      }
+      const data = await response.json();
+      console.log('✅ Relay USDC quote response:', data);
+      return data as RelayQuoteResponse;
+    },
+    `getRelayCrossChainWithSushiQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    undefined,
+    isForEstimation ? 3 : 5,
+    500
+  );
+
+  const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
+
+  if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
+  }
+
+  console.log(
+    `✅ Cross-chain USDC+Sushi quote: $${totalAmountUSD.toFixed(2)}, steps: ${relayQuoteResponse.steps.length}`
+  );
+
+  return {
+    totalAmountUSD,
+    relayQuoteResponse,
+    steps: relayQuoteResponse.steps,
+    estimatedTime: relayQuoteResponse.details.timeEstimate,
+    isGnosisOnly: false,
+    selectedChainId,
+  };
 };
 
 /**
