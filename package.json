@@ -1,6 +1,6 @@
 {
   "name": "beeport",
-  "version": "0.1.0",
+  "version": "1.1.9",
   "private": true,
   "description": "Solutions for buying Bzz and obtaining postage stamps in multichain environment",
   "repository": {
