@@ -212,33 +212,7 @@ const uploadFile = async (
   // Sign message for upload authorization
   const messageToSign = `${file.name}:${postageBatchId}`;
 
-  // Helper function to sign with timeout
-  const signWithTimeout = async (message: string, timeoutMs: number = 5000): Promise<string> => {
-    return new Promise(async (resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('WALLET_UNLOCK_REQUIRED'));
-      }, timeoutMs);
-
-      try {
-        const signature = await walletClient.signMessage({ message });
-        clearTimeout(timeout);
-        resolve(signature);
-      } catch (error) {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    });
-  };
-
-  let signedMessage: string;
-  try {
-    signedMessage = await signWithTimeout(messageToSign);
-  } catch (error: any) {
-    if (error.message === 'WALLET_UNLOCK_REQUIRED') {
-      throw new Error('Wallet unlock required - please unlock your wallet and try again');
-    }
-    throw error;
-  }
+  const signedMessage = await walletClient.signMessage({ message: messageToSign });
 
   // Setup headers
   const headers: Record<string, string> = {
