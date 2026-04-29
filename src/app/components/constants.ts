@@ -307,7 +307,7 @@ export const SUSHI_QUOTER_ADDRESS =
  */
 export const SUSHI_STAMPS_ROUTER_ADDRESS =
   process.env.NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS ||
-  '0x2a0a54368Bb6b0D8fa31568D092ffBDf350ab553';
+  '0xf244cC25EAD03a99de8B407A3237aaf54D1b779C';
 
 /** Minimal ABI for the SushiSwap V3 Factory – only what we need for pool discovery */
 export const SUSHI_FACTORY_ABI = [

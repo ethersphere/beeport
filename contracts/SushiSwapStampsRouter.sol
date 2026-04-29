@@ -58,10 +58,6 @@ interface IERC20 {
 interface IWXDAI {
     function deposit() external payable;
     function withdraw(uint256 amount) external;
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transfer(address recipient, uint256 amount) external returns (bool);
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
 }
 
 interface ISushiV3Pool {
@@ -75,7 +71,6 @@ interface ISushiV3Pool {
 
     function token0() external view returns (address);
     function token1() external view returns (address);
-    function fee() external view returns (uint24);
 }
 
 interface ISushiV3Factory {
@@ -212,6 +207,7 @@ contract SushiSwapStampsRouter {
     // ─── Constructor ──────────────────────────────────────────────────────────
 
     constructor(address _stampsRegistry) {
+        require(_stampsRegistry != address(0), "zero registry");
         stampsRegistry = IStampsRegistry(_stampsRegistry);
     }
 
@@ -275,10 +271,12 @@ contract SushiSwapStampsRouter {
         uint256                bzzAmountOut,
         CreateBatchParams calldata p
     ) external {
-        _swapExactOutput(path, msg.sender, maxAmountIn, bzzAmountOut);
-        bytes32 batchId = _approveBzzAndCreate(p, bzzAmountOut);
         address tokenIn = _lastToken(path);
-        emit BatchCreatedViaSwap(batchId, p.owner, tokenIn, maxAmountIn, bzzAmountOut);
+        uint256 balBefore = IERC20(tokenIn).balanceOf(msg.sender);
+        _swapExactOutput(path, msg.sender, maxAmountIn, bzzAmountOut);
+        uint256 actualAmountIn = balBefore - IERC20(tokenIn).balanceOf(msg.sender);
+        bytes32 batchId = _approveBzzAndCreate(p, bzzAmountOut);
+        emit BatchCreatedViaSwap(batchId, p.owner, tokenIn, actualAmountIn, bzzAmountOut);
     }
 
     /**
@@ -299,8 +297,9 @@ contract SushiSwapStampsRouter {
         if (msg.value < maxAmountIn) revert InsufficientNativeValue();
         IWXDAI(WXDAI).deposit{value: maxAmountIn}();
         _swapExactOutput(path, address(this), maxAmountIn, bzzAmountOut);
+        uint256 actualAmountIn = maxAmountIn - IERC20(WXDAI).balanceOf(address(this));
         bytes32 batchId = _approveBzzAndCreate(p, bzzAmountOut);
-        emit BatchCreatedViaSwap(batchId, p.owner, address(0), maxAmountIn, bzzAmountOut);
+        emit BatchCreatedViaSwap(batchId, p.owner, address(0), actualAmountIn, bzzAmountOut);
         _refundNative();
     }
 
@@ -322,10 +321,12 @@ contract SushiSwapStampsRouter {
         bytes32        batchId,
         uint256        topupAmountPerChunk
     ) external {
-        _swapExactOutput(path, msg.sender, maxAmountIn, bzzAmountOut);
-        _approveBzzAndTopUp(batchId, topupAmountPerChunk, bzzAmountOut);
         address tokenIn = _lastToken(path);
-        emit BatchToppedUpViaSwap(batchId, tokenIn, maxAmountIn, bzzAmountOut);
+        uint256 balBefore = IERC20(tokenIn).balanceOf(msg.sender);
+        _swapExactOutput(path, msg.sender, maxAmountIn, bzzAmountOut);
+        uint256 actualAmountIn = balBefore - IERC20(tokenIn).balanceOf(msg.sender);
+        _approveBzzAndTopUp(batchId, topupAmountPerChunk, bzzAmountOut);
+        emit BatchToppedUpViaSwap(batchId, tokenIn, actualAmountIn, bzzAmountOut);
     }
 
     /**
@@ -347,8 +348,9 @@ contract SushiSwapStampsRouter {
         if (msg.value < maxAmountIn) revert InsufficientNativeValue();
         IWXDAI(WXDAI).deposit{value: maxAmountIn}();
         _swapExactOutput(path, address(this), maxAmountIn, bzzAmountOut);
+        uint256 actualAmountIn = maxAmountIn - IERC20(WXDAI).balanceOf(address(this));
         _approveBzzAndTopUp(batchId, topupAmountPerChunk, bzzAmountOut);
-        emit BatchToppedUpViaSwap(batchId, address(0), maxAmountIn, bzzAmountOut);
+        emit BatchToppedUpViaSwap(batchId, address(0), actualAmountIn, bzzAmountOut);
         _refundNative();
     }
 
@@ -365,7 +367,7 @@ contract SushiSwapStampsRouter {
         int256 amount1Delta,
         bytes calldata data
     ) external {
-        require(amount0Delta > 0 || amount1Delta > 0, "Zero deltas");
+        if (amount0Delta <= 0 && amount1Delta <= 0) revert InvalidCallback();
 
         SwapCallbackData memory cb = abi.decode(data, (SwapCallbackData));
 
@@ -374,11 +376,11 @@ contract SushiSwapStampsRouter {
         address expectedPool = ISushiV3Factory(SUSHI_FACTORY).getPool(tokenOut, tokenIn, fee);
         if (msg.sender != expectedPool) revert InvalidCallback();
 
-        // Determine which token we owe to the calling pool and how much.
-        // The positive delta is what the pool expects us to pay.
-        (address tokenOwed, uint256 amountOwed) = amount0Delta > 0
-            ? (ISushiV3Pool(msg.sender).token0(), uint256(amount0Delta))
-            : (ISushiV3Pool(msg.sender).token1(), uint256(amount1Delta));
+        // tokenIn is always what we owe: V3 pools sort tokens by address, so
+        // tokenIn is token0 iff tokenIn < tokenOut (zeroForOne=true → amount0Delta > 0).
+        // Either way the positive delta corresponds to tokenIn.
+        address tokenOwed = tokenIn;
+        uint256 amountOwed = uint256(amount0Delta > 0 ? amount0Delta : amount1Delta);
 
         if (_hasMultiplePools(cb.path)) {
             // Multi-hop: continue to next pool. Skip the first token from path to get
@@ -548,9 +550,14 @@ contract SushiSwapStampsRouter {
     function _skipToken(bytes memory path) internal pure returns (bytes memory skipped) {
         uint256 newLen = path.length - NEXT_OFFSET;
         skipped = new bytes(newLen);
-        // Copy from offset NEXT_OFFSET onward
-        for (uint256 i = 0; i < newLen; i++) {
-            skipped[i] = path[i + NEXT_OFFSET];
+        assembly {
+            let src := add(add(path, 0x20), NEXT_OFFSET)
+            let dst := add(skipped, 0x20)
+            // Copy 32 bytes at a time; the last chunk may write up to 31 bytes past
+            // newLen, but into the 32-byte-aligned padding that `new bytes` allocates.
+            for { let i := 0 } lt(i, newLen) { i := add(i, 32) } {
+                mstore(add(dst, i), mload(add(src, i)))
+            }
         }
     }
 
