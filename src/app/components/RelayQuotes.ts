@@ -1,22 +1,17 @@
-import { parseAbi, encodeFunctionData, formatEther } from 'viem';
+import { formatEther } from 'viem';
 import { ChainId } from '@lifi/sdk';
 import {
-  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
   GNOSIS_BZZ_ADDRESS,
   DEFAULT_SLIPPAGE,
   GAS_TOPUP_THRESHOLD_XDAI,
   GAS_TOPUP_AMOUNT_USD,
   RELAY_STATUS_CHECK_INTERVAL_MS,
   RELAY_STATUS_MAX_ATTEMPTS,
+  STAMPS_REGISTRY_V2_ADDRESS,
   TRANSACTION_TIMEOUT_MS,
-  RELAY_BRIDGE_TOKEN_ON_GNOSIS,
-  RELAY_BRIDGE_TOKEN_DECIMALS,
-  RELAY_BRIDGE_TOKEN_SYMBOL,
-  SUSHI_STAMPS_ROUTER_ADDRESS,
-  SUSHI_STAMPS_ROUTER_ABI,
 } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
-import { getSushiQuote } from './SushiQuotes';
+import { encodeRegistryCreateBatchTxs } from './SelfCustodyBatch';
 import { getPollingInterval } from '@/app/wagmi';
 
 // Relay API Error Codes and Messages
@@ -183,39 +178,6 @@ const checkGnosisGasBalance = async (address: string): Promise<boolean> => {
   }
 };
 
-/**
- * Checks the current BZZ token allowance for the Swarm registry contract
- */
-const checkBzzAllowance = async (userAddress: string, requiredAmount: string): Promise<boolean> => {
-  try {
-    const publicClient = getGnosisPublicClient().client;
-
-    const allowance = await publicClient.readContract({
-      address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-      abi: parseAbi([
-        'function allowance(address owner, address spender) external view returns (uint256)',
-      ]),
-      functionName: 'allowance',
-      args: [userAddress as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
-    });
-
-    const hasEnoughAllowance = BigInt(allowance.toString()) >= BigInt(requiredAmount);
-
-    console.log('🔍 BZZ allowance check:', {
-      user: userAddress,
-      spender: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-      currentAllowance: allowance.toString(),
-      requiredAmount,
-      hasEnoughAllowance,
-    });
-
-    return hasEnoughAllowance;
-  } catch (error) {
-    console.warn('⚠️ Failed to check BZZ allowance, will include approval:', error);
-    return false; // If we can't check, include approval to be safe
-  }
-};
-
 // Relay API types
 export interface RelayQuoteRequest {
   user: string;
@@ -309,247 +271,21 @@ export interface RelayQuoteParams {
   slippagePercent?: number;
 }
 
+
 /**
- * Gets a quote using Relay API for cross-chain swaps to BZZ with contract calls
+ * Optional escape-hatch passed by the caller. Returns `true` if the desired
+ * end state has been observed *on-chain* (e.g. the registry batch exists),
+ * letting us treat a `fallback`/`refunded` Relay status as a false positive
+ * and continue as if the order succeeded.
+ *
+ * In practice this happens for some Relay routes where the destination fill
+ * succeeds but Relay still reports a tiny refund of unused inventory and
+ * tags the order as `fallback` — observed concretely on the cross-chain →
+ * SushiSwap-on-Gnosis → BZZ → StampsRegistryV2 path, where the on-chain
+ * `BatchCreated` event was emitted but `/intents/status` returned
+ * `fallback: Refunding`.
  */
-export const getRelayQuote = async ({
-  selectedChainId,
-  fromToken,
-  address,
-  bzzAmount,
-  nodeAddress,
-  swarmConfig,
-  topUpBatchId,
-  setEstimatedTime,
-  isForEstimation = false,
-  slippagePercent,
-}: RelayQuoteParams): Promise<{
-  relayQuoteResponse: RelayQuoteResponse;
-  totalAmountUSD: number;
-  contractCallData: string;
-}> => {
-  console.log(
-    `🔄 Getting Relay quote for ${isForEstimation ? 'price estimation' : 'swap execution'}...`
-  );
-
-  // Step 1: Prepare contract call data for Swarm
-  let contractCallData: string;
-
-  try {
-    if (topUpBatchId) {
-      // Top up existing batch
-      console.log(`Creating top-up transaction for batch: ${topUpBatchId}`);
-      console.log('Top-up parameters:', {
-        batchId: topUpBatchId,
-        topupAmount: swarmConfig.swarmBatchInitialBalance,
-      });
-
-      contractCallData = encodeFunctionData({
-        abi: parseAbi(swarmConfig.swarmContractAbi),
-        functionName: 'topUpBatch',
-        args: [topUpBatchId as `0x${string}`, swarmConfig.swarmBatchInitialBalance],
-      });
-    } else {
-      // Create new batch
-      console.log('Creating new batch with parameters:', {
-        owner: address,
-        nodeAddress,
-        initialBalance: swarmConfig.swarmBatchInitialBalance,
-        depth: swarmConfig.swarmBatchDepth,
-        bucketDepth: swarmConfig.swarmBatchBucketDepth,
-        nonce: swarmConfig.swarmBatchNonce,
-        immutable: swarmConfig.swarmBatchImmutable,
-      });
-
-      contractCallData = encodeFunctionData({
-        abi: parseAbi(swarmConfig.swarmContractAbi),
-        functionName: 'createBatchRegistry',
-        args: [
-          address,
-          nodeAddress,
-          swarmConfig.swarmBatchInitialBalance,
-          swarmConfig.swarmBatchDepth,
-          swarmConfig.swarmBatchBucketDepth,
-          swarmConfig.swarmBatchNonce,
-          swarmConfig.swarmBatchImmutable,
-        ],
-      });
-    }
-
-    console.log('✅ Contract call data encoded successfully:', {
-      length: contractCallData.length,
-      data: contractCallData.slice(0, 10) + '...',
-    });
-  } catch (error) {
-    console.error('❌ Failed to encode contract call data:', error);
-    throw new Error(
-      `Failed to encode Swarm contract call: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-
-  // Step 2: Determine if this is same-chain or cross-chain
-  const isSameChain = selectedChainId === ChainId.DAI;
-  const originCurrency = fromToken;
-  const destinationCurrency = GNOSIS_BZZ_ADDRESS;
-
-  console.log('Relay quote parameters:', {
-    originChainId: selectedChainId,
-    destinationChainId: ChainId.DAI,
-    originCurrency,
-    destinationCurrency,
-    bzzAmount,
-    isSameChain,
-    isForEstimation,
-  });
-
-  // Step 3: Check if approval is needed and prepare transactions
-  // Following Relay ERC20 best practices: https://docs.relay.link/guides/calling#erc20-best-practices
-  const txs = [];
-
-  // Only check allowance for cross-chain transactions (same-chain will be handled differently)
-  let needsApproval = true;
-  if (selectedChainId === ChainId.DAI) {
-    // For same-chain transactions, check current allowance
-    needsApproval = !(await checkBzzAllowance(address, bzzAmount));
-  }
-
-  if (needsApproval) {
-    console.log('🔐 BZZ approval needed - preparing infinite approval...');
-
-    // Use infinite approval (max uint256) to avoid future approval transactions
-    const MAX_UINT256 =
-      '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-
-    const approvalData = encodeFunctionData({
-      abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
-      functionName: 'approve',
-      args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`, BigInt(MAX_UINT256)],
-    });
-
-    console.log('✅ BZZ approval data prepared:', {
-      spender: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-      amount: 'MAX_UINT256 (infinite)',
-      data: approvalData.slice(0, 10) + '...',
-    });
-
-    // Add approval transaction first
-    txs.push({
-      to: GNOSIS_BZZ_ADDRESS,
-      value: '0',
-      data: approvalData,
-    });
-  } else {
-    console.log('✅ BZZ approval sufficient - skipping approval transaction');
-  }
-
-  // Always add the Swarm contract call
-  txs.push({
-    to: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-    value: '0',
-    data: contractCallData,
-  });
-
-  console.log(`📋 Prepared ${txs.length} transaction(s):`, {
-    includesApproval: needsApproval,
-    includesContractCall: true,
-  });
-
-  // Step 4: Check gas balance on Gnosis chain for cross-chain swaps
-  let shouldTopupGas = false;
-  if (selectedChainId !== ChainId.DAI) {
-    // Only check gas balance for cross-chain swaps
-    const hasEnoughGas = await checkGnosisGasBalance(address);
-    shouldTopupGas = !hasEnoughGas; // Top up if balance < GAS_TOPUP_THRESHOLD_XDAI
-
-    console.log(
-      `⛽ Gas top-up decision: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'} (cross-chain swap)`
-    );
-  } else {
-    console.log('⛽ Gas top-up: DISABLED (same-chain swap)');
-  }
-
-  // Step 5: Create Relay quote request
-  const relayQuoteRequest: RelayQuoteRequest = {
-    user: address,
-    recipient: address,
-    originChainId: selectedChainId,
-    destinationChainId: ChainId.DAI, // Always Gnosis
-    originCurrency,
-    destinationCurrency,
-    amount: bzzAmount,
-    tradeType: 'EXACT_OUTPUT', // We need exact BZZ amount
-    txs,
-    // Relay API expects basis points (1/100th of a percent): 5% → "500", 0.5% → "50". See https://docs.relay.link/references/api/get-quote
-    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
-    refundOnOrigin: true,
-    topupGas: shouldTopupGas, // Conditionally enable gas forwarding
-    ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }), // Gas top-up amount from constants
-  };
-
-  // Step 6: Make API request to Relay
-  const relayQuoteResponse = await performWithRetry(
-    async () => {
-      console.log('🌐 Calling Relay API with request:', relayQuoteRequest);
-
-      const response = await fetch('https://api.relay.link/quote', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(relayQuoteRequest),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Relay API Error:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorText,
-        });
-
-        // Parse and throw structured error for better handling
-        const { userMessage, errorCode } = parseRelayError(errorText);
-        const error = new Error(userMessage);
-        (error as any).relayErrorCode = errorCode;
-        (error as any).originalError = errorText;
-        throw error;
-      }
-
-      const data = await response.json();
-      console.log('✅ Relay API response:', data);
-      return data;
-    },
-    `getRelayQuote-${isForEstimation ? 'estimation' : 'execution'}`,
-    undefined,
-    isForEstimation ? 3 : 5, // Fewer retries for estimation
-    500
-  );
-
-  // Step 5: Extract pricing information
-  const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
-
-  // Step 6: Set estimated time if provided
-  if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
-    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
-  }
-
-  console.log(
-    `✅ Relay quote complete. Total: $${totalAmountUSD.toFixed(2)}, Steps: ${relayQuoteResponse.steps.length}`
-  );
-
-  // Log fee breakdown
-  console.log('💰 Fee breakdown:', {
-    gas: relayQuoteResponse.fees.gas.amountUsd,
-    relayer: relayQuoteResponse.fees.relayer.amountUsd,
-    total: totalAmountUSD,
-  });
-
-  return {
-    relayQuoteResponse,
-    totalAmountUSD,
-    contractCallData,
-  };
-};
+export type RelayOnChainSuccessVerifier = () => Promise<boolean>;
 
 /**
  * Executes a Relay quote by processing each step sequentially
@@ -560,7 +296,8 @@ export const executeRelaySteps = async (
   walletClient: any,
   publicClient: any,
   setStatusMessage: (status: any) => void,
-  onTransactionConfirmed?: () => void
+  onTransactionConfirmed?: () => void,
+  verifyOnChainSuccess?: RelayOnChainSuccessVerifier
 ): Promise<void> => {
   console.log('🚀 Starting Relay step execution...');
 
@@ -664,7 +401,12 @@ export const executeRelaySteps = async (
                 message: `Transaction confirmed, monitoring status...`,
               });
 
-              await monitorRelayStatus(item.check.endpoint, setStatusMessage, step.id);
+              await monitorRelayStatus(
+                item.check.endpoint,
+                setStatusMessage,
+                step.id,
+                verifyOnChainSuccess
+              );
             }
           } else {
             throw new Error(`Transaction failed: ${txHash}`);
@@ -693,7 +435,12 @@ export const executeRelaySteps = async (
             message: `Waiting for step data...`,
           });
 
-          await monitorRelayStatus(item.check.endpoint, setStatusMessage, step.id);
+          await monitorRelayStatus(
+            item.check.endpoint,
+            setStatusMessage,
+            step.id,
+            verifyOnChainSuccess
+          );
         }
       }
     }
@@ -703,24 +450,101 @@ export const executeRelaySteps = async (
 };
 
 /**
- * Monitors the status of a Relay operation
- * Status types: waiting, pending, success, failure, refund
- * https://docs.relay.link/references/api/step-execution
+ * Status returned by Relay's `/intents/status` endpoint.
  *
- * Note: 'unknown' status can occur when:
- * 1. The deposit transaction hasn't been indexed by Relay yet
- * 2. Gas top-up operations are being processed (takes longer)
- * We don't count 'unknown' status toward the max attempts to avoid premature timeouts.
+ * Two API versions exist in the wild and Relay has populated different status
+ * sets in each — both endpoints can show up depending on which `check.endpoint`
+ * a particular quote step uses. We handle the union of both:
+ *
+ *  v1 (`/intents/status`)
+ *    - failure  → quote failed, no fill
+ *    - fallback → fill failed and **refund has been issued** (terminal)
+ *    - pending  → indexed, fill in flight
+ *    - received → seen but not yet indexed
+ *    - success  → filled
+ *
+ *  v3 (`/intents/status/v3`)
+ *    - waiting     → awaiting deposit confirmation
+ *    - depositing  → deposit confirmed via /execute, fill pending
+ *    - pending     → deposit confirmed, fill pending
+ *    - submitted   → destination tx submitted by solver
+ *    - success     → destination fill confirmed
+ *    - delayed     → fill is delayed but still in progress
+ *    - refunded    → refund completed (terminal — equivalent to v1 `fallback`)
+ *    - failure     → unsuccessful, no refund issued (rare)
+ *
+ * Anything else we treat as "still in progress" with a bounded attempt counter
+ * so an unrecognised status added by Relay later doesn't cause infinite polling
+ * but also doesn't cause spurious failures.
+ */
+type RelayInProgressStatus =
+  | 'waiting'
+  | 'received'
+  | 'depositing'
+  | 'pending'
+  | 'submitted'
+  | 'delayed'
+  | 'unknown';
+
+const RELAY_INPROGRESS_STATUSES: ReadonlySet<RelayInProgressStatus> = new Set([
+  'waiting',
+  'received',
+  'depositing',
+  'pending',
+  'submitted',
+  'delayed',
+  'unknown',
+]);
+
+const RELAY_TERMINAL_REFUND_STATUSES = new Set(['fallback', 'refunded', 'refund']);
+const RELAY_TERMINAL_FAILURE_STATUSES = new Set(['failure', 'failed']);
+
+const formatHashes = (hashes: unknown): string =>
+  Array.isArray(hashes) && hashes.length > 0 ? (hashes as string[]).join(', ') : '(none yet)';
+
+/**
+ * Poll the Relay status endpoint until we reach a terminal state, surfacing
+ * helpful diagnostics on failure.
+ *
+ * Notable behaviour:
+ *  - `success` is a terminal success; we additionally treat any state where
+ *    `verifyOnChainSuccess` returns `true` as success, in case Relay's status
+ *    lags behind the actual on-chain fill.
+ *  - `fallback` (v1) and `refunded` (v3) are recognised as **refund signals**.
+ *    Previously these fell into a `default` branch and caused the UI to spin
+ *    forever. We now check `verifyOnChainSuccess` first — Relay sometimes
+ *    reports `fallback` (with a tiny refund tx of unused inventory on the
+ *    origin chain) even when the destination fill landed cleanly. If the
+ *    on-chain end state is observed, we promote to success; otherwise we
+ *    throw a real refund error including the destination tx hash so users
+ *    can inspect it on Gnosisscan.
+ *  - In-progress statuses don't count against `RELAY_STATUS_MAX_ATTEMPTS` —
+ *    only stale or unrecognised statuses do.
  */
 const monitorRelayStatus = async (
   statusEndpoint: string,
   setStatusMessage: (status: any) => void,
-  stepId: string
+  stepId: string,
+  verifyOnChainSuccess?: RelayOnChainSuccessVerifier
 ): Promise<void> => {
   const maxAttempts = RELAY_STATUS_MAX_ATTEMPTS;
   let attempts = 0;
-  let unknownStatusCount = 0;
-  const maxUnknownStatusAttempts = 24; // Allow up to 2 minutes of 'unknown' status (24 * 5 seconds)
+  let inProgressCount = 0;
+  // Cap consecutive in-progress polls so a stalled solver doesn't loop forever.
+  // 24 * 5s = 2 min ceiling for any single in-progress phase.
+  const maxInProgressAttempts = 24;
+
+  // Best-effort on-chain check. Swallow errors so a bad RPC moment doesn't
+  // mask the actual Relay status.
+  const tryVerify = async (): Promise<boolean> => {
+    if (!verifyOnChainSuccess) return false;
+    try {
+      return await verifyOnChainSuccess();
+    } catch (e) {
+      console.warn(`⚠️ on-chain verification check failed (will retry):`, e);
+      return false;
+    }
+  };
 
   console.log(`🔍 Starting status monitoring for step ${stepId}: ${statusEndpoint}`);
 
@@ -741,87 +565,120 @@ const monitorRelayStatus = async (
       }
 
       const statusData = await response.json();
-      console.log(`📊 Relay status for ${stepId}:`, statusData);
+      const rawStatus: string = (statusData?.status ?? '').toString();
+      const status = rawStatus.toLowerCase();
+      const details = statusData?.details ? `: ${statusData.details}` : '';
+      const inHashes = formatHashes(statusData?.inTxHashes);
+      const outHashes = formatHashes(statusData?.txHashes);
+      console.log(
+        `📊 Relay status for ${stepId}: ${status}${details} (in=${inHashes}, out=${outHashes})`
+      );
 
-      // Handle different status types according to Relay docs
-      switch (statusData.status) {
-        case 'success':
-          console.log(`✅ Relay operation completed successfully for step ${stepId}`);
-          setStatusMessage({
-            step: stepId,
-            message: 'Cross-chain swap completed successfully',
-          });
-          return;
-
-        case 'waiting':
-          console.log(`⏳ Deposit transaction for ${stepId} is yet to be indexed`);
-          setStatusMessage({
-            step: stepId,
-            message: 'Confirming your transaction...',
-          });
-          // Reset unknown counter since we got a valid status
-          unknownStatusCount = 0;
-          break;
-
-        case 'pending':
-          console.log(`🔄 Deposit transaction for ${stepId} was indexed, fill is pending`);
-          setStatusMessage({
-            step: stepId,
-            message: 'Processing cross-chain transfer...',
-          });
-          // Reset unknown counter since we got a valid status
-          unknownStatusCount = 0;
-          break;
-
-        case 'failure':
-          console.error(`❌ Relay operation failed for step ${stepId}, attempting refund`);
-          throw new Error(`Cross-chain swap failed, attempting refund`);
-
-        case 'refund':
-          console.error(`💸 Funds were refunded due to failure for step ${stepId}`);
-          throw new Error(`Swap failed and funds were refunded`);
-
-        case 'unknown':
-          // 'unknown' status means Relay hasn't indexed the transaction yet
-          // This is common for gas top-up operations which take longer to process
-          // Don't count toward max attempts, but track separately to avoid infinite loops
-          unknownStatusCount++;
-          console.log(
-            `⏳ Unknown status for step ${stepId} (${unknownStatusCount}/${maxUnknownStatusAttempts}), waiting for Relay to index...`
-          );
-          setStatusMessage({
-            step: stepId,
-            message: 'Waiting for transaction to be indexed...',
-          });
-
-          if (unknownStatusCount >= maxUnknownStatusAttempts) {
-            throw new Error(
-              `Transaction indexing timed out for step ${stepId}. The transaction may still complete - please check your wallet.`
-            );
-          }
-
-          // Don't increment main attempts counter for unknown status
-          await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
-          continue; // Skip the attempts++ at the end
-
-        default:
-          console.log(`🔄 Unexpected status '${statusData.status}' for step ${stepId}, continuing...`);
-          setStatusMessage({
-            step: stepId,
-            message: 'Processing your swap...',
-          });
+      if (status === 'success') {
+        console.log(`✅ Relay operation completed successfully for step ${stepId}`);
+        setStatusMessage({
+          step: stepId,
+          message: 'Cross-chain swap completed successfully',
+        });
+        return;
       }
 
-      // Wait before next check
+      if (RELAY_TERMINAL_REFUND_STATUSES.has(status)) {
+        // 'fallback'/'refunded' = Relay says it issued a refund. BUT some
+        // routes (notably cross-chain → SushiSwap-on-Gnosis → BZZ + custom
+        // `txs[]` post-action) emit `fallback` even when the destination
+        // fill succeeded — Relay just refunded a tiny dust amount of unused
+        // inventory on the origin chain and tagged the whole order as
+        // fallback. So before declaring failure, give the on-chain check a
+        // few tries to catch up — destination fills can land a few seconds
+        // after the status flips.
+        if (verifyOnChainSuccess) {
+          for (let i = 0; i < 6; i++) {
+            if (await tryVerify()) {
+              console.log(
+                `✅ Relay reported '${status}' but the on-chain end state is present — treating step ${stepId} as success`
+              );
+              setStatusMessage({
+                step: stepId,
+                message: 'Cross-chain swap completed successfully',
+              });
+              return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 5_000));
+          }
+        }
+
+        const hashSuffix =
+          Array.isArray(statusData?.txHashes) && statusData.txHashes.length > 0
+            ? ` (destination tx: ${statusData.txHashes.join(', ')})`
+            : '';
+        console.error(
+          `💸 Relay refunded the swap for step ${stepId}${details}${hashSuffix}`
+        );
+        throw new Error(
+          `Cross-chain swap was refunded by Relay${
+            statusData?.details ? ` (${statusData.details})` : ''
+          }. Your funds will return to your wallet on the origin chain.${hashSuffix}`
+        );
+      }
+
+      if (RELAY_TERMINAL_FAILURE_STATUSES.has(status)) {
+        console.error(`❌ Relay reported failure for step ${stepId}${details}`);
+        throw new Error(
+          `Cross-chain swap failed${
+            statusData?.details ? ` (${statusData.details})` : ''
+          }. Please retry shortly.`
+        );
+      }
+
+      if (RELAY_INPROGRESS_STATUSES.has(status as RelayInProgressStatus) || status === '') {
+        inProgressCount++;
+        const friendly = (() => {
+          switch (status) {
+            case 'waiting':
+            case 'received':
+              return 'Confirming your transaction...';
+            case 'depositing':
+            case 'pending':
+              return 'Processing cross-chain transfer...';
+            case 'submitted':
+              return 'Solver submitted destination transaction...';
+            case 'delayed':
+              return 'Fill is delayed but still in progress...';
+            default:
+              return 'Waiting for transaction to be indexed...';
+          }
+        })();
+        setStatusMessage({ step: stepId, message: friendly });
+
+        if (inProgressCount >= maxInProgressAttempts) {
+          throw new Error(
+            `Relay is still '${status || 'unknown'}' after ${
+              (maxInProgressAttempts * RELAY_STATUS_CHECK_INTERVAL_MS) / 1000
+            }s. The fill may still complete — check your wallet shortly.`
+          );
+        }
+      } else {
+        // Unrecognised status. Counted toward `attempts` so we eventually
+        // give up rather than loop indefinitely on something Relay added
+        // post-this-release.
+        console.warn(`🔄 Unrecognised Relay status '${rawStatus}' for step ${stepId}`);
+        setStatusMessage({
+          step: stepId,
+          message: 'Processing your swap...',
+        });
+        attempts++;
+      }
+
       await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
-      attempts++;
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message.includes('Relay operation failed') ||
+        (error.message.includes('refunded by Relay') ||
+          error.message.includes('Cross-chain swap failed') ||
+          error.message.includes('Relay is still') ||
           error.message.includes('Transaction indexing timed out'))
       ) {
-        // Re-throw Relay-specific errors
         throw error;
       }
 
@@ -840,109 +697,64 @@ const monitorRelayStatus = async (
 };
 
 /**
- * Cross-chain flow: bridge source token → RELAY_BRIDGE_TOKEN (USDC) on Gnosis via Relay,
- * then atomically swap USDC → BZZ and create/top-up a Swarm stamp via SushiSwapStampsRouter.
+ * SELF-CUSTODY bridge-only quote: deliver BZZ to the user's wallet on Gnosis,
+ * **without** appending any destination contract calls. The follow-up
+ * `createBatch(_owner = hotKey)` is signed by the user's wallet on Gnosis
+ * separately so that `msg.sender` (and therefore the on-chain batchId
+ * derivation) is the user, not a Relay multicaller.
  *
- * Why: Relay has reliable routes to USDC on every major chain; routing directly to BZZ is
- * fragile.  The existing SushiSwapStampsRouter already handles USDC → BZZ → stamp on-chain.
+ * Works for:
+ *   • Same-chain Gnosis non-BZZ token (Relay does an on-chain swap)
+ *   • True cross-chain (Relay bridges + final delivery is BZZ-on-Gnosis)
  *
- * Relay delivers USDC to its Multicaller which executes two destination txs atomically:
- *   1. USDC.approve(sushiRouter, maxUsdcIn)
- *   2. sushiRouter.createBatch / topUp(path, maxUsdcIn, bzzOut, params)
+ * The Gnosis + BZZ case should NOT call this helper — there's nothing to bridge.
  */
-export const getRelayCrossChainWithSushiQuote = async ({
+export interface RelayBridgeOnlyQuoteParams {
+  selectedChainId: number;
+  fromToken: string;
+  /** Wallet address that pays / receives BZZ. */
+  address: string;
+  /** Total BZZ atomic units to deliver to the user's wallet on Gnosis. */
+  bzzAmount: string;
+  setEstimatedTime?: (time: number) => void;
+  isForEstimation?: boolean;
+  slippagePercent?: number;
+}
+
+export const getRelayBridgeOnlyToBzzQuote = async ({
   selectedChainId,
   fromToken,
   address,
   bzzAmount,
-  nodeAddress,
-  swarmConfig,
-  topUpBatchId,
   setEstimatedTime,
   isForEstimation = false,
   slippagePercent,
-}: RelayQuoteParams) => {
+}: RelayBridgeOnlyQuoteParams): Promise<{
+  relayQuoteResponse: RelayQuoteResponse;
+  totalAmountUSD: number;
+}> => {
   console.log(
-    `🌉 Cross-chain via USDC+Sushi – ${isForEstimation ? 'estimating' : 'executing'}…`
+    `🌉 Self-custody bridge-only Relay quote ${isForEstimation ? '(estimation)' : '(execution)'}…`
   );
 
-  // ── Step 1: Sushi quote for bridge token → BZZ ──────────────────────────────
-  const sushiQuote = await getSushiQuote({
-    fromToken: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
-    bzzAmount,
-    slippagePercent: slippagePercent ?? DEFAULT_SLIPPAGE,
-    tokenSymbol: RELAY_BRIDGE_TOKEN_SYMBOL,
-    tokenDecimals: RELAY_BRIDGE_TOKEN_DECIMALS,
-    tokenPriceUsd: 1.0, // USDC ≈ $1 – used only for the internal USD display of the Sushi leg
-  });
-
-  const maxBridgeTokenIn = sushiQuote.maxAmountIn; // includes slippage buffer
-
-  console.log(`🍣 Sushi quote: need ${maxBridgeTokenIn.toString()} ${RELAY_BRIDGE_TOKEN_SYMBOL} for ${bzzAmount} BZZ`);
-
-  // ── Step 2: Encode SushiRouter calldata ─────────────────────────────────────
-  let routerCallData: string;
-  if (topUpBatchId) {
-    routerCallData = encodeFunctionData({
-      abi: SUSHI_STAMPS_ROUTER_ABI,
-      functionName: 'topUp',
-      args: [
-        sushiQuote.route.path,
-        maxBridgeTokenIn,
-        BigInt(bzzAmount),
-        topUpBatchId as `0x${string}`,
-        swarmConfig.swarmBatchInitialBalance,
-      ],
-    });
-  } else {
-    routerCallData = encodeFunctionData({
-      abi: SUSHI_STAMPS_ROUTER_ABI,
-      functionName: 'createBatch',
-      args: [
-        sushiQuote.route.path,
-        maxBridgeTokenIn,
-        BigInt(bzzAmount),
-        {
-          owner: address as `0x${string}`,
-          nodeAddress: nodeAddress as `0x${string}`,
-          initialBalancePerChunk: swarmConfig.swarmBatchInitialBalance,
-          depth: swarmConfig.swarmBatchDepth,
-          bucketDepth: swarmConfig.swarmBatchBucketDepth,
-          nonce: swarmConfig.swarmBatchNonce,
-          immutable_: swarmConfig.swarmBatchImmutable,
-        },
-      ],
-    });
+  // Gas top-up: only meaningful for cross-chain. After the bridge the user
+  // will sign an approve + createBatch on Gnosis, so they need xDAI.
+  let shouldTopupGas = false;
+  if (selectedChainId !== ChainId.DAI) {
+    const hasEnoughGas = await checkGnosisGasBalance(address);
+    shouldTopupGas = !hasEnoughGas;
   }
 
-  // ── Step 3: Encode ERC-20 approval (exact amount; Multicaller is the caller) ─
-  const approvalData = encodeFunctionData({
-    abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
-    functionName: 'approve',
-    args: [SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`, maxBridgeTokenIn],
-  });
-
-  const txs = [
-    { to: RELAY_BRIDGE_TOKEN_ON_GNOSIS, value: '0', data: approvalData },
-    { to: SUSHI_STAMPS_ROUTER_ADDRESS,  value: '0', data: routerCallData },
-  ];
-
-  // ── Step 4: Gas top-up on Gnosis ─────────────────────────────────────────────
-  const hasEnoughGas = await checkGnosisGasBalance(address);
-  const shouldTopupGas = !hasEnoughGas;
-  console.log(`⛽ Gas top-up: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'}`);
-
-  // ── Step 5: Relay quote to bridge source token → USDC on Gnosis ─────────────
   const relayQuoteRequest: RelayQuoteRequest = {
     user: address,
     recipient: address,
     originChainId: selectedChainId,
     destinationChainId: ChainId.DAI,
     originCurrency: fromToken,
-    destinationCurrency: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
-    amount: maxBridgeTokenIn.toString(),
-    tradeType: 'EXACT_OUTPUT', // deliver exactly maxBridgeTokenIn USDC
-    txs,
+    destinationCurrency: GNOSIS_BZZ_ADDRESS,
+    amount: bzzAmount,
+    tradeType: 'EXACT_OUTPUT',
+    // No `txs` — pure bridge to BZZ in the user's own wallet.
     slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
     refundOnOrigin: true,
     topupGas: shouldTopupGas,
@@ -951,7 +763,7 @@ export const getRelayCrossChainWithSushiQuote = async ({
 
   const relayQuoteResponse = await performWithRetry(
     async () => {
-      console.log('🌐 Relay cross-chain USDC quote request:', relayQuoteRequest);
+      console.log('🌐 Relay self-custody bridge-only request:', relayQuoteRequest);
       const response = await fetch('https://api.relay.link/quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -966,54 +778,207 @@ export const getRelayCrossChainWithSushiQuote = async ({
         throw err;
       }
       const data = await response.json();
-      console.log('✅ Relay USDC quote response:', data);
       return data as RelayQuoteResponse;
     },
-    `getRelayCrossChainWithSushiQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    `getRelayBridgeOnlyToBzzQuote-${isForEstimation ? 'estimation' : 'execution'}`,
     undefined,
     isForEstimation ? 3 : 5,
     500
   );
 
   const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
-
   if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
     setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
   }
 
   console.log(
-    `✅ Cross-chain USDC+Sushi quote: $${totalAmountUSD.toFixed(2)}, steps: ${relayQuoteResponse.steps.length}`
+    `✅ Self-custody bridge-only quote: $${totalAmountUSD.toFixed(2)}, steps: ${relayQuoteResponse.steps.length}`
   );
 
-  return {
-    totalAmountUSD,
-    relayQuoteResponse,
-    steps: relayQuoteResponse.steps,
-    estimatedTime: relayQuoteResponse.details.timeEstimate,
-    isGnosisOnly: false,
-    selectedChainId,
-  };
+  return { relayQuoteResponse, totalAmountUSD };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// One-shot self-custody buy via Relay `txs` (StampsRegistryV2)
+//
+// Restores the legacy single-signature buy UX. Relay bridges/swaps any token
+// → BZZ on Gnosis, lands BZZ in the executor multicaller, and runs two `txs`
+// in sequence as that multicaller:
+//
+//   1. BZZ.approve(STAMPS_REGISTRY_V2, totalAmount)
+//   2. StampsRegistryV2.createSelfCustodyBatch(wallet, hotKey, …)
+//
+// Because every call to PostageStamp routes through StampsRegistryV2,
+// `batchId = keccak256(STAMPS_REGISTRY_V2, nonce)` is deterministic from the
+// UI before broadcast — the multicaller's identity does NOT change the ID.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface RelayBuyStampQuoteParams {
+  selectedChainId: number;
+  fromToken: string;
+  /** User wallet that signs the deposit on the origin chain. */
+  address: string;
+  /** Total BZZ atomic units the registry call needs (= initialBalancePerChunk * 2^depth). */
+  bzzAmount: string;
+  /** Hot-key address that becomes the on-chain `_owner` of the new batch. */
+  hotKeyAddress: `0x${string}`;
+  /** initialBalancePerChunk in PLUR atomic units. */
+  initialBalancePerChunk: bigint;
+  /** Stamp depth (passed straight through to the registry call). */
+  depth: number;
+  /** Stamp bucket depth (typically 16). */
+  bucketDepth: number;
+  /** 32-byte hex nonce. With or without 0x prefix. */
+  nonce: `0x${string}` | string;
+  /** Whether the batch is immutable. */
+  immutable_: boolean;
+  /** 'exact' approves only `bzzAmount`; 'infinite' approves MAX_UINT256. */
+  approvalType?: 'exact' | 'infinite';
+  setEstimatedTime?: (time: number) => void;
+  isForEstimation?: boolean;
+  /** Slippage in percent (e.g. 5 = 5%). Converted to basis points for Relay. */
+  slippagePercent?: number;
+}
+
 /**
- * Unified function that replaces the old modular quote system
- * Uses Relay API for both price estimation and execution
+ * Gas budget for the two destination-chain txs Relay's executor runs as the
+ * multicaller on Gnosis:
+ *
+ *   1. BZZ.approve(STAMPS_REGISTRY_V2, …)        ≈ 50 k
+ *   2. StampsRegistryV2.createSelfCustodyBatch(…) ≈ 565 k
+ *      (measured from a real EOA tx — the upstream
+ *      `PostageStamp.createBatch` is gas-heavy: several SSTOREs + event;
+ *      see GnosisScan tx 0xfdb4924…f257b → gasUsed = 563 943.)
+ *
+ * Real-world total: ~615 k. Earlier we capped at 600 k and the destination
+ * call OOG'd, which Relay reports as `fallback: Refunding` — the symptom the
+ * user saw as "cross-chain fails all the time" while same-chain Gnosis (which
+ * doesn't go through Relay's executor) was fine.
+ *
+ * Per Relay docs (`/quote` request body) `txsGasLimit` is the **total** gas
+ * for all destination `txs` combined, so we budget ~2× headroom to absorb
+ * future contract changes, ABI tweaks, or PostageStamp gas inflation without
+ * silently regressing into another wave of refunds. Wasted gas on Gnosis is
+ * negligible cost-wise, OOG refunds are not.
  */
-export const getRelaySwapQuotes = async (params: RelayQuoteParams) => {
-  const { relayQuoteResponse, totalAmountUSD, contractCallData } = await getRelayQuote(params);
+const REGISTRY_TXS_GAS_LIMIT = 1_500_000;
 
-  return {
-    // For price estimation
-    totalAmountUSD,
+export const getRelayBuyStampQuote = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  bzzAmount,
+  hotKeyAddress,
+  initialBalancePerChunk,
+  depth,
+  bucketDepth,
+  nonce,
+  immutable_,
+  approvalType = 'exact',
+  setEstimatedTime,
+  isForEstimation = false,
+  slippagePercent,
+}: RelayBuyStampQuoteParams): Promise<{
+  relayQuoteResponse: RelayQuoteResponse;
+  totalAmountUSD: number;
+}> => {
+  console.log(
+    `🛒 One-shot Relay buy-stamp quote ${isForEstimation ? '(estimation)' : '(execution)'}…`
+  );
 
-    // For swap execution
-    relayQuoteResponse,
-    contractCallData,
+  // Gas top-up: only meaningful for cross-chain. After the bridge the user
+  // has nothing else to sign on Gnosis (the registry call runs as Relay's
+  // multicaller), so we don't strictly need xDAI on the user's wallet —
+  // but topping up keeps `topUp` / `increaseDepth` follow-ups cheap and
+  // matches the bridge-only path's behaviour.
+  let shouldTopupGas = false;
+  if (selectedChainId !== ChainId.DAI) {
+    const hasEnoughGas = await checkGnosisGasBalance(address);
+    shouldTopupGas = !hasEnoughGas;
+  }
 
-    // Metadata
-    isGnosisOnly: params.selectedChainId === ChainId.DAI,
-    selectedChainId: params.selectedChainId,
-    steps: relayQuoteResponse.steps,
-    estimatedTime: relayQuoteResponse.details.timeEstimate,
+  const txs = encodeRegistryCreateBatchTxs({
+    walletAddress: address as `0x${string}`,
+    hotKeyAddress,
+    initialBalancePerChunk,
+    depth,
+    bucketDepth,
+    nonce,
+    immutable_,
+    approvalType,
+  });
+
+  const relayQuoteRequest: RelayQuoteRequest & {
+    txsGasLimit?: number;
+  } = {
+    user: address,
+    // The recipient is the address Relay treats as the receiver of any swap
+    // surplus / refund. Even though the multicaller temporarily holds BZZ
+    // to execute `txs`, leftover funds (e.g. slippage surplus, gas top-up)
+    // come back to the user wallet.
+    recipient: address,
+    originChainId: selectedChainId,
+    destinationChainId: ChainId.DAI,
+    originCurrency: fromToken,
+    destinationCurrency: GNOSIS_BZZ_ADDRESS,
+    amount: bzzAmount,
+    tradeType: 'EXACT_OUTPUT',
+    txs,
+    txsGasLimit: REGISTRY_TXS_GAS_LIMIT,
+    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
+    refundOnOrigin: true,
+    topupGas: shouldTopupGas,
+    ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }),
   };
+
+  const relayQuoteResponse = await performWithRetry(
+    async () => {
+      console.log('🌐 Relay one-shot buy-stamp request:', {
+        ...relayQuoteRequest,
+        txs: relayQuoteRequest.txs?.map(t => ({
+          to: t.to,
+          value: t.value,
+          dataLen: t.data.length,
+        })),
+      });
+      const response = await fetch('https://api.relay.link/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(relayQuoteRequest),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        const { userMessage, errorCode } = parseRelayError(errorText);
+        const err = new Error(userMessage);
+        (err as any).relayErrorCode = errorCode;
+        (err as any).originalError = errorText;
+        throw err;
+      }
+      const data = await response.json();
+      return data as RelayQuoteResponse;
+    },
+    `getRelayBuyStampQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    undefined,
+    isForEstimation ? 3 : 5,
+    500
+  );
+
+  const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
+  if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
+  }
+
+  // Log the destination route — when a fill fails this is by far the most
+  // useful signal (which DEX/router is going to swap into BZZ on Gnosis).
+  const destination = (relayQuoteResponse.details as any)?.route?.destination;
+  if (destination) {
+    console.log(
+      `↪️  Relay destination route: ${destination?.inputCurrency?.currency?.symbol} → ${destination?.outputCurrency?.currency?.symbol} via ${destination?.router}`
+    );
+  }
+  console.log(
+    `✅ One-shot Relay buy-stamp quote: $${totalAmountUSD.toFixed(2)}, steps: ${relayQuoteResponse.steps.length}, txs: ${txs.length}, registry: ${STAMPS_REGISTRY_V2_ADDRESS}, requestId: ${relayQuoteResponse.steps?.[0]?.requestId ?? 'n/a'}`
+  );
+
+  return { relayQuoteResponse, totalAmountUSD };
 };

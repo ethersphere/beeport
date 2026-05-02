@@ -311,6 +311,70 @@
   border-radius: 0 4px 4px 0;
 }
 
+.healthBanner {
+  margin-bottom: 15px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  line-height: 1.45;
+}
+
+.healthBannerError {
+  background-color: rgba(229, 83, 75, 0.1);
+  border: 1px solid rgba(229, 83, 75, 0.3);
+  color: #ff8a82;
+}
+
+.healthBannerWarn {
+  background-color: rgba(255, 200, 0, 0.08);
+  border: 1px solid rgba(255, 200, 0, 0.3);
+  color: #ffd166;
+}
+
+.healthBannerInfo {
+  background-color: rgba(120, 130, 145, 0.12);
+  border: 1px solid rgba(120, 130, 145, 0.3);
+  color: #b9c2cf;
+}
+
+.healthBannerTitle {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.healthBannerDetail {
+  flex: 1 1 100%;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.healthBannerRetry {
+  appearance: none;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: background 0.15s ease;
+}
+
+.healthBannerRetry:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.healthBannerRetry:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
 .uploadForm {
   display: flex;
   flex-direction: column;

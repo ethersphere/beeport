@@ -18,19 +18,13 @@ import {
   GNOSIS_BZZ_ADDRESS,
   DEFAULT_SWARM_CONFIG,
   STORAGE_OPTIONS,
-  BEE_GATEWAY_URL,
   GNOSIS_DESTINATION_TOKEN,
   TIME_OPTIONS,
-  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-  SUSHI_STAMPS_ROUTER_ADDRESS,
   DEFAULT_BEE_API_URL,
   DEFAULT_SLIPPAGE,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
-  // Note: LiFi execution constants removed - now using Relay API
-  UPLOAD_RETRY_CONFIG,
   FILE_SIZE_CONFIG,
-  UPLOAD_TIMEOUT_CONFIG,
 } from './constants';
 
 import HelpSection from './HelpSection';
@@ -43,13 +37,10 @@ import StorageDurationDropdown from './StorageDurationDropdown';
 
 import {
   formatErrorMessage,
-  createBatchId,
-  readBatchId,
   performWithRetry,
   toChecksumAddress,
   getGnosisPublicClient,
   setGnosisRpcUrl,
-  // handleExchangeRateUpdate removed - was only used by LiFi
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
   formatExpiryTime,
@@ -59,26 +50,53 @@ import {
 } from './utils';
 import { useTimer } from './TimerUtils';
 
-// Note: LiFi quote functions removed - now using Relay API via RelayQuotes.ts
 import {
-  getRelaySwapQuotes,
-  getRelayCrossChainWithSushiQuote,
+  getRelayBridgeOnlyToBzzQuote,
+  getRelayBuyStampQuote,
   executeRelaySteps,
-  RelayQuoteResponse,
   parseRelayError,
 } from './RelayQuotes';
-import { getSushiQuote, executeSushiSwap, SushiQuoteResult } from './SushiQuotes';
 import {
-  handleFileUpload as uploadFile,
-  handleMultiFileUpload,
-  isArchiveFile,
-  MultiFileResult,
-  getUserFriendlyErrorMessage,
-} from './FileUploadUtils';
-import { handleFolderSelection } from './FolderUploadUtils';
-import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
-import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
+  deriveHotKey,
+  getCachedHotKeyAddress,
+  type DerivedHotKey,
+} from './ClientStamping';
+import {
+  computeBatchId,
+  createSelfCustodyBatchViaRegistry,
+  topUpSelfCustodyBatchViaRegistry,
+  saveSelfCustodyBatch,
+  markSelfCustodyBatchToppedUp,
+} from './SelfCustodyBatch';
+import { STAMPS_REGISTRY_V2_ADDRESS, STAMPS_REGISTRY_V2_ABI } from './constants';
+import {
+  uploadFileClientSide,
+  uploadMultipleFilesClientSide,
+  uploadFilesAsCollectionClientSide,
+  type MultiFileResult,
+} from './ClientSideUpload';
+import {
+  extractArchiveToEntries,
+  buildSwarmIndexHtml,
+  hasRootIndexHtml,
+} from './FolderArchiveExtract';
+import {
+  processNFTCollectionClientSide,
+  type NFTCollectionUploadResult,
+} from './NFTCollectionClientSide';
+import { generateAndUpdateNonce, fetchNodeWalletAddress, formatDateEU } from './utils';
 import { useTokenManagement } from './TokenUtils';
+import { useBeeNodeHealth } from './BeeNodeHealth';
+
+// Self-custody success page may show a download/open link for any single
+// uploaded file regardless of extension; "archive-aware" URL construction is
+// no longer needed because we no longer special-case .zip / .tar.
+const isArchiveFile = (filename?: string): boolean => {
+  if (!filename) return false;
+  return ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.lz4', '.zst'].some(ext =>
+    filename.toLowerCase().endsWith(ext)
+  );
+};
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -130,9 +148,6 @@ const SwapComponent: React.FC = () => {
   const [selectedDays, setSelectedDays] = useState<number | null>(null);
   const [selectedDepth, setSelectedDepth] = useState(22);
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
-  const [isWebpageUpload, setIsWebpageUpload] = useState(false);
-  const [isTarFile, setIsTarFile] = useState(false);
-  const [isFolderUpload, setIsFolderUpload] = useState(false);
   const [isNewStampCreated, setIsNewStampCreated] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [totalUsdAmount, setTotalUsdAmount] = useState<string | null>(null);
@@ -151,17 +166,35 @@ const SwapComponent: React.FC = () => {
   const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [isMultipleFiles, setIsMultipleFiles] = useState(false);
-  const [multiFileResults, setMultiFileResults] = useState<MultiFileResult[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
-  // Approval options state
+  // Upload-mode toggles brought back from 1.1.x but reimplemented over the
+  // self-custody pipeline (`ClientSideUpload.ts`) — every chunk + manifest
+  // is still BMT-hashed and stamped locally, regardless of which mode is
+  // active. See SWIP §Client-side stamping mode α.
+  const [isMultipleFiles, setIsMultipleFiles] = useState(false);
+  const [isFolderUpload, setIsFolderUpload] = useState(false);
+  const [isWebpageUpload, setIsWebpageUpload] = useState(false);
+  const [serveUncompressed, setServeUncompressed] = useState(true);
+  const [isNFTCollection, setIsNFTCollection] = useState(false);
+  const [multiFileResults, setMultiFileResults] = useState<MultiFileResult[]>([]);
+  const [nftCollectionResult, setNftCollectionResult] =
+    useState<NFTCollectionUploadResult | null>(null);
+
+  // Approval options state — controls whether the BZZ approve issued by
+  // `createSelfCustodyBatch` is exact-amount or infinite. The legacy
+  // approve-against-Registry useEffect/handler is gone.
   const [approvalType, setApprovalType] = useState<'exact' | 'infinite'>('exact');
   const [showApprovalDropdown, setShowApprovalDropdown] = useState(false);
-  const [needsApproval, setNeedsApproval] = useState(false);
-  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
   const approvalDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Self-custody (SWIP §Client-side stamping, mode α) — always on ──────────
+  // Batches are created with `_owner = hotKeyAddress` directly on the upstream
+  // Postage Stamp contract (StampsRegistry is bypassed), and every chunk is
+  // BMT-hashed + stamped locally before being POSTed to the Bee gateway.
+  const [hotKey, setHotKey] = useState<DerivedHotKey | null>(null);
+  const [cachedHotKeyAddress, setCachedHotKeyAddress] = useState<string | null>(null);
 
   // Close approval dropdown when clicking outside
   useEffect(() => {
@@ -203,6 +236,12 @@ const SwapComponent: React.FC = () => {
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
 
+  // Pre-upload Bee gateway health probe. We only poll while the upload UI is
+  // visible (`uploadStep === 'ready'`). During an active upload the chunk POSTs
+  // are themselves the most authoritative liveness signal, and during 'idle'
+  // the user can't see the banner anyway, so polling is wasted bandwidth.
+  const beeNodeHealth = useBeeNodeHealth(beeApiUrl, uploadStep === 'ready');
+
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
   const [isCustomNode, setIsCustomNode] = useState(false);
@@ -213,17 +252,6 @@ const SwapComponent: React.FC = () => {
   const [showUploadHistory, setShowUploadHistory] = useState(false);
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-
-  const [serveUncompressed, setServeUncompressed] = useState(true);
-
-  // NFT Collection states
-  const [isNFTCollection, setIsNFTCollection] = useState(false);
-  const [nftCollectionResult, setNftCollectionResult] = useState<{
-    imagesReference: string;
-    metadataReference: string;
-    totalImages: number;
-    totalMetadata: number;
-  } | null>(null);
 
   // Add states to track top-up completion
   const [topUpCompleted, setTopUpCompleted] = useState(false);
@@ -243,6 +271,46 @@ const SwapComponent: React.FC = () => {
   useEffect(() => {
     currentWalletClientRef.current = walletClient;
   }, [walletClient]);
+
+  // Reload cached hot-key address whenever the connected wallet changes.
+  // We only persist the public address — the private key never leaves memory.
+  useEffect(() => {
+    if (!address) {
+      setCachedHotKeyAddress(null);
+      setHotKey(null);
+      return;
+    }
+    const cached = getCachedHotKeyAddress(address);
+    setCachedHotKeyAddress(cached);
+    if (hotKey && hotKey.address.toLowerCase() !== address.toLowerCase()) {
+      // Wallet changed — invalidate the in-memory hot key so we re-derive.
+      setHotKey(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
+
+  /**
+   * Ensure we have a usable hot key for the current wallet, prompting the
+   * wallet to sign the canonical derivation message if necessary. Resulting
+   * `hotKey` is cached in component state for the rest of the session.
+   */
+  const ensureHotKey = useCallback(async (): Promise<DerivedHotKey> => {
+    if (hotKey && address && hotKey.address.toLowerCase() === address.toLowerCase()) {
+      return hotKey;
+    }
+    if (!walletClient || !address) {
+      throw new Error('Wallet not connected — cannot derive hot key');
+    }
+    setStatusMessage({
+      step: 'HotKey',
+      message:
+        'Please sign the message in your wallet to derive your self-custody stamping key…',
+    });
+    const derived = await deriveHotKey(walletClient, address as `0x${string}`);
+    setHotKey(derived);
+    setCachedHotKeyAddress(derived.address);
+    return derived;
+  }, [hotKey, walletClient, address]);
 
   const { estimatedTime, setEstimatedTime, remainingTime, formatTime, resetTimer } =
     useTimer(statusMessage);
@@ -359,6 +427,10 @@ const SwapComponent: React.FC = () => {
 
       try {
         const bzzAmount = calculateTotalAmount().toString();
+        const isOnGnosis = selectedChainId === ChainId.DAI;
+        const isFromBzz =
+          !!fromToken && getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS);
+        const isPureGnosisBzzPath = isOnGnosis && isFromBzz;
 
         console.log('🔍 Price estimation:', {
           bzzAmount: formatUnits(BigInt(bzzAmount), 16),
@@ -367,82 +439,54 @@ const SwapComponent: React.FC = () => {
             STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown',
           selectedChainId,
           fromToken,
+          path: isPureGnosisBzzPath ? 'direct-registry' : 'relay-one-shot',
         });
 
-        // ── Gnosis + non-BZZ token: use SushiSwapStampsRouter for quote ──────────
-        const isGnosisNonBzz =
-          selectedChainId === ChainId.DAI &&
-          fromToken &&
-          getAddress(fromToken) !== getAddress(GNOSIS_BZZ_ADDRESS) &&
-          SUSHI_STAMPS_ROUTER_ADDRESS !== '';
-
-        // ── Cross-chain + router deployed: Relay → USDC → Sushi → BZZ → stamp ──
-        const isCrossChainWithSushi =
-          selectedChainId !== ChainId.DAI && SUSHI_STAMPS_ROUTER_ADDRESS !== '';
-
+        // For Gnosis + BZZ there's no Relay leg — the user calls
+        // StampsRegistryV2 directly with the BZZ they already hold. Cost in
+        // USD is just the BZZ cost (everything else is gas, which we don't
+        // estimate here, matching the previous flow's "Cost without gas"
+        // semantics).
         let totalAmountUSD: number;
-
-        if (isGnosisNonBzz) {
-          console.log('🍣 Using SushiSwap quote for Gnosis token…');
-
-          const tokenPriceUsd = selectedTokenInfo ? Number(selectedTokenInfo.priceUSD) : 0;
-          const tokenDecimals = selectedTokenInfo?.decimals ?? 18;
-          const tokenSymbol = selectedTokenInfo?.symbol ?? 'Token';
-
-          const sushiQuote = await getSushiQuote({
-            fromToken,
-            bzzAmount,
-            slippagePercent: useCustomSlippage ? customSlippagePercent : DEFAULT_SLIPPAGE,
-            tokenSymbol,
-            tokenDecimals,
-            tokenPriceUsd,
-          });
-
-          if (abortSignal.aborted) return;
-
-          totalAmountUSD = sushiQuote.totalAmountUSD;
-          console.log(`💰 SushiSwap quote: $${totalAmountUSD.toFixed(2)}`);
-        } else if (isCrossChainWithSushi) {
-          // ── Cross-chain: Relay bridges to USDC, SushiRouter swaps → BZZ → stamp
-          console.log('🌉 Using Relay→USDC→Sushi quote for cross-chain…');
-
-          const crossChainResult = await getRelayCrossChainWithSushiQuote({
-            selectedChainId,
-            fromToken,
-            address,
-            bzzAmount,
-            nodeAddress,
-            swarmConfig,
-            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-            setEstimatedTime: () => {},
-            isForEstimation: true,
-            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
-          });
-
-          if (abortSignal.aborted) return;
-
-          totalAmountUSD = crossChainResult.totalAmountUSD;
-          console.log(`💰 Cross-chain USDC+Sushi estimate: $${totalAmountUSD.toFixed(2)}`);
+        if (isPureGnosisBzzPath) {
+          if (selectedTokenInfo?.priceUSD) {
+            const bzzInTokenUnits = Number(formatUnits(BigInt(bzzAmount), 16));
+            totalAmountUSD = bzzInTokenUnits * Number(selectedTokenInfo.priceUSD);
+          } else {
+            totalAmountUSD = 0;
+          }
         } else {
-          // ── Gnosis + BZZ direct (or fallback): use Relay ───────────────────────
-          const relayQuoteResult = await getRelaySwapQuotes({
+          // One-shot Relay buy-stamp quote. Mirrors the *real* tx the user
+          // will sign (bridge + executor runs `txs` against StampsRegistryV2),
+          // so the displayed price equals what they'll actually pay.
+          const calcInitialBalance = currentPrice
+            ? BigInt(currentPrice) * BigInt(17280) * BigInt(selectedDays || 1)
+            : 0n;
+          const calcDepth =
+            isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+          const quote = await getRelayBuyStampQuote({
             selectedChainId,
             fromToken,
             address,
             bzzAmount,
-            nodeAddress,
-            swarmConfig,
-            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            hotKeyAddress:
+              (cachedHotKeyAddress as `0x${string}` | null) ??
+              ('0x0000000000000000000000000000000000000001' as `0x${string}`),
+            initialBalancePerChunk: calcInitialBalance,
+            depth: calcDepth,
+            bucketDepth: parseInt(swarmConfig.swarmBatchBucketDepth, 10),
+            nonce: swarmConfig.swarmBatchNonce,
+            immutable_: !!swarmConfig.swarmBatchImmutable,
+            approvalType,
             setEstimatedTime: () => {},
             isForEstimation: true,
             slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
           });
-
-          if (abortSignal.aborted) return;
-
-          totalAmountUSD = relayQuoteResult.totalAmountUSD;
-          console.log(`💰 Relay price estimation complete: $${totalAmountUSD.toFixed(2)}`);
+          totalAmountUSD = quote.totalAmountUSD;
         }
+
+        if (abortSignal.aborted) return;
+        console.log(`💰 Self-custody bridge estimate: $${totalAmountUSD.toFixed(2)}`);
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
@@ -589,160 +633,9 @@ const SwapComponent: React.FC = () => {
     setNodeAddress(address);
   }, [beeApiUrl]);
 
-  // Check if BZZ approval is needed
-  const checkBzzApproval = useCallback(
-    async (amount: bigint): Promise<boolean> => {
-      if (!address || !publicClient) return true;
-
-      try {
-        const allowance = await publicClient.readContract({
-          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-          abi: parseAbi([
-            'function allowance(address owner, address spender) external view returns (uint256)',
-          ]),
-          functionName: 'allowance',
-          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
-        });
-
-        return BigInt(allowance.toString()) < amount;
-      } catch (error) {
-        console.error('Failed to check BZZ allowance:', error);
-        return true; // Default to needing approval if check fails
-      }
-    },
-    [address, publicClient]
-  );
-
-  // Handle BZZ approval
-  const handleBzzApproval = async () => {
-    if (!address || !publicClient || !walletClient || !currentPrice || !selectedDays) {
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setShowOverlay(true);
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Approving BZZ tokens...',
-      });
-
-      // Calculate amount based on whether this is a top-up or new batch
-      let totalAmount: bigint;
-      if (isTopUp && originalStampInfo) {
-        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-      } else {
-        const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-        const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-        totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
-      }
-
-      const MAX_UINT256 =
-        '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-      const approvalAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
-
-      const approveCallData = {
-        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: [
-          {
-            constant: false,
-            inputs: [
-              { name: '_spender', type: 'address' },
-              { name: '_value', type: 'uint256' },
-            ],
-            name: 'approve',
-            outputs: [{ name: 'success', type: 'bool' }],
-            type: 'function',
-          },
-        ],
-        functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, approvalAmount],
-        account: address,
-      };
-
-      const approveTxHash = await walletClient.writeContract(approveCallData);
-
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Waiting for approval confirmation...',
-      });
-
-      const approveReceipt = await publicClient.waitForTransactionReceipt({
-        hash: approveTxHash,
-        pollingInterval: getPollingInterval(chainId),
-      });
-
-      if (approveReceipt.status !== 'success') {
-        throw new Error('Approval failed');
-      }
-
-      console.log(
-        `✅ ${approvalType === 'infinite' ? 'Infinite' : 'Exact'} BZZ approval completed successfully`
-      );
-
-      // Update approval status
-      setNeedsApproval(false);
-      setIsLoading(false);
-      setShowOverlay(false);
-    } catch (error) {
-      console.error('Approval failed:', error);
-      setStatusMessage({
-        step: 'Error',
-        message: 'Approval failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        isError: true,
-      });
-      setIsLoading(false);
-      setShowOverlay(false);
-    }
-  };
-
-  // Check approval status when relevant parameters change
-  useEffect(() => {
-    const checkApprovalStatus = async () => {
-      if (
-        selectedChainId === ChainId.DAI &&
-        fromToken &&
-        getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-        currentPrice &&
-        selectedDays &&
-        address &&
-        publicClient
-      ) {
-        setIsCheckingApproval(true);
-
-        // Calculate total amount
-        let totalAmount: bigint;
-        if (isTopUp && originalStampInfo) {
-          totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-        } else {
-          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-          const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-          totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
-        }
-
-        const needsApprovalResult = await checkBzzApproval(totalAmount);
-        setNeedsApproval(needsApprovalResult);
-        setIsCheckingApproval(false);
-      } else {
-        setNeedsApproval(false);
-        setIsCheckingApproval(false);
-      }
-    };
-
-    checkApprovalStatus();
-  }, [
-    selectedChainId,
-    fromToken,
-    currentPrice,
-    selectedDays,
-    address,
-    publicClient,
-    isTopUp,
-    originalStampInfo,
-    selectedDepth,
-    checkBzzApproval,
-  ]);
+  // Self-custody mode does its own BZZ approve + createBatch directly against
+  // the upstream Postage Stamp contract (`createSelfCustodyBatch`). The legacy
+  // Registry-side allowance flow is gone.
 
   useEffect(() => {
     const fetchAndSetNode = async () => {
@@ -877,152 +770,307 @@ const SwapComponent: React.FC = () => {
     }));
   };
 
-  const handleDirectBzzTransactions = async (updatedConfig: any) => {
-    // Ensure we have all needed objects and data
-    if (!address || !publicClient || !walletClient) {
-      console.error('Missing required objects for direct BZZ transaction');
-      return;
+  /**
+   * Switch the connected wallet to Gnosis and return a fresh walletClient
+   * bound to that chain. Throws if the user rejects or wagmi can't deliver
+   * a Gnosis client within a reasonable window.
+   */
+  const ensureWalletOnGnosis = useCallback(async (): Promise<{
+    walletClient: any;
+    publicClient: any;
+  }> => {
+    if (selectedChainId === ChainId.DAI && walletClient && publicClient) {
+      return { walletClient, publicClient };
     }
-
-    try {
-      // Calculate amount based on whether this is a top-up or new batch
-      let totalAmount: bigint;
-
-      if (isTopUp && originalStampInfo) {
-        // For top-ups, use the original depth from the stamp
-        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-
-        // Update swarmBatchInitialBalance for top-up (price per chunk)
-        if (currentPrice !== null && selectedDays) {
-          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-          const pricePerChunkForDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-          setSwarmConfig(prev => ({
-            ...prev,
-            swarmBatchInitialBalance: pricePerChunkForDuration.toString(),
-          }));
+    if (!switchChain) {
+      throw new Error('Wallet does not support chain switching');
+    }
+    setStatusMessage({
+      step: 'SwitchChain',
+      message: 'Switching wallet to Gnosis chain…',
+    });
+    await new Promise<void>((resolve, reject) => {
+      switchChain(
+        { chainId: ChainId.DAI },
+        {
+          onSuccess: () => resolve(),
+          onError: err => reject(err),
         }
-      } else {
-        // For new batches, use the total from updatedConfig
-        totalAmount = BigInt(updatedConfig.swarmBatchTotal);
-      }
+      );
+    });
+    // Give wagmi/RainbowKit a moment to refresh the wallet/public client refs.
+    await new Promise(r => setTimeout(r, 1200));
+    const gnosisWalletClient = await getWalletClient(config, { chainId: ChainId.DAI });
+    const gnosisPublicClient = getGnosisPublicClient().client;
+    if (!gnosisWalletClient) throw new Error('Failed to obtain Gnosis wallet client');
+    return { walletClient: gnosisWalletClient, publicClient: gnosisPublicClient };
+  }, [selectedChainId, walletClient, publicClient, switchChain]);
 
-      // Generate specific transaction message based on operation type
-      const operationMsg = isTopUp
-        ? `Topping up batch ${
-            topUpBatchId?.startsWith('0x') ? topUpBatchId.slice(2, 8) : topUpBatchId?.slice(0, 6)
-          }...${topUpBatchId?.slice(-4)}`
-        : 'Buying storage...';
+  /**
+   * Self-custody buy path (SWIP §Client-side stamping, mode α).
+   *
+   * Two sub-paths, both ending in a non-custodial batch (`_owner = hotKey`):
+   *
+   *   • **Gnosis + BZZ** — no Relay leg needed. The user's wallet calls
+   *     {@link createSelfCustodyBatchViaRegistry} directly: BZZ approve to
+   *     {@link STAMPS_REGISTRY_V2_ADDRESS} → `createSelfCustodyBatch`. Two
+   *     wallet prompts.
+   *
+   *   • **Anything else** — one-shot Relay buy via {@link getRelayBuyStampQuote}.
+   *     Relay bridges/swaps the user's token to BZZ on Gnosis and lands it in
+   *     the executor multicaller, which then runs two `txs` against
+   *     {@link STAMPS_REGISTRY_V2_ADDRESS}: `BZZ.approve` then
+   *     `createSelfCustodyBatch`. **One** wallet prompt total — restoring the
+   *     legacy single-signature buy UX.
+   *
+   * Because every call to PostageStamp routes through StampsRegistryV2,
+   * `batchId = keccak256(STAMPS_REGISTRY_V2_ADDRESS, nonce)` is deterministic
+   * client-side regardless of who calls the registry (user EOA vs. Relay's
+   * multicaller).
+   */
+  const handleSelfCustodyBuy = async (updatedConfig: any) => {
+    if (!address || !publicClient || !walletClient || selectedChainId === null) return;
+    try {
+      const derived = await ensureHotKey();
 
-      // Approval is now handled separately, proceed directly to stamp creation
+      const isOnGnosis = selectedChainId === ChainId.DAI;
+      const isFromBzz =
+        !!fromToken && getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS);
+      const isPureGnosisBzzPath = isOnGnosis && isFromBzz;
 
-      // Prepare contract write parameters - different based on operation type
-      let contractWriteParams;
+      // Top-up path — keep the existing two-step approve + topUp flow on
+      // whichever path makes sense. We still route through the registry so
+      // any indexers/UIs can tie the top-up back to the original wallet.
+      if (isTopUp && topUpBatchId && originalStampInfo) {
+        const totalBzzNeeded = updatedConfig.swarmBatchTotal as string;
 
-      if (isTopUp && topUpBatchId) {
-        // Top up existing batch
-        contractWriteParams = {
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(updatedConfig.swarmContractAbi),
-          functionName: 'topUpBatch',
-          args: [topUpBatchId as `0x${string}`, updatedConfig.swarmBatchInitialBalance],
-          account: address,
-        };
-      } else {
-        // Create new batch
-        contractWriteParams = {
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: parseAbi(updatedConfig.swarmContractAbi),
-          functionName: 'createBatchRegistry',
-          args: [
+        // For non-Gnosis or non-BZZ origin we still need to first get BZZ
+        // into the wallet (top-ups currently don't have a one-shot quote
+        // because the registry's `topUpBatch` is permissionless and small;
+        // if the user's already on Gnosis with BZZ this is a no-op).
+        if (!isPureGnosisBzzPath) {
+          setStatusMessage({
+            step: 'Quoting',
+            message: 'Quoting bridge to BZZ on Gnosis…',
+          });
+
+          const { relayQuoteResponse, totalAmountUSD } = await getRelayBridgeOnlyToBzzQuote({
+            selectedChainId,
+            fromToken,
             address,
-            nodeAddress,
-            updatedConfig.swarmBatchInitialBalance,
-            updatedConfig.swarmBatchDepth,
-            updatedConfig.swarmBatchBucketDepth,
-            updatedConfig.swarmBatchNonce,
-            updatedConfig.swarmBatchImmutable,
-          ],
-          account: address,
-        };
-      }
-
-      console.log('Creating transaction with params:', contractWriteParams);
-
-      // Execute the batch creation or top-up
-      const batchTxHash = await walletClient.writeContract(contractWriteParams);
-      console.log(`${isTopUp ? 'Top up' : 'Create batch'} transaction hash:`, batchTxHash);
-
-      // Wait for batch transaction to be mined
-      const batchReceipt = await publicClient.waitForTransactionReceipt({
-        hash: batchTxHash,
-        pollingInterval: getPollingInterval(chainId),
-      });
-
-      if (batchReceipt.status === 'success') {
-        if (isTopUp) {
-          // For top-up, we already have the batch ID
-          console.log('Successfully topped up batch ID:', topUpBatchId);
-          setPostageBatchId(topUpBatchId as string);
-
-          // Set top-up completion info
-          setTopUpCompleted(true);
-          setTopUpInfo({
-            batchId: topUpBatchId as string,
-            days: selectedDays || 0,
-            cost: totalUsdAmount || '0',
+            bzzAmount: totalBzzNeeded,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
           });
 
           setStatusMessage({
-            step: 'Complete',
-            message: 'Batch Topped Up Successfully',
-            isSuccess: true,
+            step: 'Bridge',
+            message: `Bridging to BZZ on Gnosis (~$${totalAmountUSD.toFixed(2)})…`,
           });
 
-          // Update upload history with new expiry date immediately
-          if (address && topUpBatchId && selectedDays) {
-            updateHistoryAfterTopUp(topUpBatchId as string, selectedDays, address);
-          }
-          // Don't set upload step for top-ups
-        } else {
-          try {
-            // Calculate the batch ID for logging
-            const calculatedBatchId = readBatchId(
-              updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS
-            );
+          await executeRelaySteps(
+            relayQuoteResponse,
+            walletClient,
+            publicClient,
+            setStatusMessage,
+            () => {
+              console.log('🚀 Self-custody top-up bridge tx confirmed');
+            }
+          );
+        }
 
-            console.log('Batch created successfully with ID:', calculatedBatchId);
+        const { walletClient: gnosisWallet, publicClient: gnosisPublic } =
+          await ensureWalletOnGnosis();
 
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Storage Bought Successfully',
-              isSuccess: true,
-              warning:
-                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
-            });
-            setIsNewStampCreated(true);
-            setUploadStep('ready');
-          } catch (error) {
-            console.error('Failed to process batch completion:', error);
-            throw new Error('Failed to process batch completion');
-          }
+        const topUpPerChunk = BigInt(updatedConfig.swarmBatchInitialBalance);
+        const totalForUi = calculateTopUpAmount(originalStampInfo.depth);
+        await topUpSelfCustodyBatchViaRegistry({
+          walletClient: gnosisWallet,
+          publicClient: gnosisPublic,
+          walletAddress: address as `0x${string}`,
+          batchId: (topUpBatchId.startsWith('0x')
+            ? topUpBatchId
+            : `0x${topUpBatchId}`) as `0x${string}`,
+          topUpAmountPerChunk: topUpPerChunk,
+          depth: originalStampInfo.depth,
+          approvalType,
+          onStatus: msg => setStatusMessage({ step: 'SelfCustody', message: msg }),
+        });
+
+        setPostageBatchId(topUpBatchId as string);
+        setTopUpCompleted(true);
+        setTopUpInfo({
+          batchId: topUpBatchId as string,
+          days: selectedDays || 0,
+          cost: totalUsdAmount || '0',
+        });
+        setStatusMessage({
+          step: 'Complete',
+          message: 'Batch Topped Up Successfully',
+          isSuccess: true,
+        });
+        if (address && topUpBatchId && selectedDays) {
+          updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
+        }
+        if (address) {
+          markSelfCustodyBatchToppedUp(address, topUpBatchId);
+        }
+        void totalForUi;
+        return;
+      }
+
+      // ── New batch path ──────────────────────────────────────────────────────
+      const initialBalancePerChunk = BigInt(updatedConfig.swarmBatchInitialBalance);
+      const depth = parseInt(updatedConfig.swarmBatchDepth, 10);
+      const bucketDepth = parseInt(updatedConfig.swarmBatchBucketDepth, 10);
+      const nonce = updatedConfig.swarmBatchNonce as `0x${string}` | string;
+      const immutable_ = !!updatedConfig.swarmBatchImmutable;
+
+      // batchId is deterministic for both sub-paths (registry as msg.sender),
+      // so we can pre-compute it and persist immediately on success without
+      // needing to parse Relay's response or the multicaller's tx logs.
+      const predictedBatchId = computeBatchId(STAMPS_REGISTRY_V2_ADDRESS, nonce);
+
+      let createBatchTxHash: `0x${string}` | undefined;
+
+      if (isPureGnosisBzzPath) {
+        // Direct registry call — two wallet prompts (approve + create).
+        const result = await createSelfCustodyBatchViaRegistry({
+          walletClient,
+          publicClient,
+          walletAddress: address as `0x${string}`,
+          hotKeyAddress: derived.address,
+          initialBalancePerChunk,
+          depth,
+          bucketDepth,
+          nonce,
+          immutable_,
+          approvalType,
+          onStatus: msg => setStatusMessage({ step: 'SelfCustody', message: msg }),
+        });
+        createBatchTxHash = result.createBatchTxHash;
+        if (result.batchId.toLowerCase() !== predictedBatchId.toLowerCase()) {
+          console.warn(
+            'predicted batchId did not match on-chain batchId',
+            { predicted: predictedBatchId, actual: result.batchId }
+          );
         }
       } else {
-        throw new Error(`${isTopUp ? 'Top-up' : 'Batch creation'} failed`);
+        // One-shot Relay buy — single wallet prompt to fund the bridge tx.
+        // Relay's executor handles BZZ.approve + createSelfCustodyBatch on
+        // Gnosis as the multicaller via `txs[]`.
+        setStatusMessage({
+          step: 'Quoting',
+          message: 'Quoting one-shot buy via Relay…',
+        });
+
+        const totalBzzNeeded = updatedConfig.swarmBatchTotal as string;
+        const { relayQuoteResponse, totalAmountUSD } = await getRelayBuyStampQuote({
+          selectedChainId,
+          fromToken,
+          address,
+          bzzAmount: totalBzzNeeded,
+          hotKeyAddress: derived.address,
+          initialBalancePerChunk,
+          depth,
+          bucketDepth,
+          nonce,
+          immutable_,
+          approvalType,
+          slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+        });
+
+        setStatusMessage({
+          step: 'Bridge',
+          message: `Buying stamp via Relay (~$${totalAmountUSD.toFixed(2)})…`,
+        });
+
+        // On-chain success oracle. Relay's `/intents/status` sometimes
+        // returns `fallback`/`refunded` even when the destination call
+        // landed (observed on the Sushi-on-Gnosis route — `BatchCreated`
+        // is emitted but Relay still tags the order as fallback because
+        // it sweeps a tiny refund of unused inventory back on the origin
+        // chain). The monitor uses this verifier as a false-positive
+        // guard before throwing a refund error.
+        // CRITICAL: must use a Gnosis-bound client. The wagmi `publicClient`
+        // tracks whichever chain the user is currently connected to (e.g.
+        // Base for cross-chain), where the registry address has no code —
+        // calling `batchAttribution` there returns `0x` and viem throws
+        // `ContractFunctionZeroDataError`. The on-chain end state we want
+        // to observe is *always* on Gnosis regardless of origin.
+        const { client: gnosisClient } = getGnosisPublicClient();
+        const verifyOnChainSuccess = async () => {
+          // `batchAttribution(bytes32) view returns (address wallet, address
+          // hotKeyOwner, uint96 createdAt)` — viem returns this as a
+          // positional tuple `[wallet, hotKeyOwner, createdAt]` (the auto-
+          // generated getter for our `mapping(bytes32 => Attribution)`).
+          // wallet is the zero address until `createSelfCustodyBatch` runs.
+          const result = (await gnosisClient.readContract({
+            address: STAMPS_REGISTRY_V2_ADDRESS as `0x${string}`,
+            abi: STAMPS_REGISTRY_V2_ABI,
+            functionName: 'batchAttribution',
+            args: [predictedBatchId as `0x${string}`],
+          })) as readonly [string, string, bigint];
+          const wallet = result?.[0];
+          return (
+            typeof wallet === 'string' &&
+            wallet.toLowerCase() !== '0x0000000000000000000000000000000000000000'
+          );
+        };
+
+        await executeRelaySteps(
+          relayQuoteResponse,
+          walletClient,
+          publicClient,
+          setStatusMessage,
+          () => {
+            console.log('🚀 Relay one-shot buy tx confirmed');
+          },
+          verifyOnChainSuccess
+        );
       }
-    } catch (error) {
-      console.error(`Error in direct BZZ transactions: ${error}`);
+
+      console.log('🔑 Self-custody batch created via registry', predictedBatchId);
+      setPostageBatchId(
+        predictedBatchId.startsWith('0x') ? predictedBatchId.slice(2) : predictedBatchId
+      );
+
+      // Persist for the "Your Stamps" UI. The Bee gateway eventually picks
+      // up the registry batch from the chain, but localStorage is what makes
+      // the entry visible immediately — the registry's `getWalletBatchIds`
+      // can also be used to repopulate after a wipe.
+      saveSelfCustodyBatch(address, {
+        batchId: predictedBatchId,
+        walletAddress: address,
+        hotKeyAddress: derived.address,
+        depth,
+        bucketDepth,
+        totalAmount: updatedConfig.swarmBatchTotal,
+        timestamp: Math.floor(Date.now() / 1000),
+        immutableFlag: immutable_,
+        createBatchTxHash,
+        createdVia: 'registry',
+      });
+
+      setStatusMessage({
+        step: 'Complete',
+        message: 'Self-custody storage created. Waiting for Bee gateway to index it…',
+        isSuccess: true,
+        warning:
+          'Note: Bee usually takes 1-2 minutes to index a fresh batch before accepting presigned stamps.',
+      });
+      setIsNewStampCreated(true);
+      setUploadStep('ready');
+    } catch (err) {
+      console.error('Self-custody buy failed:', err);
       setStatusMessage({
         step: 'Error',
-        message: 'Transaction failed',
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: 'Self-custody batch creation failed',
+        error: err instanceof Error ? err.message : 'Unknown error',
         isError: true,
       });
+      setIsLoading(false);
     }
   };
-
-  // Note: Old LiFi functions removed (handleGnosisTokenSwap, handleCrossChainSwap,
-  // handleChainSwitch, handleGnosisRoute) - now using Relay API via RelayQuotes.ts
 
   const handleSwap = async () => {
     if (!isConnected || !address || !publicClient || !walletClient || selectedChainId === null) {
@@ -1060,31 +1108,8 @@ const SwapComponent: React.FC = () => {
       updatedConfig.swarmBatchDepth = depthToUse.toString();
     }
 
-    // For new batches (not top-ups), create the batch ID once here
-    if (!isTopUp && address) {
-      try {
-        // Calculate and log the batch ID for this transaction
-        const calculatedBatchId = readBatchId(
-          updatedConfig.swarmBatchNonce,
-          GNOSIS_CUSTOM_REGISTRY_ADDRESS
-        );
-
-        // Also call createBatchId to set the state (fire and forget)
-        createBatchId(
-          updatedConfig.swarmBatchNonce,
-          GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-          setPostageBatchId
-        )
-          .then(stateBasedBatchId => {
-            console.log('State-based batch ID from createBatchId:', stateBasedBatchId);
-          })
-          .catch(error => {
-            console.error('Error in createBatchId for state:', error);
-          });
-      } catch (error) {
-        console.error('Failed to pre-calculate batch ID:', error);
-      }
-    }
+    // The batch ID for self-custody is `keccak256(hotKeyAddress, nonce)` and is
+    // computed inside `createSelfCustodyBatch`; no pre-calculation here.
 
     setIsLoading(true);
     setShowOverlay(true);
@@ -1095,7 +1120,6 @@ const SwapComponent: React.FC = () => {
     });
 
     try {
-      // Find the token in available tokens
       const selectedToken = availableTokens?.tokens[selectedChainId]?.find(token => {
         try {
           return toChecksumAddress(token.address) === toChecksumAddress(fromToken);
@@ -1104,262 +1128,22 @@ const SwapComponent: React.FC = () => {
           return false;
         }
       });
-
       if (!selectedToken || !selectedToken.address) {
         throw new Error('Selected token not found');
       }
 
-      setStatusMessage({
-        step: 'Calculation',
-        message: 'Calculating amounts...',
-      });
+      setStatusMessage({ step: 'Calculation', message: 'Calculating amounts...' });
 
-      // ── Branch 1: Gnosis + BZZ direct → no swap needed ─────────────────────
-      if (
-        selectedChainId !== null &&
-        selectedChainId === ChainId.DAI &&
-        getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
-      ) {
-        await handleDirectBzzTransactions(updatedConfig);
-      } else if (
-        // ── Branch 2: Gnosis + other token → SushiSwapStampsRouter ────────────
-        selectedChainId !== null &&
-        selectedChainId === ChainId.DAI &&
-        SUSHI_STAMPS_ROUTER_ADDRESS !== ''
-      ) {
-        const tokenPriceUsd = selectedToken ? Number(selectedTokenInfo?.priceUSD ?? 0) : 0;
-        const tokenDecimals = selectedTokenInfo?.decimals ?? 18;
-        const tokenSymbol = selectedTokenInfo?.symbol ?? 'Token';
-
-        await executeSushiSwap({
-          fromToken,
-          bzzAmount: updatedConfig.swarmBatchTotal,
-          slippagePercent: useCustomSlippage ? customSlippagePercent : DEFAULT_SLIPPAGE,
-          address,
-          swarmConfig: updatedConfig,
-          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          nodeAddress,
-          walletClient,
-          publicClient,
-          tokenSymbol,
-          tokenDecimals,
-          tokenPriceUsd,
-          setStatusMessage,
-          onTransactionConfirmed: () => {
-            console.log('🍣 SushiSwap stamp transaction confirmed!');
-          },
-        });
-
-        console.log('🎉 SushiSwap stamp purchase completed successfully!');
-
-        // Reset timer when done
-        resetTimer();
-
-        // Handle post-swap completion flow (same as original LiFi implementation)
-        try {
-          if (isTopUp && topUpBatchId) {
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId);
-
-            // Set top-up completion info
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
-
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Batch Topped Up Successfully',
-              isSuccess: true,
-            });
-
-            // Update upload history with new expiry date immediately
-            if (address && selectedDays) {
-              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
-            }
-          } else {
-            // Calculate the batch ID for new batch creation
-            const calculatedBatchId = readBatchId(
-              updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS
-            );
-
-            console.log('Batch created successfully with ID:', calculatedBatchId);
-            setPostageBatchId(calculatedBatchId);
-
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Storage Bought Successfully',
-              isSuccess: true,
-              warning:
-                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
-            });
-
-            // Transition to upload step - this was missing!
-            setIsNewStampCreated(true);
-            setUploadStep('ready');
-          }
-        } catch (error) {
-          console.error('Failed to process batch completion:', error);
-          setStatusMessage({
-            step: 'Error',
-            message: 'Failed to process batch completion',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            isError: true,
-          });
-        }
-      } else {
-        // ── Branch 3: cross-chain ───────────────────────────────────────────────
-        // Prefer Relay → USDC → SushiRouter → BZZ → stamp (better routing).
-        // Fall back to legacy Relay → BZZ path if router is not deployed.
-        const useSushiBridge = SUSHI_STAMPS_ROUTER_ADDRESS !== '';
-
-        setStatusMessage({
-          step: 'Quoting',
-          message: 'Getting quote...',
-        });
-
-        let crossChainRelayResponse: RelayQuoteResponse;
-        let crossChainEstimatedTime: number;
-
-        if (useSushiBridge) {
-          console.log('🌉 Cross-chain via Relay→USDC→SushiRouter→BZZ→stamp…');
-
-          const result = await getRelayCrossChainWithSushiQuote({
-            selectedChainId,
-            fromToken,
-            address,
-            bzzAmount: updatedConfig.swarmBatchTotal,
-            nodeAddress,
-            swarmConfig: updatedConfig,
-            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-            setEstimatedTime: () => {},
-            isForEstimation: false,
-            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
-          });
-
-          crossChainRelayResponse = result.relayQuoteResponse;
-          crossChainEstimatedTime = result.estimatedTime;
-
-          console.log('✅ Cross-chain USDC+Sushi quotes ready:', {
-            totalUSD: `$${result.totalAmountUSD.toFixed(2)}`,
-            steps: result.steps.length,
-            estimatedTime: result.estimatedTime,
-          });
-        } else {
-          // Legacy: Relay bridges directly to BZZ
-          const relayQuoteResult = await getRelaySwapQuotes({
-            selectedChainId,
-            fromToken,
-            address,
-            bzzAmount: updatedConfig.swarmBatchTotal,
-            nodeAddress,
-            swarmConfig: updatedConfig,
-            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-            setEstimatedTime: () => {},
-            isForEstimation: false,
-            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
-          });
-
-          crossChainRelayResponse = relayQuoteResult.relayQuoteResponse;
-          crossChainEstimatedTime = relayQuoteResult.estimatedTime;
-
-          console.log('✅ Relay execution quotes ready:', {
-            totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
-            steps: relayQuoteResult.steps.length,
-            estimatedTime: relayQuoteResult.estimatedTime,
-          });
-        }
-
-        setStatusMessage({
-          step: 'Preparing',
-          message: 'Preparing cross-chain swap...',
-        });
-
-        await executeRelaySteps(
-          crossChainRelayResponse,
-          walletClient,
-          publicClient,
-          setStatusMessage,
-          () => {
-            console.log(
-              '🚀 Transaction confirmed! Starting timer:',
-              crossChainEstimatedTime,
-              'seconds'
-            );
-            setEstimatedTime(crossChainEstimatedTime);
-            setStatusMessage({
-              step: 'Relay',
-              message: 'Executing cross-chain swap...',
-            });
-          }
-        );
-
-        console.log('🎉 Relay swap completed successfully!');
-        resetTimer();
-
-        try {
-          if (isTopUp && topUpBatchId) {
-            console.log('Successfully topped up batch ID:', topUpBatchId);
-            setPostageBatchId(topUpBatchId);
-            setTopUpCompleted(true);
-            setTopUpInfo({
-              batchId: topUpBatchId,
-              days: selectedDays || 0,
-              cost: totalUsdAmount || '0',
-            });
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Batch Topped Up Successfully',
-              isSuccess: true,
-            });
-            if (address && selectedDays) {
-              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
-            }
-          } else {
-            const calculatedBatchId = readBatchId(
-              updatedConfig.swarmBatchNonce,
-              GNOSIS_CUSTOM_REGISTRY_ADDRESS
-            );
-            console.log('Batch created successfully with ID:', calculatedBatchId);
-            setPostageBatchId(calculatedBatchId);
-            setStatusMessage({
-              step: 'Complete',
-              message: 'Storage Bought Successfully',
-              isSuccess: true,
-              warning:
-                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
-            });
-            setIsNewStampCreated(true);
-            setUploadStep('ready');
-          }
-        } catch (error) {
-          console.error('Failed to process Relay batch completion:', error);
-          setStatusMessage({
-            step: 'Error',
-            message: 'Failed to process batch completion',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            isError: true,
-          });
-        }
-      }
+      // Self-custody only. The helper bridges/swaps to BZZ on Gnosis when
+      // needed, switches the wallet to Gnosis, and calls the upstream Postage
+      // Stamp contract directly with `_owner = hotKeyAddress`.
+      await handleSelfCustodyBuy(updatedConfig);
     } catch (error) {
       console.error('An error occurred:', error);
-
-      // Parse errors for better user experience
       const { userMessage, errorCode } = parseRelayError(error);
-
-      // Log detailed error information for debugging
       if (errorCode) {
-        console.error('🚨 Relay Error Details:', {
-          errorCode,
-          userMessage,
-          originalError: error,
-        });
+        console.error('🚨 Relay Error Details:', { errorCode, userMessage, originalError: error });
       }
-
       setStatusMessage({
         step: 'Error',
         message: 'Execution failed',
@@ -1422,237 +1206,671 @@ const SwapComponent: React.FC = () => {
     return `${rounded} ${units[unitIndex]}`;
   };
 
-  // Helper function to get total size of selected files
+  /**
+   * Total bytes across the current selection — single file, multi-file
+   * batch or a folder archive. Used by the size-warning UI and the upload
+   * gate, so it MUST track every selection mode rather than just
+   * `selectedFile.size` (which would be 0 for multi-file mode).
+   */
   const getTotalFileSize = (): number => {
-    if (isMultipleFiles) {
+    if (isMultipleFiles && selectedFiles.length > 0) {
       return selectedFiles.reduce((total, file) => total + file.size, 0);
     }
     return selectedFile?.size || 0;
   };
 
-  // Helper function to check if files are very large
   const hasVeryLargeFiles = (): boolean => {
     const threshold = FILE_SIZE_CONFIG.largeFileThresholdGB * 1024 * 1024 * 1024;
-    if (isMultipleFiles) {
+    if (isMultipleFiles && selectedFiles.length > 0) {
       return selectedFiles.some(file => file.size > threshold);
-    } else {
-      return (selectedFile?.size || 0) > threshold;
     }
+    return (selectedFile?.size || 0) > threshold;
   };
 
   const exceedsMaximumUploadSize = (): boolean => {
     const maxSizeBytes = FILE_SIZE_CONFIG.maximumFileGB * 1024 * 1024 * 1024;
-    if (isMultipleFiles) {
-      const totalSize = selectedFiles.reduce((total, file) => total + file.size, 0);
-      return totalSize > maxSizeBytes;
-    } else {
-      return (selectedFile?.size || 0) > maxSizeBytes;
-    }
+    return getTotalFileSize() > maxSizeBytes;
   };
 
-  const handleFileUpload = async () => {
-    if (isMultipleFiles && selectedFiles.length > 0) {
-      return handleMultipleFileUpload();
-    }
-
-    if (!selectedFile || !postageBatchId || !walletClient || !publicClient) {
-      console.error('Missing file, postage batch ID, or wallet');
-      console.log('selectedFile', selectedFile);
-      console.log('postageBatchId', postageBatchId);
-      console.log('walletClient', walletClient);
-      console.log('publicClient', publicClient);
-      return;
-    }
-
+  /**
+   * Self-custody upload path (SWIP §Client-side stamping, mode α).
+   *
+   * BMT-chunks the file in this browser tab, signs every per-chunk stamp
+   * locally with the hot key, and POSTs each pre-stamped chunk to a key-less
+   * Bee gateway via /chunks. The gateway never sees the hot key.
+   */
+  const handleSelfCustodyUpload = async (file: File) => {
+    if (!postageBatchId || !walletClient || !publicClient || !address) return;
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
     setIsNewStampCreated(false);
-
-    // Handle NFT Collection uploads
-    if (isNFTCollection && selectedFile.name.toLowerCase().endsWith('.zip')) {
-      try {
-        const result = await processNFTCollection({
-          zipFile: selectedFile,
-          postageBatchId,
-          walletClient,
-          publicClient,
-          address,
-          beeApiUrl,
-          setProgress: setUploadProgress,
-          setStatusMessage: (message: string) =>
-            setStatusMessage({
-              step: 'Uploading',
-              message: message,
-            }),
-        });
-
-        setNftCollectionResult(result);
-
-        // Save both references to history
-        const expiryDate = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days default
-        saveUploadReference(
-          result.imagesReference,
-          postageBatchId,
-          expiryDate,
-          'images.tar',
-          false,
-          selectedFile.size
-        );
-        saveUploadReference(
-          result.metadataReference,
-          postageBatchId,
-          expiryDate,
-          'metadata.tar',
-          false,
-          selectedFile.size
-        );
-
-        setStatusMessage({
-          step: 'Complete',
-          message: `NFT Collection uploaded successfully! ${result.totalImages} images and ${result.totalMetadata} metadata files processed.`,
-          isSuccess: true,
-          reference: result.metadataReference,
-          filename: selectedFile.name,
-        });
-
-        setUploadStep('complete');
-        setSelectedDays(null);
-        setTimeout(() => {
-          setUploadStep('idle');
-          setShowOverlay(false);
-          setIsLoading(false);
-          setUploadProgress(0);
-          setIsDistributing(false);
-        }, 900000);
-
-        return;
-      } catch (error) {
-        console.error('NFT Collection upload error:', error);
-        setStatusMessage({
-          step: 'Error',
-          message: 'NFT Collection upload failed',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          isError: true,
-        });
-        setUploadStep('idle');
-        setUploadProgress(0);
-        setIsDistributing(false);
-        return;
-      }
-    }
-
-    const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
-
-    // Retry wrapper for single file upload
-    for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
-      try {
-        await uploadFile({
-          selectedFile,
-          postageBatchId,
-          walletClient,
-          publicClient,
-          address,
-          beeApiUrl,
-          serveUncompressed,
-          isTarFile,
-          isWebpageUpload,
-          isFolderUpload,
-          setUploadProgress,
-          setStatusMessage,
-          setIsDistributing,
-          setUploadStep,
-          setSelectedDays,
-          setShowOverlay,
-          setIsLoading,
-          setUploadStampInfo,
-          saveUploadReference,
-        });
-        return; // Success, exit the function
-      } catch (error) {
-        console.error(`Upload attempt ${retryCount + 1} failed:`, error);
-
-        if (retryCount < maxRetries && error instanceof Error) {
-          const isRetryableError = UPLOAD_RETRY_CONFIG.retryableErrors.some(errorType =>
-            error.message.includes(errorType)
-          );
-
-          if (isRetryableError) {
-            console.log(`Retrying single file upload (${retryCount + 1}/${maxRetries})`);
-            setStatusMessage({
-              step: 'Uploading',
-              message: `Retrying upload (attempt ${retryCount + 2}/${maxRetries + 1})...`,
-            });
-
-            // Wait before retrying (configurable delay)
-            await new Promise(resolve => setTimeout(resolve, UPLOAD_RETRY_CONFIG.retryDelayMs));
-            continue; // Try again
-          }
-        }
-
-        // If not retryable or max retries reached, show error
-        console.error('Upload error:', error);
-        const friendlyError =
-          error instanceof Error ? getUserFriendlyErrorMessage(error) : 'Unknown error';
-        setStatusMessage({
-          step: 'Error',
-          message: 'Upload failed',
-          error: friendlyError,
-          isError: true,
-        });
-        setUploadStep('idle');
-        setUploadProgress(0);
-        setIsDistributing(false);
-        return;
-      }
-    }
-  };
-
-  const handleMultipleFileUpload = async () => {
-    if (!selectedFiles.length || !postageBatchId || !walletClient || !publicClient) {
-      console.error('Missing files, postage batch ID, or wallet');
-      return;
-    }
-
-    setIsLoading(true);
-    setShowOverlay(true);
-    setUploadStep('uploading');
-    setIsNewStampCreated(false);
-    setMultiFileResults([]);
+    setUploadProgress(0);
 
     try {
-      await handleMultiFileUpload({
-        selectedFiles,
-        postageBatchId,
-        walletClient,
-        publicClient,
-        address,
-        beeApiUrl,
-        serveUncompressed,
-        isWebpageUpload,
-        setUploadProgress,
-        setStatusMessage,
-        setIsDistributing,
-        setUploadStep,
-        setSelectedDays,
-        setShowOverlay,
-        setIsLoading,
-        setUploadStampInfo,
-        saveUploadReference,
-        setMultiFileResults,
+      const derived = await ensureHotKey();
+
+      const batchIdHex = postageBatchId.startsWith('0x')
+        ? (postageBatchId as `0x${string}`)
+        : (`0x${postageBatchId}` as `0x${string}`);
+      const depthForUpload = isTopUp && originalStampInfo
+        ? originalStampInfo.depth
+        : selectedDepth;
+
+      // Self-custody batches are owned by the hot key on-chain — Bee's
+      // `/stamps/:id` endpoint only enumerates batches owned by Bee's own
+      // wallet, so it will always 404 here. The on-chain `createBatch`
+      // receipt we already hold is the real source of truth, and the first
+      // chunk POST is the real authoritative check. Skip any pre-flight
+      // polling and go straight to chunking + stamping.
+      setStatusMessage({
+        step: 'Uploading',
+        message: 'Chunking and stamping locally — this never leaves your browser.',
       });
-    } catch (error) {
-      console.error('Multi-file upload error:', error);
+      setIsDistributing(false);
+
+      const result = await uploadFileClientSide({
+        file,
+        batchId: batchIdHex,
+        hotKey: derived,
+        depth: depthForUpload,
+        beeApiUrl,
+        // Self-custody v1: every upload is a single file. The Mantaray manifest
+        // built by `uploadFileClientSide` exposes the file name as default; if
+        // the file is HTML the gateway will serve it as a webpage.
+        isWebsite: false,
+        onProgress: (processed, total) => {
+          const pct = Math.min(99, Math.round((processed / Math.max(total, 1)) * 100));
+          setUploadProgress(pct);
+          if (pct >= 99) setIsDistributing(true);
+        },
+        onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+      });
+
+      setUploadProgress(100);
+      const refHex = result.reference.startsWith('0x')
+        ? result.reference.slice(2)
+        : result.reference;
+      console.log('🎉 Self-custody upload complete', result);
+
+      // Verify the manifest is actually retrievable from the gateway. Bee
+      // accepted every chunk POST, but a quick GET /bzz/<ref>/ confirms the
+      // root chunk is indexed and the manifest deserialises cleanly. This
+      // closes the "did the file really land?" question post-upload.
+      let retrievable: 'yes' | 'no' | 'unknown' = 'unknown';
+      try {
+        const verifyRes = await fetch(`${beeApiUrl}/bzz/${refHex}/`, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(10_000),
+        });
+        retrievable = verifyRes.ok ? 'yes' : 'no';
+        console.log(
+          `🔍 Retrieval probe HEAD /bzz/${refHex.slice(0, 8)}…/ → ${verifyRes.status} ${verifyRes.statusText}`
+        );
+      } catch (probeErr) {
+        console.warn('Retrieval probe failed:', probeErr);
+      }
+
+      // Stamp + history bookkeeping (try, but don't fail upload on errors).
+      try {
+        const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
+        if (stampStatus) {
+          const totalSizeString =
+            STORAGE_OPTIONS.find(o => o.depth === stampStatus.depth)?.size ??
+            `depth ${stampStatus.depth}`;
+          const realUtilizationPercent = getStampUsage(
+            stampStatus.utilization,
+            stampStatus.depth,
+            stampStatus.bucketDepth || 16
+          );
+          setUploadStampInfo({
+            ...stampStatus,
+            totalSize: totalSizeString,
+            usedSize: `${realUtilizationPercent.toFixed(1)}%`,
+            remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
+            utilizationPercent: realUtilizationPercent,
+            createdDate: formatDateEU(new Date()),
+          });
+          const expiryDate = Date.now() + (stampStatus.batchTTL ?? 0) * 1000;
+          saveUploadReference(refHex, postageBatchId, expiryDate, file.name, false, file.size);
+        } else {
+          saveUploadReference(
+            refHex,
+            postageBatchId,
+            Date.now() + 30 * 24 * 60 * 60 * 1000,
+            file.name,
+            false,
+            file.size
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to fetch stamp info post-upload:', err);
+      }
+
+      const retrievalSuffix =
+        retrievable === 'yes'
+          ? ' ✓ verified retrievable'
+          : retrievable === 'no'
+            ? ' ⚠ chunks accepted but gateway could not retrieve yet — try in a few seconds'
+            : ' (retrieval probe inconclusive)';
+      setStatusMessage({
+        step: 'Complete',
+        message:
+          `Upload Successful. Reference: ${refHex.slice(0, 6)}...${refHex.slice(-4)}` +
+          retrievalSuffix,
+        isSuccess: true,
+        reference: refHex,
+        filename: file.name,
+      });
+      setUploadStep('complete');
+      setSelectedDays(null);
+      setIsDistributing(false);
+      // Same long auto-close as the legacy upload path; the user can also
+      // close manually via the success screen's Close button.
+      setTimeout(() => {
+        setUploadStep('idle');
+        setShowOverlay(false);
+        setIsLoading(false);
+        setUploadProgress(0);
+      }, 900000);
+    } catch (err) {
+      console.error('Self-custody upload failed:', err);
+      const raw = err instanceof Error ? err.message : String(err);
+      // Translate common Bee responses to actionable diagnostics — these tell
+      // us *why* a self-custody upload failed, which is the whole point of
+      // the proof-of-concept attempt while a stamp is "propagating".
+      let friendly = raw;
+      const lower = raw.toLowerCase();
+      if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
+        friendly =
+          "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.";
+      } else if (lower.includes('insufficient') && lower.includes('stamp')) {
+        friendly =
+          'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.';
+      } else if (lower.includes('signer') || lower.includes('signature')) {
+        friendly = `Bee rejected the stamp signature: ${raw}`;
+      } else if (lower.includes('bucket')) {
+        friendly = `Bee rejected the stamp bucket allocation (issuer state): ${raw}`;
+      }
       setStatusMessage({
         step: 'Error',
-        message: 'Multi-file upload failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        message: 'Self-custody upload failed',
+        error: friendly,
         isError: true,
       });
       setUploadStep('idle');
       setUploadProgress(0);
       setIsDistributing(false);
+      setIsLoading(false);
     }
+  };
+
+  /**
+   * Translate the most common Bee gateway error messages into something an
+   * end user can act on, instead of the bare `error: failed to push chunk:
+   * stamp signature does not recover…` string Bee returns. Shared by every
+   * self-custody upload variant (single file / multi-file / collection /
+   * NFT).
+   */
+  const translateSelfCustodyUploadError = (err: unknown): string => {
+    const raw = err instanceof Error ? err.message : String(err);
+    const lower = raw.toLowerCase();
+    if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
+      return "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.";
+    }
+    if (lower.includes('insufficient') && lower.includes('stamp')) {
+      return 'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.';
+    }
+    if (lower.includes('signer') || lower.includes('signature')) {
+      return `Bee rejected the stamp signature: ${raw}`;
+    }
+    if (lower.includes('bucket')) {
+      return `Bee rejected the stamp bucket allocation (issuer state): ${raw}`;
+    }
+    return raw;
+  };
+
+  /**
+   * Multi-file self-custody upload (Pattern: "N files, N references"). Each
+   * file becomes its own minimal Mantaray manifest with a single fork; the
+   * Stamper instance is shared across files so bucket counters advance
+   * monotonically (matches what 1.1.x's session-token multi-file upload did,
+   * but without any server-side stamping).
+   */
+  const handleSelfCustodyMultiUpload = async (files: File[]) => {
+    if (!postageBatchId || !walletClient || !publicClient || !address) return;
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
+    setIsNewStampCreated(false);
+    setUploadProgress(0);
+    setMultiFileResults([]);
+
+    try {
+      const derived = await ensureHotKey();
+      const batchIdHex = postageBatchId.startsWith('0x')
+        ? (postageBatchId as `0x${string}`)
+        : (`0x${postageBatchId}` as `0x${string}`);
+      const depthForUpload =
+        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+
+      setStatusMessage({
+        step: 'Uploading',
+        message: `Chunking and stamping ${files.length} files locally — nothing leaves your browser.`,
+      });
+      setIsDistributing(false);
+
+      const result = await uploadMultipleFilesClientSide({
+        files,
+        batchId: batchIdHex,
+        hotKey: derived,
+        depth: depthForUpload,
+        beeApiUrl,
+        onProgress: (fileIndex, totalFiles, fileProgress) => {
+          // Composite progress: per-file [0..1] mapped into the full [0..99]
+          // band, weighted equally per file. Doesn't account for filesize
+          // variance but matches what users expect from "N of M files".
+          const perFileWeight = 1 / Math.max(1, totalFiles);
+          const within = Math.min(
+            1,
+            fileProgress.processed / Math.max(1, fileProgress.total)
+          );
+          const overall = (fileIndex * perFileWeight + within * perFileWeight) * 100;
+          setUploadProgress(Math.min(99, overall));
+          if (overall >= 99) setIsDistributing(true);
+        },
+        onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+      });
+
+      setMultiFileResults(result.results);
+      setUploadProgress(100);
+
+      // Persist successes to upload history with their own references.
+      try {
+        const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
+        const expiryDate = stampStatus
+          ? Date.now() + (stampStatus.batchTTL ?? 0) * 1000
+          : Date.now() + 30 * 24 * 60 * 60 * 1000;
+        for (const r of result.results) {
+          if (r.success && r.reference) {
+            const refHex = r.reference.startsWith('0x') ? r.reference.slice(2) : r.reference;
+            const file = files.find(f => f.name === r.filename);
+            saveUploadReference(refHex, postageBatchId, expiryDate, r.filename, false, file?.size);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch stamp info post multi-file upload:', err);
+      }
+
+      const successCount = result.results.filter(r => r.success).length;
+      setStatusMessage({
+        step: 'Complete',
+        message: `Upload complete: ${successCount}/${files.length} files uploaded`,
+        isSuccess: true,
+      });
+      setUploadStep('complete');
+      setSelectedDays(null);
+      setIsDistributing(false);
+      setTimeout(() => {
+        setUploadStep('idle');
+        setShowOverlay(false);
+        setIsLoading(false);
+        setUploadProgress(0);
+      }, 900000);
+    } catch (err) {
+      console.error('Multi-file self-custody upload failed:', err);
+      setStatusMessage({
+        step: 'Error',
+        message: 'Multi-file upload failed',
+        error: translateSelfCustodyUploadError(err),
+        isError: true,
+      });
+      setUploadStep('idle');
+      setUploadProgress(0);
+      setIsDistributing(false);
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Folder / website / archive self-custody upload (Pattern: "N files, ONE
+   * reference"). A single Mantaray manifest is built with one fork per
+   * `entry.path`, optionally setting `website-index-document` and
+   * `website-error-document`. Inputs accepted:
+   *
+   *   • a `webkitdirectory` file selection (recursive folder picker)
+   *   • a single `.zip`/`.tar`/`.tgz`/`.tar.gz` archive (extracted client-side)
+   *
+   * In both cases, if no root `index.html` is present the helper auto-injects
+   * a Swarm-styled directory listing matching the legacy 1.1.x behaviour.
+   */
+  const handleSelfCustodyCollectionUpload = async (
+    entries: Array<{ path: string; data: File | Uint8Array; contentType?: string }>,
+    folderName: string
+  ) => {
+    if (!postageBatchId || !walletClient || !publicClient || !address) return;
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
+    setIsNewStampCreated(false);
+    setUploadProgress(0);
+
+    try {
+      const derived = await ensureHotKey();
+      const batchIdHex = postageBatchId.startsWith('0x')
+        ? (postageBatchId as `0x${string}`)
+        : (`0x${postageBatchId}` as `0x${string}`);
+      const depthForUpload =
+        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+
+      // Inject a generated index.html if the user hasn't supplied one. The
+      // listing is the same Swarm-styled page the legacy folder upload
+      // produced — see `FolderArchiveExtract.buildSwarmIndexHtml`.
+      const paths = entries.map(e => e.path);
+      const finalEntries = [...entries];
+      if (!hasRootIndexHtml(paths)) {
+        const indexHtml = buildSwarmIndexHtml({ folderName, paths });
+        finalEntries.unshift({
+          path: 'index.html',
+          data: new TextEncoder().encode(indexHtml),
+          contentType: 'text/html; charset=utf-8',
+        });
+      }
+
+      setStatusMessage({
+        step: 'Uploading',
+        message: `Chunking and stamping ${finalEntries.length} files locally — nothing leaves your browser.`,
+      });
+      setIsDistributing(false);
+
+      const result = await uploadFilesAsCollectionClientSide({
+        entries: finalEntries,
+        batchId: batchIdHex,
+        hotKey: derived,
+        depth: depthForUpload,
+        beeApiUrl,
+        website: { indexDocument: 'index.html', errorDocument: 'error.html' },
+        onProgress: (processed, total) => {
+          const pct = Math.min(99, Math.round((processed / Math.max(total, 1)) * 100));
+          setUploadProgress(pct);
+          if (pct >= 99) setIsDistributing(true);
+        },
+        onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+      });
+
+      setUploadProgress(100);
+      const refHex = result.reference.startsWith('0x')
+        ? result.reference.slice(2)
+        : result.reference;
+
+      try {
+        const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
+        if (stampStatus) {
+          const totalSizeString =
+            STORAGE_OPTIONS.find(o => o.depth === stampStatus.depth)?.size ??
+            `depth ${stampStatus.depth}`;
+          const realUtilizationPercent = getStampUsage(
+            stampStatus.utilization,
+            stampStatus.depth,
+            stampStatus.bucketDepth || 16
+          );
+          setUploadStampInfo({
+            ...stampStatus,
+            totalSize: totalSizeString,
+            usedSize: `${realUtilizationPercent.toFixed(1)}%`,
+            remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
+            utilizationPercent: realUtilizationPercent,
+            createdDate: formatDateEU(new Date()),
+          });
+          const totalBytes = entries.reduce(
+            (s, e) => s + (e.data instanceof File ? e.data.size : e.data.length),
+            0
+          );
+          const expiryDate = Date.now() + (stampStatus.batchTTL ?? 0) * 1000;
+          saveUploadReference(
+            refHex,
+            postageBatchId,
+            expiryDate,
+            folderName,
+            true, // isWebpageUpload — folder/website uploads serve via index.html
+            totalBytes,
+            true // isFolderUpload — flagged so the history UI shows the folder icon
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to fetch stamp info post-folder upload:', err);
+      }
+
+      setStatusMessage({
+        step: 'Complete',
+        message: `Upload Successful. Reference: ${refHex.slice(0, 6)}...${refHex.slice(-4)}`,
+        isSuccess: true,
+        reference: refHex,
+        filename: 'index.html', // root resolves to the index doc by default
+      });
+      setUploadStep('complete');
+      setSelectedDays(null);
+      setIsDistributing(false);
+      setTimeout(() => {
+        setUploadStep('idle');
+        setShowOverlay(false);
+        setIsLoading(false);
+        setUploadProgress(0);
+      }, 900000);
+    } catch (err) {
+      console.error('Folder/collection self-custody upload failed:', err);
+      setStatusMessage({
+        step: 'Error',
+        message: 'Folder upload failed',
+        error: translateSelfCustodyUploadError(err),
+        isError: true,
+      });
+      setUploadStep('idle');
+      setUploadProgress(0);
+      setIsDistributing(false);
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * NFT collection self-custody upload (Pattern: ZIP → 2 references).
+   * Calls into {@link processNFTCollectionClientSide} which extracts the
+   * ZIP locally, uploads the `images/` folder as one Mantaray collection,
+   * rewrites the metadata JSON to point at `bzz.link/bzz/<imagesRef>/<file>`,
+   * and uploads the resulting metadata folder as a second Mantaray
+   * collection. Returns both root references for the success panel.
+   */
+  const handleSelfCustodyNFTUpload = async (zipFile: File) => {
+    if (!postageBatchId || !walletClient || !publicClient || !address) return;
+    setIsLoading(true);
+    setShowOverlay(true);
+    setUploadStep('uploading');
+    setIsNewStampCreated(false);
+    setUploadProgress(0);
+    setNftCollectionResult(null);
+
+    try {
+      const derived = await ensureHotKey();
+      const batchIdHex = postageBatchId.startsWith('0x')
+        ? (postageBatchId as `0x${string}`)
+        : (`0x${postageBatchId}` as `0x${string}`);
+      const depthForUpload =
+        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+
+      setStatusMessage({
+        step: 'Uploading',
+        message: 'Extracting ZIP and stamping locally — nothing leaves your browser.',
+      });
+      setIsDistributing(false);
+
+      const result = await processNFTCollectionClientSide({
+        zipFile,
+        batchId: batchIdHex,
+        hotKey: derived,
+        depth: depthForUpload,
+        beeApiUrl,
+        onProgress: (percent, _stage) => {
+          setUploadProgress(Math.min(99, percent));
+          if (percent >= 99) setIsDistributing(true);
+        },
+        onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+      });
+
+      setNftCollectionResult(result);
+      setUploadProgress(100);
+
+      // Save BOTH references to the upload history so users can re-find
+      // them later. Mark them as folder uploads so the history UI can
+      // render the folder icon.
+      try {
+        const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
+        const expiryDate = stampStatus
+          ? Date.now() + (stampStatus.batchTTL ?? 0) * 1000
+          : Date.now() + 30 * 24 * 60 * 60 * 1000;
+        const imagesRefHex = result.imagesReference.startsWith('0x')
+          ? result.imagesReference.slice(2)
+          : result.imagesReference;
+        const metadataRefHex = result.metadataReference.startsWith('0x')
+          ? result.metadataReference.slice(2)
+          : result.metadataReference;
+        saveUploadReference(
+          imagesRefHex,
+          postageBatchId,
+          expiryDate,
+          `${zipFile.name} — images`,
+          false,
+          zipFile.size,
+          true
+        );
+        saveUploadReference(
+          metadataRefHex,
+          postageBatchId,
+          expiryDate,
+          `${zipFile.name} — metadata`,
+          false,
+          undefined,
+          true
+        );
+      } catch (err) {
+        console.warn('Failed to record NFT references in upload history:', err);
+      }
+
+      setStatusMessage({
+        step: 'Complete',
+        message: `NFT collection uploaded: ${result.totalImages} images, ${result.totalMetadata} metadata files`,
+        isSuccess: true,
+      });
+      setUploadStep('complete');
+      setSelectedDays(null);
+      setIsDistributing(false);
+      setTimeout(() => {
+        setUploadStep('idle');
+        setShowOverlay(false);
+        setIsLoading(false);
+        setUploadProgress(0);
+      }, 900000);
+    } catch (err) {
+      console.error('NFT collection self-custody upload failed:', err);
+      setStatusMessage({
+        step: 'Error',
+        message: 'NFT collection upload failed',
+        error: translateSelfCustodyUploadError(err),
+        isError: true,
+      });
+      setUploadStep('idle');
+      setUploadProgress(0);
+      setIsDistributing(false);
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Dispatch the right self-custody upload helper based on the UI toggles.
+   * Order matters: NFT-collection wins over generic archive handling, and
+   * folder upload wins over single-file when both are somehow set. The
+   * checkbox handlers below already prevent overlapping modes; this is just
+   * a defensive ordering for the dispatch.
+   */
+  const handleFileUpload = async () => {
+    if (!postageBatchId || !walletClient || !publicClient) {
+      console.error('Missing postage batch ID or wallet', {
+        postageBatchId,
+        walletClient,
+        publicClient,
+      });
+      return;
+    }
+
+    // NFT collection: a single ZIP with `images/` and `json/` folders.
+    if (isNFTCollection && selectedFile && selectedFile.name.toLowerCase().endsWith('.zip')) {
+      return handleSelfCustodyNFTUpload(selectedFile);
+    }
+
+    // Folder picker (webkitdirectory): a FileList already representing the tree.
+    if (isFolderUpload && selectedFiles.length > 0) {
+      const firstRel = (selectedFiles[0] as File & { webkitRelativePath?: string })
+        .webkitRelativePath;
+      const folderName = firstRel ? firstRel.split('/')[0] : 'folder';
+      const entries = selectedFiles
+        .map(f => {
+          const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath;
+          // Strip the leading "<folderName>/" so paths inside the manifest
+          // are relative to the folder root, not absolute. Matches what the
+          // legacy folder upload produced.
+          const path = rel ? rel.replace(new RegExp(`^${folderName}/`), '') : f.name;
+          return { path, data: f as File };
+        })
+        .filter(e => e.path && !e.path.endsWith('/'));
+      return handleSelfCustodyCollectionUpload(entries, folderName);
+    }
+
+    // Single archive (.zip / .tar / .tar.gz / .tgz) with `serveUncompressed` on:
+    // extract client-side and upload as a collection.
+    if (selectedFile && serveUncompressed && isArchiveFile(selectedFile.name)) {
+      try {
+        setStatusMessage({
+          step: 'Uploading',
+          message: `Extracting ${selectedFile.name}…`,
+        });
+        const archiveEntries = await extractArchiveToEntries(selectedFile);
+        if (archiveEntries.length === 0) {
+          throw new Error('Archive contained no uploadable files');
+        }
+        const folderName = selectedFile.name.replace(/\.(zip|tar|tar\.gz|tgz|gz)$/i, '');
+        return handleSelfCustodyCollectionUpload(
+          archiveEntries.map(e => ({ path: e.path, data: e.data })),
+          folderName
+        );
+      } catch (err) {
+        console.error('Archive extraction failed:', err);
+        setStatusMessage({
+          step: 'Error',
+          message: 'Failed to extract archive',
+          error: err instanceof Error ? err.message : String(err),
+          isError: true,
+        });
+        return;
+      }
+    }
+
+    // Multi-file mode: each file gets its own reference.
+    if (isMultipleFiles && selectedFiles.length > 0) {
+      return handleSelfCustodyMultiUpload(selectedFiles);
+    }
+
+    // Default: single file (which keeps the original isWebsite=false manifest
+    // shape — the user's file becomes the index document of a 1-fork tree).
+    if (selectedFile) {
+      return handleSelfCustodyUpload(selectedFile);
+    }
+
+    console.error('No file selection matched any upload mode', {
+      selectedFile,
+      selectedFiles,
+      isMultipleFiles,
+      isFolderUpload,
+      isNFTCollection,
+    });
   };
 
   const handleOpenDropdown = (dropdownName: string) => {
@@ -1844,6 +2062,43 @@ const SwapComponent: React.FC = () => {
 
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
+          {/* ── Self-custody info panel (always-on; SWIP §Client-side stamping mode α) */}
+          <div className={styles.inputGroup}>
+            <div className={styles.priceInfo}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                Self-custody storage{' '}
+                <span
+                  className={styles.tooltip}
+                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis, then your wallet calls createBatch on the upstream Postage Stamp contract directly with a hot-key address as on-chain owner. StampsRegistry is bypassed.
+Uploading: chain-independent — chunks are BMT-hashed and stamped locally in this tab; pre-stamped chunks are POSTed to a key-less Bee gateway."
+                >
+                  ?
+                </span>
+              </div>
+              {hotKey ? (
+                <div>
+                  🔑 Hot key (on-chain batch owner):{' '}
+                  <code style={{ fontSize: 12 }}>
+                    {hotKey.address.slice(0, 8)}…{hotKey.address.slice(-6)}
+                  </code>
+                </div>
+              ) : cachedHotKeyAddress ? (
+                <div>
+                  🔑 Cached hot-key address:{' '}
+                  <code style={{ fontSize: 12 }}>
+                    {cachedHotKeyAddress.slice(0, 8)}…{cachedHotKeyAddress.slice(-6)}
+                  </code>{' '}
+                  (will be re-derived on the next buy or upload)
+                </div>
+              ) : (
+                <div>
+                  🔑 Your wallet will be asked to sign a single message to derive a stamping key.
+                  The key never leaves this tab.
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className={styles.inputGroup}>
             <label className={styles.label} data-tooltip="Select chain with funds">
               From chain
@@ -1950,16 +2205,7 @@ const SwapComponent: React.FC = () => {
                   insufficientFunds ||
                   isPriceEstimating)
               }
-              onClick={
-                !hasMounted || !isConnected
-                  ? handleGetStarted
-                  : selectedChainId === ChainId.DAI &&
-                      fromToken &&
-                      getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-                      needsApproval
-                    ? handleBzzApproval
-                    : handleSwap
-              }
+              onClick={!hasMounted || !isConnected ? handleGetStarted : handleSwap}
             >
               {isLoading ? (
                 <div>Loading...</div>
@@ -1979,33 +2225,14 @@ const SwapComponent: React.FC = () => {
                 'Insufficient Balance'
               ) : isTopUp ? (
                 'Top Up Batch'
-              ) : selectedChainId === ChainId.DAI &&
-                fromToken &&
-                getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-                needsApproval ? (
-                <div className={styles.approvalButtonContent}>
-                  <span>{approvalType === 'exact' ? 'Approve' : 'Approve Infinite'}</span>
-                  <span
-                    className={`${styles.approvalArrow} ${showApprovalDropdown ? styles.approvalArrowUp : ''}`}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setShowApprovalDropdown(!showApprovalDropdown);
-                    }}
-                  >
-                    ▼
-                  </span>
-                </div>
               ) : (
                 'Buy Storage'
               )}
             </button>
 
-            {/* Approval dropdown positioned relative to the main button */}
-            {selectedChainId === ChainId.DAI &&
-              fromToken &&
-              getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-              needsApproval &&
-              showApprovalDropdown && (
+            {/* Approval dropdown — kept so the user can pre-pick exact vs infinite
+                approve mode for the BZZ allowance the buy flow will request. */}
+            {false && showApprovalDropdown && (
                 <div className={styles.approvalOptionsOutside} ref={approvalDropdownRef}>
                   <button
                     className={`${styles.approvalOption} ${approvalType === 'exact' ? styles.approvalOptionActive : ''}`}
@@ -2053,13 +2280,10 @@ const SwapComponent: React.FC = () => {
                     setExecutionResult(null);
                     setSelectedFile(null);
                     setSelectedFiles([]);
-                    setIsMultipleFiles(false);
                     setMultiFileResults([]);
-                    setIsWebpageUpload(false);
-                    setIsTarFile(false);
-                    setIsFolderUpload(false);
+                    setNftCollectionResult(null);
                     setIsDistributing(false);
-                    setIsNewStampCreated(false); // Reset the new stamp warning
+                    setIsNewStampCreated(false);
                   }}
                 >
                   ×
@@ -2117,6 +2341,44 @@ const SwapComponent: React.FC = () => {
                           }...${postageBatchId.slice(-4)}`
                         : 'Upload File'}
                     </h3>
+
+                    {/* Bee gateway health banner. Shown only when the node is
+                        not OK so a healthy gateway adds zero visual noise. We
+                        intentionally render it ABOVE the data-cannot-be-deleted
+                        warning because a sick gateway is the more actionable
+                        problem — the user can pick a different node, while the
+                        data warning is informational. */}
+                    {(beeNodeHealth.state.status === 'unreachable' ||
+                      beeNodeHealth.state.status === 'unhealthy') && (
+                      <div
+                        className={`${styles.healthBanner} ${
+                          beeNodeHealth.state.status === 'unreachable'
+                            ? styles.healthBannerError
+                            : styles.healthBannerWarn
+                        }`}
+                      >
+                        <span className={styles.healthBannerTitle}>
+                          {beeNodeHealth.state.status === 'unreachable'
+                            ? '⛔ Bee gateway unreachable'
+                            : '⚠️ Bee gateway unhealthy'}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.healthBannerRetry}
+                          onClick={beeNodeHealth.refresh}
+                          disabled={beeNodeHealth.isProbing}
+                        >
+                          {beeNodeHealth.isProbing ? 'Checking…' : 'Retry'}
+                        </button>
+                        {beeNodeHealth.state.message && (
+                          <div className={styles.healthBannerDetail}>
+                            {beeNodeHealth.state.message}. Uploads will fail until the gateway
+                            recovers.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className={styles.uploadWarning}>
                       Warning! Uploaded data cannot be deleted - it will be removed once the stamp
                       has expired. Uploaded data exists publicly in the network - anyone who knows
@@ -2128,14 +2390,17 @@ const SwapComponent: React.FC = () => {
                         accessible on the network.
                       </div>
                     )}
-                    {statusMessage.step === 'waiting_creation' ||
-                    statusMessage.step === 'waiting_usable' ? (
+                    {statusMessage.step === 'waiting_creation' ? (
                       <div className={styles.waitingMessage}>
                         <div className={styles.spinner}></div>
                         <p>{statusMessage.message}</p>
                       </div>
                     ) : (
                       <div className={styles.uploadForm}>
+                        {/* Upload-mode toggles. Each one is mutually exclusive
+                            with the others (the onChange handlers below clear
+                            sibling state when activated), matching how the
+                            legacy 1.1.x UI behaved. */}
                         <div className={styles.checkboxWrapper}>
                           <input
                             type="checkbox"
@@ -2143,10 +2408,10 @@ const SwapComponent: React.FC = () => {
                             checked={isMultipleFiles}
                             onChange={e => {
                               setIsMultipleFiles(e.target.checked);
-                              // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
                               setIsFolderUpload(false);
+                              setIsNFTCollection(false);
                             }}
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
@@ -2163,17 +2428,15 @@ const SwapComponent: React.FC = () => {
                             checked={isFolderUpload}
                             onChange={e => {
                               setIsFolderUpload(e.target.checked);
-                              // Automatically enable webpage upload for folders
                               if (e.target.checked) {
                                 setIsWebpageUpload(true);
                               } else {
-                                // Reset webpage upload when folder upload is disabled
                                 setIsWebpageUpload(false);
                               }
-                              // Reset selections when switching modes
                               setSelectedFile(null);
                               setSelectedFiles([]);
                               setIsMultipleFiles(false);
+                              setIsNFTCollection(false);
                             }}
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
@@ -2181,13 +2444,9 @@ const SwapComponent: React.FC = () => {
                           <label
                             htmlFor="folder-upload"
                             className={styles.checkboxLabel}
-                            title={
-                              isFolderUpload
-                                ? '📁 Select entire folders as websites. Browser will ask for permission to access folder contents - this is normal security behavior.'
-                                : ''
-                            }
+                            title="📁 Select an entire folder. Browser will ask for permission to access folder contents — this is normal security behaviour."
                           >
-                            Multiple files in a folder (one hash)
+                            Multiple files in a folder (one hash, served as a website)
                           </label>
                         </div>
 
@@ -2196,40 +2455,17 @@ const SwapComponent: React.FC = () => {
                             type="file"
                             multiple={isMultipleFiles || isFolderUpload}
                             {...(isFolderUpload && { webkitdirectory: 'true' })}
-                            onChange={async e => {
+                            onChange={e => {
+                              const files = Array.from(e.target.files || []);
                               if (isFolderUpload) {
-                                try {
-                                  const archiveFile = await handleFolderSelection(e.target, {
-                                    setUploadProgress,
-                                    setStatusMessage,
-                                  });
-                                  if (archiveFile) {
-                                    setSelectedFile(archiveFile);
-                                    setSelectedFiles([]);
-                                    setIsTarFile(true); // Folder archives are treated as tar files
-                                    setServeUncompressed(true); // Folder archives should be served uncompressed
-                                  }
-                                } catch (error) {
-                                  console.error('Folder upload error:', error);
-                                  setStatusMessage({
-                                    step: 'error',
-                                    message: `Folder upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                                  });
-                                }
+                                setSelectedFiles(files);
+                                setSelectedFile(null);
                               } else if (isMultipleFiles) {
-                                const files = Array.from(e.target.files || []);
                                 setSelectedFiles(files);
                                 setSelectedFile(null);
                               } else {
-                                const file = e.target.files?.[0] || null;
-                                setSelectedFile(file);
+                                setSelectedFile(files[0] || null);
                                 setSelectedFiles([]);
-                                setIsTarFile(
-                                  (file?.name.toLowerCase().endsWith('.tar') ||
-                                    file?.name.toLowerCase().endsWith('.zip') ||
-                                    file?.name.toLowerCase().endsWith('.gz')) ??
-                                    false
-                                );
                               }
                             }}
                             className={styles.fileInput}
@@ -2238,8 +2474,11 @@ const SwapComponent: React.FC = () => {
                           />
                           <label htmlFor="file-upload" className={styles.fileInputLabel}>
                             {isFolderUpload
-                              ? selectedFile
-                                ? `Folder: ${selectedFile.name}`
+                              ? selectedFiles.length > 0
+                                ? `Folder: ${
+                                    (selectedFiles[0] as File & { webkitRelativePath?: string })
+                                      .webkitRelativePath?.split('/')[0] || 'folder'
+                                  } (${selectedFiles.length} files)`
                                 : 'Select Folder (auto-index)'
                               : isMultipleFiles
                                 ? selectedFiles.length > 0
@@ -2264,7 +2503,6 @@ const SwapComponent: React.FC = () => {
                           </div>
                         )}
 
-                        {/* File size warnings */}
                         {(selectedFile || selectedFiles.length > 0) && (
                           <div className={styles.fileSizeInfo}>
                             <div className={styles.fileSizeTotal}>
@@ -2272,22 +2510,31 @@ const SwapComponent: React.FC = () => {
                             </div>
                             {!exceedsMaximumUploadSize() && hasVeryLargeFiles() && (
                               <div className={styles.largeFileWarning}>
-                                ⚠️ Large files detected ({'>'}2GB). Upload may take several hours.
-                                Please ensure stable internet connection and keep this tab open.
+                                ⚠️ Large file detected ({'>'}2GB). Self-custody upload chunks +
+                                stamps locally — keep this tab open and your wallet unlocked
+                                throughout. Aborting in the middle is safe (the chunks are
+                                idempotent), but the upload won't resume from where it stopped.
                               </div>
                             )}
                             {exceedsMaximumUploadSize() && (
                               <div className={styles.errorMessage}>
-                                ❌ Total upload size exceeds the maximum allowed size of{' '}
-                                {FILE_SIZE_CONFIG.maximumFileGB}GB. Please select smaller files or
-                                fewer files.
+                                ❌ Total upload size exceeds the maximum allowed of{' '}
+                                {FILE_SIZE_CONFIG.maximumFileGB}GB. Pick smaller / fewer files.
                               </div>
                             )}
                           </div>
                         )}
 
+                        {/* Single-file ZIP/GZ extras: serve uncompressed (extract
+                            the archive locally and build a Mantaray manifest)
+                            and the NFT-collection toggle. Same toggles as 1.1.x;
+                            both feed into the new self-custody pipeline. */}
                         {!isMultipleFiles &&
+                          !isFolderUpload &&
                           (selectedFile?.name.toLowerCase().endsWith('.zip') ||
+                            selectedFile?.name.toLowerCase().endsWith('.tar') ||
+                            selectedFile?.name.toLowerCase().endsWith('.tar.gz') ||
+                            selectedFile?.name.toLowerCase().endsWith('.tgz') ||
                             selectedFile?.name.toLowerCase().endsWith('.gz')) && (
                             <div className={styles.checkboxWrapper}>
                               <input
@@ -2302,7 +2549,7 @@ const SwapComponent: React.FC = () => {
                                 Serve uncompressed
                                 <span
                                   className={styles.tooltip}
-                                  title="You will be able to see all files in archive and browse them through index.html file"
+                                  title="Extract the archive locally, upload each file as its own Mantaray fork. The folder will be browseable via index.html on the resulting reference."
                                 >
                                   ?
                                 </span>
@@ -2310,52 +2557,67 @@ const SwapComponent: React.FC = () => {
                             </div>
                           )}
 
-                        {!isMultipleFiles && selectedFile?.name.toLowerCase().endsWith('.zip') && (
-                          <div className={styles.checkboxWrapper}>
-                            <input
-                              type="checkbox"
-                              id="nft-collection"
-                              checked={isNFTCollection}
-                              onChange={e => setIsNFTCollection(e.target.checked)}
-                              className={styles.checkbox}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                            <label htmlFor="nft-collection" className={styles.checkboxLabel}>
-                              Upload NFT collection
-                              <span
-                                className={styles.tooltip}
-                                title="Upload a ZIP file containing 'images' and 'json' folders. Images will be uploaded separately, and JSON metadata will be updated with bzz.link URLs pointing to the uploaded images."
-                              >
-                                ?
-                              </span>
-                            </label>
-                          </div>
-                        )}
+                        {!isMultipleFiles &&
+                          !isFolderUpload &&
+                          selectedFile?.name.toLowerCase().endsWith('.zip') && (
+                            <div className={styles.checkboxWrapper}>
+                              <input
+                                type="checkbox"
+                                id="nft-collection"
+                                checked={isNFTCollection}
+                                onChange={e => {
+                                  setIsNFTCollection(e.target.checked);
+                                  if (e.target.checked) {
+                                    setServeUncompressed(false);
+                                  }
+                                }}
+                                className={styles.checkbox}
+                                disabled={uploadStep === 'uploading'}
+                              />
+                              <label htmlFor="nft-collection" className={styles.checkboxLabel}>
+                                Upload NFT collection
+                                <span
+                                  className={styles.tooltip}
+                                  title="Upload a ZIP file containing 'images' and 'json' folders. Images are uploaded as one Mantaray collection; JSON metadata is rewritten to point at bzz.link URLs and uploaded as a second collection."
+                                >
+                                  ?
+                                </span>
+                              </label>
+                            </div>
+                          )}
 
                         <button
                           onClick={handleFileUpload}
                           disabled={
-                            (isMultipleFiles ? selectedFiles.length === 0 : !selectedFile) ||
+                            (isMultipleFiles || isFolderUpload
+                              ? selectedFiles.length === 0
+                              : !selectedFile) ||
                             uploadStep === 'uploading' ||
-                            exceedsMaximumUploadSize()
+                            exceedsMaximumUploadSize() ||
+                            // Block uploads when we KNOW the gateway is broken.
+                            // 'unknown' (no probe yet) and 'checking' do NOT
+                            // block — we'd rather let an early upload through
+                            // than block on a slow first probe.
+                            beeNodeHealth.state.status === 'unreachable' ||
+                            beeNodeHealth.state.status === 'unhealthy'
                           }
                           className={styles.uploadButton}
                         >
                           {uploadStep === 'uploading' ? (
                             <>
                               <div className={styles.smallSpinner}></div>
-                              {statusMessage.step === '404'
-                                ? 'Waiting for storage to be usable...'
-                                : statusMessage.step === '422'
-                                  ? 'Waiting for storage to be usable...'
-                                  : statusMessage.step === 'Uploading'
-                                    ? isDistributing
-                                      ? 'Distributing file chunks...'
-                                      : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                    : 'Processing...'}
+                              {statusMessage.step === 'Uploading'
+                                ? isDistributing
+                                  ? 'Distributing file chunks...'
+                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
+                                : 'Processing...'}
                             </>
                           ) : isMultipleFiles ? (
                             `Upload ${selectedFiles.length} files`
+                          ) : isFolderUpload ? (
+                            `Upload folder (${selectedFiles.length} files)`
+                          ) : isNFTCollection ? (
+                            'Upload NFT collection'
                           ) : (
                             'Upload'
                           )}
@@ -2407,19 +2669,30 @@ const SwapComponent: React.FC = () => {
                 {uploadStep === 'complete' && (
                   <div className={styles.successMessage}>
                     <div className={styles.successIcon}>✓</div>
-                    <h3>{isMultipleFiles ? `Upload Complete!` : 'Upload Successful!'}</h3>
+                    <h3>
+                      {multiFileResults.length > 0
+                        ? 'Upload Complete!'
+                        : nftCollectionResult
+                          ? 'NFT Collection Uploaded Successfully!'
+                          : 'Upload Successful!'}
+                    </h3>
 
-                    {isMultipleFiles && multiFileResults.length > 0 ? (
+                    {/* Multi-file: list each file with its own reference. */}
+                    {multiFileResults.length > 0 ? (
                       <div className={styles.multiFileResults}>
                         {multiFileResults.map((result, index) => (
                           <div
                             key={index}
-                            className={`${styles.fileResult} ${result.success ? styles.success : styles.error}`}
+                            className={`${styles.fileResult} ${
+                              result.success ? styles.success : styles.error
+                            }`}
                           >
                             <div className={styles.fileResultHeader}>
                               <span className={styles.fileResultName}>{result.filename}</span>
                               <span
-                                className={`${styles.fileResultStatus} ${result.success ? styles.success : styles.error}`}
+                                className={`${styles.fileResultStatus} ${
+                                  result.success ? styles.success : styles.error
+                                }`}
                               >
                                 {result.success ? 'Success' : 'Failed'}
                               </span>
@@ -2428,7 +2701,7 @@ const SwapComponent: React.FC = () => {
                               <div
                                 className={styles.fileResultReference}
                                 onClick={() => {
-                                  navigator.clipboard.writeText(result.reference);
+                                  navigator.clipboard.writeText(result.reference || '');
                                 }}
                                 title="Click to copy reference"
                               >
@@ -2442,10 +2715,12 @@ const SwapComponent: React.FC = () => {
                         ))}
                       </div>
                     ) : nftCollectionResult ? (
-                      // NFT Collection upload success
+                      // NFT collection: two references with their own copy/open
+                      // controls. Mirrors the old custodial UI exactly so any
+                      // downstream NFT-deploy scripts that screen-scrape this
+                      // panel keep working.
                       <div className={styles.nftCollectionResults}>
                         <div className={styles.nftCollectionSummary}>
-                          <h4>NFT Collection Uploaded Successfully!</h4>
                           <p>
                             {nftCollectionResult.totalImages} images and{' '}
                             {nftCollectionResult.totalMetadata} metadata files processed
@@ -2453,123 +2728,93 @@ const SwapComponent: React.FC = () => {
                         </div>
 
                         <div className={styles.nftReferenceGroup}>
-                          <div className={styles.referenceBox}>
-                            <p>
-                              <strong>Images Reference:</strong>
-                            </p>
-                            <div className={styles.referenceCopyWrapper}>
-                              <code
-                                className={styles.referenceCode}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(
-                                    nftCollectionResult.imagesReference
-                                  );
-                                  const codeEl = document.querySelectorAll(
-                                    `.${styles.referenceCode}`
-                                  )[0];
-                                  if (codeEl) {
-                                    codeEl.setAttribute('data-copied', 'true');
-                                    setTimeout(() => {
-                                      codeEl.setAttribute('data-copied', 'false');
-                                    }, 2000);
-                                  }
-                                }}
-                                data-copied="false"
-                              >
-                                {nftCollectionResult.imagesReference}
-                              </code>
-                            </div>
-                            <div className={styles.linkButtonsContainer}>
-                              <button
-                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                                onClick={() => {
-                                  const url = `${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/`;
-                                  navigator.clipboard.writeText(url);
-                                  const button = document.querySelectorAll(
-                                    `.${styles.copyLinkButton}`
-                                  )[0];
-                                  if (button) {
-                                    const originalText = button.textContent;
-                                    button.textContent = 'Link copied!';
-                                    setTimeout(() => {
-                                      button.textContent = originalText;
-                                    }, 2000);
-                                  }
-                                }}
-                              >
-                                Copy images link
-                              </button>
-                              <a
-                                href={`${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.referenceLink}
-                              >
-                                View images
-                              </a>
-                            </div>
-                          </div>
+                          {(() => {
+                            const base = beeApiUrl.endsWith('/')
+                              ? `${beeApiUrl}bzz/`
+                              : `${beeApiUrl}/bzz/`;
+                            const stripHexLocal = (h: string) =>
+                              h.startsWith('0x') ? h.slice(2) : h;
+                            const imagesRef = stripHexLocal(nftCollectionResult.imagesReference);
+                            const metadataRef = stripHexLocal(
+                              nftCollectionResult.metadataReference
+                            );
+                            return (
+                              <>
+                                <div className={styles.referenceBox}>
+                                  <p>
+                                    <strong>Images Reference:</strong>
+                                  </p>
+                                  <div className={styles.referenceCopyWrapper}>
+                                    <code
+                                      className={styles.referenceCode}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(imagesRef);
+                                      }}
+                                      data-copied="false"
+                                    >
+                                      {imagesRef}
+                                    </code>
+                                  </div>
+                                  <div className={styles.linkButtonsContainer}>
+                                    <button
+                                      className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(`${base}${imagesRef}/`);
+                                      }}
+                                    >
+                                      Copy images link
+                                    </button>
+                                    <a
+                                      href={`${base}${imagesRef}/`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={styles.referenceLink}
+                                    >
+                                      View images
+                                    </a>
+                                  </div>
+                                </div>
 
-                          <div className={styles.referenceBox}>
-                            <p>
-                              <strong>Metadata Reference:</strong>
-                            </p>
-                            <div className={styles.referenceCopyWrapper}>
-                              <code
-                                className={styles.referenceCode}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(
-                                    nftCollectionResult.metadataReference
-                                  );
-                                  const codeEl = document.querySelectorAll(
-                                    `.${styles.referenceCode}`
-                                  )[1];
-                                  if (codeEl) {
-                                    codeEl.setAttribute('data-copied', 'true');
-                                    setTimeout(() => {
-                                      codeEl.setAttribute('data-copied', 'false');
-                                    }, 2000);
-                                  }
-                                }}
-                                data-copied="false"
-                              >
-                                {nftCollectionResult.metadataReference}
-                              </code>
-                            </div>
-                            <div className={styles.linkButtonsContainer}>
-                              <button
-                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                                onClick={() => {
-                                  const url = `${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/`;
-                                  navigator.clipboard.writeText(url);
-                                  const button = document.querySelectorAll(
-                                    `.${styles.copyLinkButton}`
-                                  )[1];
-                                  if (button) {
-                                    const originalText = button.textContent;
-                                    button.textContent = 'Link copied!';
-                                    setTimeout(() => {
-                                      button.textContent = originalText;
-                                    }, 2000);
-                                  }
-                                }}
-                              >
-                                Copy metadata link
-                              </button>
-                              <a
-                                href={`${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.referenceLink}
-                              >
-                                View metadata
-                              </a>
-                            </div>
-                          </div>
+                                <div className={styles.referenceBox}>
+                                  <p>
+                                    <strong>Metadata Reference:</strong>
+                                  </p>
+                                  <div className={styles.referenceCopyWrapper}>
+                                    <code
+                                      className={styles.referenceCode}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(metadataRef);
+                                      }}
+                                      data-copied="false"
+                                    >
+                                      {metadataRef}
+                                    </code>
+                                  </div>
+                                  <div className={styles.linkButtonsContainer}>
+                                    <button
+                                      className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(`${base}${metadataRef}/`);
+                                      }}
+                                    >
+                                      Copy metadata link
+                                    </button>
+                                    <a
+                                      href={`${base}${metadataRef}/`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={styles.referenceLink}
+                                    >
+                                      View metadata
+                                    </a>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     ) : (
-                      // Single file upload success
                       <div className={styles.referenceBox}>
                         <p>Reference:</p>
                         <div className={styles.referenceCopyWrapper}>
@@ -2591,46 +2836,53 @@ const SwapComponent: React.FC = () => {
                             {statusMessage.reference}
                           </code>
                         </div>
-                        <div className={styles.linkButtonsContainer}>
-                          <button
-                            className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                            onClick={() => {
-                              const url =
-                                statusMessage.filename && !isArchiveFile(statusMessage.filename)
-                                  ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                                  : `${BEE_GATEWAY_URL}${statusMessage.reference}/`;
-                              navigator.clipboard.writeText(url);
-
-                              // Show a temporary message using a more specific selector
-                              const button = document.querySelector(`.${styles.copyLinkButton}`);
-                              if (button) {
-                                const originalText = button.textContent;
-                                button.textContent = 'Link copied!';
-                                setTimeout(() => {
-                                  button.textContent = originalText;
-                                }, 2000);
-                              }
-                            }}
-                          >
-                            Copy link
-                          </button>
-                          <a
-                            href={
-                              statusMessage.filename && !isArchiveFile(statusMessage.filename)
-                                ? `${BEE_GATEWAY_URL}${statusMessage.reference}/${statusMessage.filename}`
-                                : `${BEE_GATEWAY_URL}${statusMessage.reference}/`
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={styles.referenceLink}
-                          >
-                            Open link
-                          </a>
-                        </div>
+                        {(() => {
+                          // Resolve the retrieval URL against the same Bee node we
+                          // uploaded to, not the hard-coded public gateway. When a
+                          // user is talking to their own bee (e.g. localhost:1633)
+                          // the chunks exist there first; the public gateway can't
+                          // serve them until they propagate. So the link must
+                          // follow `beeApiUrl`.
+                          const base = beeApiUrl.endsWith('/')
+                            ? `${beeApiUrl}bzz/`
+                            : `${beeApiUrl}/bzz/`;
+                          const retrievalUrl =
+                            statusMessage.filename && !isArchiveFile(statusMessage.filename)
+                              ? `${base}${statusMessage.reference}/${statusMessage.filename}`
+                              : `${base}${statusMessage.reference}/`;
+                          return (
+                            <div className={styles.linkButtonsContainer}>
+                              <button
+                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(retrievalUrl);
+                                  const button = document.querySelector(`.${styles.copyLinkButton}`);
+                                  if (button) {
+                                    const originalText = button.textContent;
+                                    button.textContent = 'Link copied!';
+                                    setTimeout(() => {
+                                      button.textContent = originalText;
+                                    }, 2000);
+                                  }
+                                }}
+                              >
+                                Copy link
+                              </button>
+                              <a
+                                href={retrievalUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.referenceLink}
+                              >
+                                Open link
+                              </a>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 
-                    {uploadStampInfo && (
+                    {uploadStampInfo && multiFileResults.length === 0 && !nftCollectionResult && (
                       <div className={styles.stampInfoBox}>
                         <h4>Storage Stamps Details</h4>
                         <div className={styles.stampDetails}>
@@ -2678,15 +2930,10 @@ const SwapComponent: React.FC = () => {
                         setExecutionResult(null);
                         setSelectedFile(null);
                         setSelectedFiles([]);
-                        setIsMultipleFiles(false);
                         setMultiFileResults([]);
-                        setIsWebpageUpload(false);
-                        setIsTarFile(false);
-                        setIsFolderUpload(false);
+                        setNftCollectionResult(null);
                         setIsDistributing(false);
                         setUploadStampInfo(null);
-                        setIsNFTCollection(false);
-                        setNftCollectionResult(null);
                       }}
                     >
                       Close
@@ -2788,7 +3035,6 @@ const SwapComponent: React.FC = () => {
           setShowStampList={setShowStampList}
           address={address}
           beeApiUrl={beeApiUrl}
-          nodeAddress={nodeAddress}
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}

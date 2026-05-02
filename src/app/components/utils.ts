@@ -403,14 +403,20 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
     });
 
     if (!response.ok) {
-      console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
+      // 404 is the normal response for self-custody batches because Bee's
+      // `/stamps` endpoint only lists batches owned by Bee's own wallet.
+      // Suppress the noisy console.error in that case — silently return null
+      // and let callers fall back to locally-stored metadata.
+      if (response.status !== 404) {
+        console.warn(`Bee /stamps returned ${response.status} ${response.statusText}`);
+      }
       return null;
     }
 
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error(`Error fetching stamp info for ${batchId}:`, error);
+    console.warn(`Could not reach Bee /stamps for ${batchId.slice(0, 10)}…:`, error);
     return null;
   }
 };
