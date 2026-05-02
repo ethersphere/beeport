@@ -11,43 +11,41 @@ Status legend:
 
 ## 1. Quick wins (≤ ½ day, low risk)
 
-### 1.1 Defer `saveIssuerStateToSOC` off the critical path
+### 1.1 Defer `saveIssuerStateToSOC` off the critical path — `[x]` shipped
 **Files:** `src/app/components/ClientSideUpload.ts`, `src/app/components/SwapComponent.tsx`
 
-Today the upload `await`s the SOC write before resolving, so the user sees a "Saving issuer state to Swarm (SOC)…" tail after the bar hits 100 %. The SOC write is non-critical for *this* upload (the file is already on Swarm); it only matters for cross-device recovery.
+`ClientSideUploadResult.issuerStateSocPromise` is now a `Promise<IssuerStateSocResult | undefined>` that runs in the background. The outer `uploadFileClientSide` promise resolves as soon as the manifest reference is known; the SOC write happens after, observed by `SwapComponent` for logging only. Stamper state is force-persisted before the SOC promise kicks off so a tab close mid-SOC doesn't lose file-upload bucket counters.
 
-**Plan:**
-- Change the `ClientSideUploadResult` to expose `issuerStateSoc` as a `Promise<…>` instead of a resolved value.
-- Resolve the upload promise as soon as the manifest reference is known.
-- Background the SOC write; surface failures via `console.warn` (already done) plus a soft toast.
-- Persist the local stamper state forcibly **before** kicking off the background SOC write so a tab close mid-SOC doesn't lose bucket counters.
-
-### 1.2 Adaptive concurrency
+### 1.2 Adaptive concurrency — `[x]` shipped
 **Files:** `src/app/components/ClientSideUpload.ts`
 
-`DEFAULT_CONCURRENCY = 12` is a safe default; HTTP/2 gateways like `beeport.xyz` can handle ~32, self-hosted HTTP/1.1 nodes choke past 8.
+After the first successful chunk we read `PerformanceResourceTiming.nextHopProtocol` for the just-completed `/chunks` request. If it's `'h2'`, we mutate `queue.concurrency` (and capacity) up to `HTTP2_TARGET_CONCURRENCY = 32` mid-flight — cafe-utility's `AsyncQueue` reads these on every `process()` tick so the new slots fill on the next task completion. HTTP/1.1 stays at the conservative default. Down-ramp on consecutive 429s is *not* implemented; existing per-chunk retry handles transient throttling.
 
-**Plan:**
-- Detect HTTP version from the first `/chunks` response (Performance API `nextHopProtocol`).
-- Ramp the queue's `concurrency` up to 32 when HTTP/2, leave at 12 otherwise.
-- Back off on consecutive 429s (halve concurrency, exponential warm-up).
-
-### 1.3 Persist stamper state on `beforeunload`
+### 1.3 Persist stamper state on `beforeunload` — `[x]` shipped
 **Files:** `src/app/components/ClientSideUpload.ts`
 
-The 2 s debounce can lose up to 2 s worth of bucket increments on a tab close. Tiny window, but trivially fixable.
+`beforeunload` listener registered for the duration of file upload + the deferred SOC promise (since SOC mutates the same Stamper). Removed exactly once, in the SOC promise's `finally` on success and in an outer `catch` on validation/upload failure. Closes the 2 s debounce window without changing per-chunk hot-path cost.
 
-**Plan:** Register a `beforeunload` handler during an active upload that synchronously calls `saveStamperState`. Unregister in the `finally` block.
-
-### 1.4 Diagnostic counters in `Complete` status
+### 1.4 Diagnostic counters in `Complete` status — `[x]` shipped
 **Files:** `src/app/components/ClientSideUpload.ts`, `src/app/components/SwapComponent.tsx`
 
-Surface `fileChunkCount`, `manifestChunkCount`, average chunks/s and retry count to the user at upload completion. Helps users (and us) tell "fast gateway" from "slow gateway" at a glance and gives a benchmark for future optimisations.
+`ClientSideUploadResult` now carries `elapsedMs`, `averageChunksPerSecond`, `retryCount`, `detectedHttpProtocol`, `effectiveConcurrency`. The success status appends a one-line summary like `· 562 chunks in 4.2s (134/s, H2 ×32)` so users (and bug reports) can tell a fast gateway from a slow one at a glance.
 
-### 1.5 Visible stamp-utilization warning
-**Files:** likely a new helper + `SwapComponent.tsx`
+### 1.5 Stamp-utilization pre-flight check — `[x]` shipped (logic only)
+**Files:** `src/app/components/ClientSideUpload.ts`
 
-Bee returns `utilization` per stamp. We should refuse to start an upload when the projected `chunksUploaded` would exceed the batch's remaining capacity, and warn at, say, 80 %. Today the user can burn slot allocations and only learn after a "Bucket is full" thrown by `Stamper.stamp()`.
+Exported `checkProjectedStampCapacity(stamper, fileSizeBytes)` returns `'ok' | 'warn' | 'fail'` based on average bucket fill projected to post-upload. `uploadFileClientSide` now refuses (throws) at ≥95% projected utilization and `console.warn`s at ≥80%. Best-effort — bucket distribution is hash-driven, so an unevenly-distributed file may still hit "Bucket is full" earlier.
+
+**Still TODO:** call this from the upload UI at file-select time so the user sees the warning *before* clicking Upload (currently they only see the warning in console). One-line addition in `SwapComponent`'s file-select handler — moved to §1.6 below.
+
+### 1.6 Surface stamp-utilization warnings in the upload UI
+**Files:** `src/app/components/SwapComponent.tsx`
+
+Now that the helper exists (§1.5), call it from the file-select handler against the current `Stamper` (loaded via `loadStamperState` + reconstructed). Show:
+- A "warning" banner above the file input when `level === 'warn'`
+- An inline error + disabled Upload button when `level === 'fail'`
+
+Reuse the `healthBanner` CSS classes added for the Bee node health probe.
 
 ---
 

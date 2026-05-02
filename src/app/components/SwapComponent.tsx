@@ -1291,7 +1291,30 @@ const SwapComponent: React.FC = () => {
       const refHex = result.reference.startsWith('0x')
         ? result.reference.slice(2)
         : result.reference;
-      console.log('🎉 Self-custody upload complete', result);
+      console.log('🎉 Self-custody upload complete', {
+        reference: refHex,
+        fileChunks: result.fileChunkCount,
+        manifestChunks: result.manifestChunkCount,
+        elapsedMs: result.elapsedMs.toFixed(0),
+        chunksPerSecond: result.averageChunksPerSecond.toFixed(1),
+        retries: result.retryCount,
+        protocol: result.detectedHttpProtocol ?? 'unknown',
+        concurrency: result.effectiveConcurrency,
+      });
+
+      // SOC issuer-state backup runs in the background now (deferred off the
+      // critical path — see ClientSideUpload.ts). Observe it for logging
+      // only; the user has already been told the upload is complete.
+      result.issuerStateSocPromise
+        .then(soc => {
+          if (soc) {
+            console.info('[Self-custody] SOC issuer-state backup completed', soc);
+          }
+        })
+        .catch(() => {
+          // Already console.warn'd inside the promise body. Swallow here so
+          // it doesn't surface as an unhandled rejection.
+        });
 
       // Verify the manifest is actually retrievable from the gateway. Bee
       // accepted every chunk POST, but a quick GET /bzz/<ref>/ confirms the
@@ -1353,11 +1376,27 @@ const SwapComponent: React.FC = () => {
           : retrievable === 'no'
             ? ' ⚠ chunks accepted but gateway could not retrieve yet — try in a few seconds'
             : ' (retrieval probe inconclusive)';
+
+      // Compact one-line diagnostic appended to the success message. Helps
+      // users (and us, on bug reports) tell "fast gateway" from "slow
+      // gateway" at a glance, and gives us a benchmark to compare future
+      // optimisations against.
+      const totalChunks = result.fileChunkCount + result.manifestChunkCount;
+      const elapsedSec = result.elapsedMs / 1000;
+      const protoLabel = result.detectedHttpProtocol
+        ? result.detectedHttpProtocol.toUpperCase()
+        : 'HTTP';
+      const retriesLabel = result.retryCount > 0 ? `, ${result.retryCount} retries` : '';
+      const diagnosticSuffix =
+        ` · ${totalChunks} chunks in ${elapsedSec.toFixed(1)}s ` +
+        `(${result.averageChunksPerSecond.toFixed(0)}/s, ${protoLabel} ×${result.effectiveConcurrency}${retriesLabel})`;
+
       setStatusMessage({
         step: 'Complete',
         message:
           `Upload Successful. Reference: ${refHex.slice(0, 6)}...${refHex.slice(-4)}` +
-          retrievalSuffix,
+          retrievalSuffix +
+          diagnosticSuffix,
         isSuccess: true,
         reference: refHex,
         filename: file.name,
