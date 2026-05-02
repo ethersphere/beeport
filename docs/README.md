@@ -26,6 +26,12 @@ Welcome to the comprehensive guide for uploading files to the Swarm network usin
 - **[ENS Technical Reference](./ens-technical-reference.md)** - Detailed ENS implementation overview
 - **[File Formats & Limits](./file-formats-limits.md)** - Supported formats and size limitations
 - **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
+- **[Roadmap / TODO](./TODO.md)** - Prioritised follow-ups and known limitations
+
+### Swarm Improvement Proposals (drafts)
+
+- **[SWIP — Client-side postage stamping](./swip-XXXX-client-side-postage-stamping.md)** - Self-custody mode α: per-chunk stamp signing in the browser
+- **[SWIP — Streamed postage stamp signing](./swip-XXXX-streamed-postage-stamp-signing.md)** - Streaming `/chunks` upload with inline stamps
 
 ## 🚀 Quick Start
 

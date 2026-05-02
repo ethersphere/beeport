@@ -79,13 +79,19 @@ graph TB
 ```
 src/app/
 ├── components/
-│   ├── SwapComponent.tsx           # Main upload interface
-│   ├── FileUploadUtils.ts          # Upload logic and utilities
-│   ├── NFTCollectionProcessor.ts   # NFT collection processing
-│   ├── ArchiveProcessor.ts         # ZIP/TAR file handling
-│   └── css/                        # Component styles
-├── page.tsx                        # Main application page
-└── layout.tsx                      # Root layout
+│   ├── SwapComponent.tsx              # Main upload UI / orchestration
+│   ├── ClientSideUpload.ts            # SWIP client-side BMT + stamp + POST /chunks
+│   ├── ClientStamping.ts              # Hot-key derivation + persisted issuer state
+│   ├── SelfCustodyBatch.ts            # On-chain createBatch (direct + StampsRegistryV2)
+│   ├── PostageContract.ts             # Read-only Postage Stamp contract helpers
+│   ├── IssuerStateSOC.ts              # Issuer-state recovery via Single Owner Chunk
+│   ├── BeeNodeHealth.ts               # Pre-upload Bee gateway health probe + hook
+│   ├── NFTCollectionClientSide.ts     # NFT collection metadata processing
+│   ├── FolderArchiveExtract.ts        # ZIP/TAR extraction + auto-index generation
+│   ├── ArchiveProcessor.ts            # ZIP/TAR file handling
+│   └── css/                           # Component styles
+├── page.tsx                           # Main application page
+└── layout.tsx                         # Root layout
 ```
 
 ### 2. Web3 Integration Layer
