@@ -78,6 +78,13 @@ export interface SelfCustodyBatchResult {
   batchId: `0x${string}`;
   /** Tx hash of the createBatch call. */
   createBatchTxHash: `0x${string}`;
+  /**
+   * Block number at which `createBatch` mined. Used downstream by
+   * {@link ../GatewayChainSync.waitForGatewayBatchSync} so the upload UI
+   * can wait for the gateway's chain listener to index past this block
+   * before posting the first chunk.
+   */
+  createBatchBlockNumber: bigint;
   /** Tx hash of the BZZ approve call (undefined if allowance was sufficient). */
   approveTxHash?: `0x${string}`;
 }
@@ -186,6 +193,7 @@ export async function createSelfCustodyBatch(
   return {
     batchId,
     createBatchTxHash: createTxHash,
+    createBatchBlockNumber: receipt.blockNumber,
     approveTxHash,
   };
 }
@@ -359,6 +367,7 @@ export async function createSelfCustodyBatchViaRegistry(
   return {
     batchId,
     createBatchTxHash: createTxHash,
+    createBatchBlockNumber: receipt.blockNumber,
     approveTxHash,
   };
 }
@@ -518,6 +527,15 @@ export interface StoredSelfCustodyBatch {
   immutableFlag: boolean;
   /** createBatch tx hash, for trail / explorer linking. */
   createBatchTxHash?: string;
+  /**
+   * Gnosis block number at which `createBatch` mined. Stored as a JSON-safe
+   * `number` (bigint round-trips cleanly here — block heights are well below
+   * `Number.MAX_SAFE_INTEGER` for the next ~10⁵ years).
+   *
+   * Optional because entries persisted by an older build won't have it; the
+   * upload flow falls back to optimistic mode in that case.
+   */
+  createBatchBlockNumber?: number;
   /** Set true once a top-up has completed. UI hint only. */
   hasBeenToppedUp?: boolean;
   /**

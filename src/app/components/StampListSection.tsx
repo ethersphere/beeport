@@ -18,7 +18,6 @@ import { formatUnits } from 'viem';
 
 import {
   getSelfCustodyBatches,
-  removeSelfCustodyBatch,
   StoredSelfCustodyBatch,
   type ChainBatchInfo,
 } from './SelfCustodyBatch';
@@ -31,12 +30,7 @@ import {
   isExpiringSoon,
   isExpiryWarning,
 } from './utils';
-import {
-  fetchBatchFromContract,
-  fetchOnChainPricing,
-  refreshBatchesFromContract,
-  toChainBatchInfo,
-} from './PostageContract';
+import { refreshBatchesFromContract } from './PostageContract';
 import { deriveHotKey } from './ClientStamping';
 import {
   loadStamperState,
@@ -88,7 +82,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshingStamps, setRefreshingStamps] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const getSizeForDepth = (depth: number): string => {
@@ -160,55 +153,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     fetchStamps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
-
-  /**
-   * Re-read on-chain state for a single batch from the Postage Stamp contract.
-   * Cheap (one RPC); used as the per-row Refresh button.
-   */
-  const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
-    if (!address) return;
-    const batchId = stampToRefresh.batchId;
-    setRefreshingStamps(prev => new Set(prev).add(batchId));
-
-    try {
-      const { client: publicClient } = getGnosisPublicClient();
-      const [batch, pricing] = await Promise.all([
-        fetchBatchFromContract(publicClient, batchId),
-        fetchOnChainPricing(publicClient),
-      ]);
-      if (!batch.exists) {
-        setStamps(prev =>
-          prev.map(s =>
-            s.batchId === batchId
-              ? { ...s, missingOnChain: true, batchTTL: undefined }
-              : s
-          )
-        );
-        return;
-      }
-      const info = toChainBatchInfo(batch, pricing);
-      setStamps(prev =>
-        prev.map(s =>
-          s.batchId === batchId
-            ? {
-                ...s,
-                batchTTL: info.batchTTL,
-                bucketDepth: info.bucketDepth,
-                missingOnChain: false,
-              }
-            : s
-        )
-      );
-    } catch (err) {
-      console.warn(`Error refreshing stamp ${batchId}:`, err);
-    } finally {
-      setRefreshingStamps(prev => {
-        const next = new Set(prev);
-        next.delete(batchId);
-        return next;
-      });
-    }
-  };
 
   /**
    * Full refresh: re-read every batch on-chain and (if a wallet client is
@@ -309,16 +253,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     setShowStampList(false);
   };
 
-  const handleForget = (batchId: string) => {
-    if (!address) return;
-    const ok = window.confirm(
-      'Forget this self-custody batch from this browser?\n\nThe batch is still on-chain and you can re-import it later if you remember the wallet + nonce that created it. Uploads will fail until then.'
-    );
-    if (!ok) return;
-    removeSelfCustodyBatch(address, batchId);
-    setStamps(prev => prev.filter(s => s.batchId !== batchId));
-  };
-
   return (
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
@@ -375,36 +309,20 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       ⏳ Not on chain
                     </span>
                   ) : (
-                    <>
-                      {stamp.batchTTL !== undefined && (
-                        <span
-                          className={
-                            isExpiringSoon(stamp.batchTTL)
-                              ? styles.expiryWarning
-                              : isExpiryWarning(stamp.batchTTL)
-                                ? styles.expiryKhaki
-                                : ''
-                          }
-                        >
-                          Expires: {formatExpiryTime(stamp.batchTTL)}
-                          {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
-                        </span>
-                      )}
+                    stamp.batchTTL !== undefined && (
                       <span
-                        title="Self-custody batch: owned on-chain by your hot key. Utilisation is tracked locally in your browser."
-                        className={styles.selfCustodyBadge}
+                        className={
+                          isExpiringSoon(stamp.batchTTL)
+                            ? styles.expiryWarning
+                            : isExpiryWarning(stamp.batchTTL)
+                              ? styles.expiryKhaki
+                              : ''
+                        }
                       >
-                        🔒 Self-custody
+                        Expires: {formatExpiryTime(stamp.batchTTL)}
+                        {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
                       </span>
-                      {!stamp.hasLocalIssuerState && (
-                        <span
-                          title="No issuer state for this batch in this browser. Click the gear button to restore it from Swarm (requires a one-time wallet signature)."
-                          className={styles.selfCustodyBadge}
-                        >
-                          ⚠ No local issuer state
-                        </span>
-                      )}
-                    </>
+                    )
                   )}
 
                   {stamp.timestamp && <span>Created: {formatDateEU(stamp.timestamp * 1000)}</span>}
@@ -416,18 +334,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     title="Upload with these stamps"
                   >
                     Upload with these stamps
-                  </button>
-                  <button
-                    className={styles.refreshButton}
-                    onClick={() => refreshSingleStamp(stamp)}
-                    disabled={refreshingStamps.has(stamp.batchId)}
-                    title={
-                      refreshingStamps.has(stamp.batchId)
-                        ? 'Reading batch state from contract…'
-                        : 'Re-read this batch from the Postage Stamp contract'
-                    }
-                  >
-                    {refreshingStamps.has(stamp.batchId) ? '⏳ Checking…' : 'Refresh'}
                   </button>
 
                   <button
@@ -461,14 +367,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
                     <span style={{ marginLeft: '4px' }}>Top Up</span>
-                  </button>
-
-                  <button
-                    className={styles.refreshButton}
-                    onClick={() => handleForget(stamp.batchId)}
-                    title="Remove this batch from this browser's local list (does not affect on-chain state)"
-                  >
-                    Forget
                   </button>
                 </div>
               </div>

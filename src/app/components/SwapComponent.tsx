@@ -66,13 +66,16 @@ import {
   createSelfCustodyBatchViaRegistry,
   topUpSelfCustodyBatchViaRegistry,
   saveSelfCustodyBatch,
+  getSelfCustodyBatches,
   markSelfCustodyBatchToppedUp,
 } from './SelfCustodyBatch';
+import { waitForGatewayBatchSync } from './GatewayChainSync';
 import { STAMPS_REGISTRY_V2_ADDRESS, STAMPS_REGISTRY_V2_ABI } from './constants';
 import {
   uploadFileClientSide,
   uploadMultipleFilesClientSide,
   uploadFilesAsCollectionClientSide,
+  StampNotReadyError,
   type MultiFileResult,
 } from './ClientSideUpload';
 import {
@@ -931,6 +934,13 @@ const SwapComponent: React.FC = () => {
       const predictedBatchId = computeBatchId(STAMPS_REGISTRY_V2_ADDRESS, nonce);
 
       let createBatchTxHash: `0x${string}` | undefined;
+      // Block number at which the batch became visible on-chain. For the
+      // direct path that's the receipt block; for the Relay path we don't
+      // know which block the multicaller's tx mined in, so we snapshot the
+      // Gnosis chain tip the moment our `batchAttribution` verifier first
+      // returns true — the gateway must be at least this block to see the
+      // batch, which is what {@link waitForGatewayBatchSync} compares against.
+      let createBatchBlockNumber: bigint | undefined;
 
       if (isPureGnosisBzzPath) {
         // Direct registry call — two wallet prompts (approve + create).
@@ -948,6 +958,7 @@ const SwapComponent: React.FC = () => {
           onStatus: msg => setStatusMessage({ step: 'SelfCustody', message: msg }),
         });
         createBatchTxHash = result.createBatchTxHash;
+        createBatchBlockNumber = result.createBatchBlockNumber;
         if (result.batchId.toLowerCase() !== predictedBatchId.toLowerCase()) {
           console.warn(
             'predicted batchId did not match on-chain batchId',
@@ -1011,10 +1022,25 @@ const SwapComponent: React.FC = () => {
             args: [predictedBatchId as `0x${string}`],
           })) as readonly [string, string, bigint];
           const wallet = result?.[0];
-          return (
+          const visible =
             typeof wallet === 'string' &&
-            wallet.toLowerCase() !== '0x0000000000000000000000000000000000000000'
-          );
+            wallet.toLowerCase() !== '0x0000000000000000000000000000000000000000';
+          if (visible && createBatchBlockNumber === undefined) {
+            // First positive verification — the registry now sees the batch
+            // on-chain. Snapshot the current tip as the lower bound the
+            // upload-time gateway-sync wait will need to reach. We can't
+            // read the tx's actual mined block (we never see the multicaller's
+            // tx hash), so this conservative ceiling is the best we have.
+            try {
+              createBatchBlockNumber = await gnosisClient.getBlockNumber();
+            } catch (err) {
+              console.warn(
+                'Failed to snapshot Gnosis tip after Relay verification:',
+                err
+              );
+            }
+          }
+          return visible;
         };
 
         await executeRelaySteps(
@@ -1048,15 +1074,19 @@ const SwapComponent: React.FC = () => {
         timestamp: Math.floor(Date.now() / 1000),
         immutableFlag: immutable_,
         createBatchTxHash,
+        createBatchBlockNumber:
+          createBatchBlockNumber !== undefined
+            ? Number(createBatchBlockNumber)
+            : undefined,
         createdVia: 'registry',
       });
 
       setStatusMessage({
         step: 'Complete',
-        message: 'Self-custody storage created. Waiting for Bee gateway to index it…',
+        message: 'Self-custody storage created. Ready when the Bee gateway indexes it.',
         isSuccess: true,
         warning:
-          'Note: Bee usually takes 1-2 minutes to index a fresh batch before accepting presigned stamps.',
+          'When you start your first upload we will wait for the gateway to index this batch before sending chunks. This usually takes a few seconds on Gnosis.',
       });
       setIsNewStampCreated(true);
       setUploadStep('ready');
@@ -1258,11 +1288,57 @@ const SwapComponent: React.FC = () => {
         : selectedDepth;
 
       // Self-custody batches are owned by the hot key on-chain — Bee's
-      // `/stamps/:id` endpoint only enumerates batches owned by Bee's own
-      // wallet, so it will always 404 here. The on-chain `createBatch`
-      // receipt we already hold is the real source of truth, and the first
-      // chunk POST is the real authoritative check. Skip any pre-flight
-      // polling and go straight to chunking + stamping.
+      // `/stamps/:id` endpoint always 404s here, so the legacy "poll until
+      // usable" flow doesn't apply. What *does* still matter is the gateway's
+      // own chain-sync: it can only validate our presigned stamps once its
+      // batchstore has indexed past the `createBatch` block. Wait for that
+      // explicitly when we know the block number; otherwise fall through to
+      // the optimistic path and let the first chunk POST be the test.
+      const storedBatchEntry = getSelfCustodyBatches(address).find(
+        b => b.batchId.toLowerCase() === batchIdHex.toLowerCase()
+      );
+      const targetBlockNumber =
+        storedBatchEntry?.createBatchBlockNumber !== undefined
+          ? BigInt(storedBatchEntry.createBatchBlockNumber)
+          : null;
+
+      if (targetBlockNumber !== null) {
+        setStatusMessage({
+          step: 'Uploading',
+          message: 'Waiting for Bee gateway to index your new batch…',
+        });
+        try {
+          const syncResult = await waitForGatewayBatchSync(
+            beeApiUrl,
+            targetBlockNumber,
+            {
+              onStatus: ({ gatewayBlock, targetBlock, attempts }) => {
+                if (gatewayBlock === null) return;
+                if (gatewayBlock >= targetBlock) return;
+                setStatusMessage({
+                  step: 'Uploading',
+                  message: `Gateway syncing… block ${gatewayBlock} / ${targetBlock} (probe ${attempts})`,
+                });
+              },
+            }
+          );
+          if (syncResult === 'timeout') {
+            console.warn(
+              `[ClientSideUpload] Gateway did not reach block ${targetBlockNumber} within deadline; proceeding optimistically.`
+            );
+          } else if (syncResult === 'unknown') {
+            console.info(
+              '[ClientSideUpload] Gateway does not expose /chainstate; proceeding optimistically.'
+            );
+          }
+        } catch (err) {
+          // `waitForGatewayBatchSync` only rejects on AbortSignal, which we
+          // don't pass here — but be defensive so a future refactor doesn't
+          // surface this as a hard upload failure.
+          console.warn('Gateway sync wait failed unexpectedly:', err);
+        }
+      }
+
       setStatusMessage({
         step: 'Uploading',
         message: 'Chunking and stamping locally — this never leaves your browser.',
@@ -1414,30 +1490,23 @@ const SwapComponent: React.FC = () => {
       }, 900000);
     } catch (err) {
       console.error('Self-custody upload failed:', err);
-      const raw = err instanceof Error ? err.message : String(err);
-      // Translate common Bee responses to actionable diagnostics — these tell
-      // us *why* a self-custody upload failed, which is the whole point of
-      // the proof-of-concept attempt while a stamp is "propagating".
-      let friendly = raw;
-      const lower = raw.toLowerCase();
-      if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
-        friendly =
-          "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.";
-      } else if (lower.includes('insufficient') && lower.includes('stamp')) {
-        friendly =
-          'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.';
-      } else if (lower.includes('signer') || lower.includes('signature')) {
-        friendly = `Bee rejected the stamp signature: ${raw}`;
-      } else if (lower.includes('bucket')) {
-        friendly = `Bee rejected the stamp bucket allocation (issuer state): ${raw}`;
-      }
+      const translated = translateSelfCustodyUploadError(err);
       setStatusMessage({
         step: 'Error',
-        message: 'Self-custody upload failed',
-        error: friendly,
+        message:
+          err instanceof StampNotReadyError
+            ? 'Stamp not ready yet'
+            : 'Self-custody upload failed',
+        error: translated.message,
+        warning: translated.warning,
         isError: true,
       });
-      setUploadStep('idle');
+      // For transient failures (gateway hasn't indexed the batch yet) keep
+      // the user on the upload screen with their file still selected so
+      // they can hit Upload again without re-picking. Re-stamping the same
+      // file content reproduces the same `(bucket, cnt)` allocations, so
+      // the retry is idempotent — no slot burn.
+      setUploadStep(translated.transient ? 'ready' : 'idle');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1450,23 +1519,52 @@ const SwapComponent: React.FC = () => {
    * stamp signature does not recover…` string Bee returns. Shared by every
    * self-custody upload variant (single file / multi-file / collection /
    * NFT).
+   *
+   * Returns:
+   *   - `message`: the primary headline shown in red.
+   *   - `warning`: optional yellow follow-up text with what to do next.
+   *   - `transient`: true when the failure is plausibly self-resolving
+   *     (e.g. fresh batch hasn't been indexed yet); the UI can use this to
+   *     keep the file selection so the user can hit Upload again without
+   *     re-picking.
    */
-  const translateSelfCustodyUploadError = (err: unknown): string => {
+  const translateSelfCustodyUploadError = (
+    err: unknown
+  ): { message: string; warning?: string; transient?: boolean } => {
+    if (err instanceof StampNotReadyError) {
+      // The most common case for a freshly-created batch — the gateway's
+      // chain listener simply hasn't caught up to our `createBatch` block
+      // yet. Self-resolves within a few seconds on Gnosis.
+      return {
+        message:
+          'Your storage stamp is not ready yet. The Bee gateway has not finished indexing your new batch from the chain.',
+        warning:
+          'This usually clears within a minute. Wait a few seconds, then click Upload again — your file selection is preserved.',
+        transient: true,
+      };
+    }
+
     const raw = err instanceof Error ? err.message : String(err);
     const lower = raw.toLowerCase();
     if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
-      return "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.";
+      return {
+        message:
+          "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.",
+      };
     }
     if (lower.includes('insufficient') && lower.includes('stamp')) {
-      return 'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.';
+      return {
+        message:
+          'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.',
+      };
     }
     if (lower.includes('signer') || lower.includes('signature')) {
-      return `Bee rejected the stamp signature: ${raw}`;
+      return { message: `Bee rejected the stamp signature: ${raw}` };
     }
     if (lower.includes('bucket')) {
-      return `Bee rejected the stamp bucket allocation (issuer state): ${raw}`;
+      return { message: `Bee rejected the stamp bucket allocation (issuer state): ${raw}` };
     }
-    return raw;
+    return { message: raw };
   };
 
   /**
@@ -1558,13 +1656,16 @@ const SwapComponent: React.FC = () => {
       }, 900000);
     } catch (err) {
       console.error('Multi-file self-custody upload failed:', err);
+      const translated = translateSelfCustodyUploadError(err);
       setStatusMessage({
         step: 'Error',
-        message: 'Multi-file upload failed',
-        error: translateSelfCustodyUploadError(err),
+        message:
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : 'Multi-file upload failed',
+        error: translated.message,
+        warning: translated.warning,
         isError: true,
       });
-      setUploadStep('idle');
+      setUploadStep(translated.transient ? 'ready' : 'idle');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1698,13 +1799,16 @@ const SwapComponent: React.FC = () => {
       }, 900000);
     } catch (err) {
       console.error('Folder/collection self-custody upload failed:', err);
+      const translated = translateSelfCustodyUploadError(err);
       setStatusMessage({
         step: 'Error',
-        message: 'Folder upload failed',
-        error: translateSelfCustodyUploadError(err),
+        message:
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : 'Folder upload failed',
+        error: translated.message,
+        warning: translated.warning,
         isError: true,
       });
-      setUploadStep('idle');
+      setUploadStep(translated.transient ? 'ready' : 'idle');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1810,13 +1914,18 @@ const SwapComponent: React.FC = () => {
       }, 900000);
     } catch (err) {
       console.error('NFT collection self-custody upload failed:', err);
+      const translated = translateSelfCustodyUploadError(err);
       setStatusMessage({
         step: 'Error',
-        message: 'NFT collection upload failed',
-        error: translateSelfCustodyUploadError(err),
+        message:
+          err instanceof StampNotReadyError
+            ? 'Stamp not ready yet'
+            : 'NFT collection upload failed',
+        error: translated.message,
+        warning: translated.warning,
         isError: true,
       });
-      setUploadStep('idle');
+      setUploadStep(translated.transient ? 'ready' : 'idle');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -2427,6 +2536,44 @@ Uploading: chain-independent — chunks are BMT-hashed and stamped locally in th
                       <div className={styles.uploadWarning}>
                         ⏱️ New storage created: It takes around up to 2 minutes before it becomes
                         accessible on the network.
+                      </div>
+                    )}
+                    {/* Inline banner shown when the previous upload attempt
+                        failed with a transient "stamp not ready" error. We
+                        keep the user on the upload screen with their file
+                        selected (see catch blocks above) so they can hit
+                        Upload again once the gateway has caught up — but
+                        the regular overlay status box is suppressed while
+                        `uploadStep === 'ready'`, so without this banner
+                        the user wouldn't see *why* their previous click
+                        failed. Dismissable so it doesn't linger after the
+                        next successful upload. */}
+                    {statusMessage.isError && statusMessage.step === 'Error' && (
+                      <div
+                        className={`${styles.healthBanner} ${styles.healthBannerWarn}`}
+                      >
+                        <span className={styles.healthBannerTitle}>
+                          ⚠️ {statusMessage.message}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.healthBannerRetry}
+                          onClick={() =>
+                            setStatusMessage({ step: '', message: '' })
+                          }
+                        >
+                          Dismiss
+                        </button>
+                        {statusMessage.error && (
+                          <div className={styles.healthBannerDetail}>
+                            {statusMessage.error}
+                          </div>
+                        )}
+                        {statusMessage.warning && (
+                          <div className={styles.healthBannerDetail}>
+                            {statusMessage.warning}
+                          </div>
+                        )}
                       </div>
                     )}
                     {statusMessage.step === 'waiting_creation' ? (

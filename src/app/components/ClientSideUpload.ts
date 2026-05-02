@@ -116,7 +116,7 @@ const STAMP_HARD_FAIL_UTILIZATION = 0.95;
  * Log a console warning when projected utilization crosses this fraction.
  * Useful diagnostic without being annoying — most users will never see it.
  */
-const STAMP_WARN_UTILIZATION = 0.80;
+const STAMP_WARN_UTILIZATION = 0.8;
 
 export interface ClientSideUploadParams {
   file: File;
@@ -211,10 +211,15 @@ export interface ProjectedStampCapacity {
  *
  * Caller is responsible for:
  *   - having created the postage batch with `_owner = hotKey.address` on-chain
- *   - waiting until the batch is `usable` on the Bee gateway
+ *   - making sure the Bee gateway's chain listener has indexed past the
+ *     `createBatch` block (use `waitForGatewayBatchSync` from
+ *     `./GatewayChainSync.ts` when freshness is in doubt; for older batches
+ *     the gateway has long since synced and no wait is needed).
  *
- * This function does NOT poll for batch usability — it assumes the caller
- * already serialised on that.
+ * This function does NOT poll the gateway for batch readiness — it assumes
+ * the caller already serialised on that. Note: the legacy `/stamps/<id>`
+ * `usable` boolean does NOT apply to self-custody batches; that endpoint
+ * 404s for batches the gateway didn't issue.
  */
 export async function uploadFileClientSide(
   params: ClientSideUploadParams
@@ -359,10 +364,7 @@ export async function uploadFileClientSide(
       if (!entry.name.includes('/chunks')) continue;
       protocolDetectionDone = true;
       detectedHttpProtocol = entry.nextHopProtocol || undefined;
-      if (
-        detectedHttpProtocol === 'h2' &&
-        queue.concurrency < HTTP2_TARGET_CONCURRENCY
-      ) {
+      if (detectedHttpProtocol === 'h2' && queue.concurrency < HTTP2_TARGET_CONCURRENCY) {
         queue.concurrency = HTTP2_TARGET_CONCURRENCY;
         queue.capacity = HTTP2_TARGET_CONCURRENCY * 2;
         console.info(
@@ -454,7 +456,12 @@ export async function uploadFileClientSide(
       } catch (err) {
         const isLast = attempt === MAX_CHUNK_RETRIES - 1;
         if (!isRetryable(err) || isLast) {
-          throw err;
+          // Translate the most common "fresh batch / gateway not synced"
+          // failure into a typed error the UI can recognise. Other 4xx
+          // problems (signature, bucket conflict, immutability) fall
+          // through to the original error so the caller's existing
+          // diagnostic branches still work.
+          throw classifyAsStampNotReady(err) ?? err;
         }
         retryCount++;
         await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
@@ -605,8 +612,7 @@ export async function uploadFileClientSide(
 
     const elapsedMs = performance.now() - startedAt;
     const totalChunks = fileChunkCount + manifestChunkCount;
-    const averageChunksPerSecond =
-      elapsedMs > 0 ? (totalChunks * 1000) / elapsedMs : 0;
+    const averageChunksPerSecond = elapsedMs > 0 ? (totalChunks * 1000) / elapsedMs : 0;
 
     stopSampler();
     mark('upload complete', {
@@ -673,10 +679,7 @@ export function checkProjectedStampCapacity(
   const projectedTotal = totalUsed + projectedNew;
 
   const utilizationPercent = (totalUsed / totalCapacity) * 100;
-  const projectedUtilizationPercent = Math.min(
-    100,
-    (projectedTotal / totalCapacity) * 100
-  );
+  const projectedUtilizationPercent = Math.min(100, (projectedTotal / totalCapacity) * 100);
 
   if (projectedUtilizationPercent >= STAMP_HARD_FAIL_UTILIZATION * 100) {
     return {
@@ -824,7 +827,7 @@ async function uploadOneChunk(
       return;
     } catch (err) {
       const isLast = attempt === MAX_CHUNK_RETRIES - 1;
-      if (!isRetryable(err) || isLast) throw err;
+      if (!isRetryable(err) || isLast) throw classifyAsStampNotReady(err) ?? err;
       await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
     }
   }
@@ -848,6 +851,137 @@ function stripHex(value: string): string {
 function isRetryable(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /network|timeout|fetch|ECONN|ETIMEDOUT|stalled|429|5\d\d/i.test(msg);
+}
+
+/**
+ * Thrown when a chunk POST is rejected by the Bee gateway in a way that
+ * looks like "I (the gateway) don't yet recognise this batch / stamp" —
+ * i.e. the gateway's chain listener probably hasn't indexed past the
+ * `createBatch` block yet, so its `presignedStamper.Stamp.Valid` lookup
+ * returns no on-chain owner and refuses the chunk with HTTP 400 (or
+ * occasionally 404 / 422).
+ *
+ * The UI uses `instanceof StampNotReadyError` to render a friendly
+ * "your stamp isn't ready yet, give the gateway a few seconds and try
+ * again" banner instead of dumping the bare axios message.
+ *
+ * NOT thrown for genuine signature / bucket-collision failures — those
+ * have distinct response bodies and need different remediation.
+ */
+export class StampNotReadyError extends Error {
+  /** HTTP status code returned by the gateway, when known. */
+  readonly status: number | undefined;
+  /** Verbatim parsed response body — `{code, message, ...}` typically. */
+  readonly responseBody: unknown;
+  /** Best-effort extraction of the gateway's `message` field. */
+  readonly gatewayMessage: string | undefined;
+  /** The original error we wrapped (e.g. `BeeResponseError`). */
+  readonly cause: unknown;
+
+  constructor(opts: {
+    message: string;
+    cause?: unknown;
+    status?: number;
+    responseBody?: unknown;
+    gatewayMessage?: string;
+  }) {
+    super(opts.message);
+    this.name = 'StampNotReadyError';
+    this.status = opts.status;
+    this.responseBody = opts.responseBody;
+    this.gatewayMessage = opts.gatewayMessage;
+    this.cause = opts.cause;
+    // Preserve prototype chain for `instanceof` checks across module
+    // boundaries / minified bundles. Standard TS-down-to-ES5 dance.
+    Object.setPrototypeOf(this, StampNotReadyError.prototype);
+  }
+}
+
+/**
+ * Decide whether a chunk-upload error is best surfaced as a
+ * `StampNotReadyError`. We duck-type `BeeResponseError` so we don't have
+ * to import its class symbol (keeps the helper usable for any
+ * fetch/axios-shaped wrapper).
+ *
+ *   - 4xx with body text mentioning "batch ... not yet usable", "batch
+ *     not found", "unknown batch", "stamp not allowed" → stamp-not-ready
+ *   - 4xx with body wording "duplicate" / "bucket counter" → NOT stamp-
+ *     not-ready; that's a bucket-collision (issuer state problem), kept
+ *     as the original error so the UI's specific bucket branch handles it
+ *   - 4xx with no parseable body and status 400 → likely stamp-not-ready
+ *     (Bee gateways occasionally drop the JSON body on a `presignedStamper`
+ *     reject when the batch is missing; bare 400 with `Request failed
+ *     with status code 400` and no `responseBody.message` is the typical
+ *     fingerprint of "gateway hasn't seen the batch yet")
+ *
+ * Everything else returns `null` (i.e. surface the original error).
+ */
+function classifyAsStampNotReady(err: unknown): StampNotReadyError | null {
+  if (!err || typeof err !== 'object') return null;
+  const e = err as {
+    status?: unknown;
+    statusCode?: unknown;
+    responseBody?: unknown;
+    response?: { status?: unknown; data?: unknown };
+    message?: unknown;
+  };
+
+  const status =
+    typeof e.status === 'number'
+      ? e.status
+      : typeof e.statusCode === 'number'
+        ? e.statusCode
+        : typeof e.response?.status === 'number'
+          ? e.response.status
+          : undefined;
+
+  // Only consider 4xx; 5xx and network errors stay retryable / generic.
+  if (status === undefined || status < 400 || status >= 500) return null;
+
+  const body = e.responseBody ?? e.response?.data ?? null;
+  const gatewayMessage =
+    body && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string'
+      ? ((body as { message: string }).message)
+      : typeof body === 'string'
+        ? body
+        : undefined;
+  const lower = (gatewayMessage ?? '').toLowerCase();
+
+  // Bucket / duplicate / immutability errors are NOT "not ready" — let the
+  // caller's existing bucket-branch handling produce the right diagnostic.
+  if (
+    lower.includes('duplicate') ||
+    lower.includes('already') ||
+    lower.includes('bucket counter') ||
+    lower.includes('immutable')
+  ) {
+    return null;
+  }
+
+  const looksLikeNotReady =
+    lower.includes('not yet usable') ||
+    lower.includes('not yet') ||
+    (lower.includes('batch') &&
+      (lower.includes('not found') ||
+        lower.includes('unknown') ||
+        lower.includes('does not exist'))) ||
+    lower.includes('stamp not allowed') ||
+    // Bare 400 with no detail body is the de-facto fingerprint of a fresh-
+    // batch race on most public gateways.
+    (status === 400 && !gatewayMessage);
+
+  if (!looksLikeNotReady) return null;
+
+  const detail = gatewayMessage
+    ? `${gatewayMessage} (HTTP ${status})`
+    : `Bee gateway returned HTTP ${status} for the chunk POST.`;
+  return new StampNotReadyError({
+    message: `Stamp not ready yet: ${detail}`,
+    cause: err,
+    status,
+    responseBody: body,
+    gatewayMessage,
+  });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1018,7 +1152,7 @@ function createUploadContext(opts: {
         return;
       } catch (err) {
         const isLast = attempt === MAX_CHUNK_RETRIES - 1;
-        if (!isRetryable(err) || isLast) throw err;
+        if (!isRetryable(err) || isLast) throw classifyAsStampNotReady(err) ?? err;
         await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
         envelope = null;
       }
