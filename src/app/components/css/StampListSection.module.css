@@ -104,6 +104,73 @@
   border: 1px solid #30363d;
 }
 
+.usageWrapper {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #8b949e;
+}
+
+.usageRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+}
+
+.usageLabel {
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
+.usageDetail {
+  color: #8b949e;
+}
+
+.usageSkewBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  background-color: rgba(255, 200, 0, 0.1);
+  color: #ffd166;
+  border: 1px solid rgba(255, 200, 0, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: help;
+}
+
+.usageBarContainer {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(48, 54, 61, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.usageBar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.usageBarOk {
+  background-color: #2ea043;
+}
+
+.usageBarWarn {
+  background-color: #d4a11a;
+}
+
+.usageBarDanger {
+  background-color: #f85149;
+}
+
+.usageUnknown {
+  color: #8b949e;
+  font-style: italic;
+  cursor: help;
+}
+
 .stampActions {
   display: flex;
   flex-direction: row;

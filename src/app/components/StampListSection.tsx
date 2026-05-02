@@ -35,6 +35,8 @@ import { deriveHotKey } from './ClientStamping';
 import {
   loadStamperState,
   saveStamperState,
+  computeStampUsage,
+  type StampUsageStats,
 } from './ClientStamping';
 import { loadIssuerStateFromSOC } from './IssuerStateSOC';
 import styles from './css/StampListSection.module.css';
@@ -67,6 +69,12 @@ interface BatchEvent {
   hasBeenToppedUp?: boolean;
   /** True when this browser has stamper state for the batch in localStorage. */
   hasLocalIssuerState?: boolean;
+  /**
+   * Storage usage derived from the local Stamper buckets. `undefined` iff
+   * `hasLocalIssuerState` is false — in that case the UI shows a "usage
+   * unknown, restore from Swarm" placeholder instead of a bar.
+   */
+  usage?: StampUsageStats;
 }
 
 const StampListSection: React.FC<StampListSectionProps> = ({
@@ -89,6 +97,19 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     return option ? option.size : `${depth} (unknown size)`;
   };
 
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = bytes;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    const rounded = v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1);
+    return `${rounded} ${units[i]}`;
+  };
+
   /**
    * Render a list of locally-stored batches, enriched with fresh on-chain
    * status for each (TTL, depth, owner). Pure read — no signing prompt.
@@ -109,7 +130,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         ? s.batchId.toLowerCase()
         : `0x${s.batchId.toLowerCase()}`;
       const onChain: ChainBatchInfo | undefined = onChainMap.get(id);
-      const hasLocalIssuerState = !!loadStamperState(s.batchId);
+      const localState = loadStamperState(s.batchId);
+      const hasLocalIssuerState = !!localState;
+      const usage = localState ? computeStampUsage(localState) : undefined;
       const base: BatchEvent = {
         batchId: s.batchId,
         totalAmount: formatUnits(BigInt(s.totalAmount), 16),
@@ -120,6 +143,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         hotKeyAddress: s.hotKeyAddress,
         hasBeenToppedUp: s.hasBeenToppedUp,
         hasLocalIssuerState,
+        usage,
       };
       if (!onChain) {
         return { ...base, missingOnChain: true };
@@ -327,6 +351,69 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
                   {stamp.timestamp && <span>Created: {formatDateEU(stamp.timestamp * 1000)}</span>}
                 </div>
+
+                {/* Storage utilization. Derived purely from the local
+                    Stamper buckets — Bee's `/stamps/:id` 404s for self-custody
+                    batches so we never have a server-reported number. The
+                    headline %, like Bee's own UI, is the *worst-bucket* fill:
+                    uploads start failing as soon as any bucket hits 100%, well
+                    before the average byte usage approaches the labelled size. */}
+                {stamp.usage ? (
+                  (() => {
+                    const u = stamp.usage;
+                    const pct = Math.min(100, u.maxBucketPercent);
+                    const barClass =
+                      u.maxBucketPercent >= 95
+                        ? styles.usageBarDanger
+                        : u.maxBucketPercent >= 80
+                          ? styles.usageBarWarn
+                          : styles.usageBarOk;
+                    const skewed = u.maxBucketPercent - u.avgPercent > 15;
+                    return (
+                      <div className={styles.usageWrapper}>
+                        <div className={styles.usageRow}>
+                          <span
+                            className={styles.usageLabel}
+                            title="Worst-bucket utilization. Bucket distribution is hash-driven, so a stamp can refuse new uploads while its average byte fill is much lower."
+                          >
+                            Used: {pct.toFixed(1)}%
+                          </span>
+                          <span className={styles.usageDetail}>
+                            ≈ {formatBytes(u.usedBytes)} of {stamp.size}
+                          </span>
+                          {skewed && (
+                            <span
+                              className={styles.usageSkewBadge}
+                              title={`Chunks have clustered into a few buckets — average byte fill is only ${u.avgPercent.toFixed(
+                                1
+                              )}% but the worst bucket is at ${u.maxBucketPercent.toFixed(
+                                1
+                              )}%. The stamp will start refusing uploads at 100% worst-bucket.`}
+                            >
+                              ⚠ uneven
+                            </span>
+                          )}
+                        </div>
+                        <div className={styles.usageBarContainer}>
+                          <div
+                            className={`${styles.usageBar} ${barClass}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className={styles.usageWrapper}>
+                    <span
+                      className={styles.usageUnknown}
+                      title="No local Stamper state for this batch in this browser. Click 🔄 below to attempt restoring it from a Swarm SOC backup."
+                    >
+                      Used: unknown — no local issuer state
+                    </span>
+                  </div>
+                )}
+
                 <div className={styles.stampActions}>
                   <button
                     className={styles.uploadWithStampButton}

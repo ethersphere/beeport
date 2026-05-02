@@ -221,6 +221,78 @@ export function clearStamperState(batchId: string): void {
   }
 }
 
+// ─── Usage / utilization stats ────────────────────────────────────────────────
+
+/**
+ * Snapshot of how much of a self-custody postage batch has been consumed,
+ * derived purely from the local Stamper state.
+ *
+ * `maxBucketPercent` is the *effective* utilization the user cares about:
+ * uploads start failing with `Bucket is full` as soon as ANY bucket hits 100%,
+ * regardless of the average. This is the same metric Bee's `/stamps/:id`
+ * `utilization` field reports (max bucket count) when fed through
+ * `getStampUsage`, so we use it as the headline percentage in the UI.
+ *
+ * `avgPercent` and `usedBytes` answer the "how much have I actually stored?"
+ * question. Bucket distribution is hash-driven, so on a healthy upload
+ * `avgPercent` ≈ `maxBucketPercent`; a large gap between the two means the
+ * file's chunks clustered into a few buckets and the stamp is effectively
+ * full at a much lower byte count than its labelled capacity suggests.
+ */
+export interface StampUsageStats {
+  /** Worst-bucket fill as a fraction of bucket capacity (0–100). */
+  maxBucketPercent: number;
+  /** Sum of all buckets divided by total stamp capacity (0–100). */
+  avgPercent: number;
+  /** Bytes stored = sum(buckets) × 4096 (each chunk is a 4 KiB slot). */
+  usedBytes: number;
+  /** Total chunks the stamp can theoretically hold = 2^depth. */
+  totalChunks: number;
+  /** Bytes the stamp can theoretically hold = 2^depth × 4096. */
+  totalBytes: number;
+}
+
+/** Each Swarm chunk occupies a single 4 KiB stamp slot. */
+const CHUNK_BYTES = 4096;
+
+/**
+ * Compute storage utilization stats from a persisted Stamper state. Pure /
+ * synchronous — safe to call from a render path.
+ */
+export function computeStampUsage(state: PersistedStamperState): StampUsageStats {
+  const { buckets, depth } = state;
+  const maxSlot = 2 ** (depth - 16);
+  const totalChunks = 65536 * maxSlot; // = 2^depth
+
+  let maxBucket = 0;
+  let totalUsed = 0;
+  for (let i = 0; i < buckets.length; i++) {
+    const v = buckets[i];
+    if (v > maxBucket) maxBucket = v;
+    totalUsed += v;
+  }
+
+  return {
+    maxBucketPercent: (maxBucket / maxSlot) * 100,
+    avgPercent: (totalUsed / totalChunks) * 100,
+    usedBytes: totalUsed * CHUNK_BYTES,
+    totalChunks,
+    totalBytes: totalChunks * CHUNK_BYTES,
+  };
+}
+
+/**
+ * Convenience: load the persisted state for `batchId` and compute usage in
+ * one call. Returns `null` if there is no local stamper state for this batch
+ * (e.g. the batch was created on another device and SOC restore hasn't run
+ * yet — the UI should render a "usage unknown" placeholder in that case).
+ */
+export function loadStampUsage(batchId: string): StampUsageStats | null {
+  const state = loadStamperState(batchId);
+  if (!state) return null;
+  return computeStampUsage(state);
+}
+
 // ─── Internals ────────────────────────────────────────────────────────────────
 
 function stripHex(value: string): string {
