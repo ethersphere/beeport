@@ -46,7 +46,9 @@ import { saveIssuerStateToSOC } from './IssuerStateSOC';
  * the original 8) that hasn't reproduced any stalls in practice. Bump via
  * the `concurrency` param if your gateway tolerates more.
  */
-const DEFAULT_CONCURRENCY = 12;
+// SPEED TEST: bumped 12 -> 64 to see what beeport.xyz can take. Revert via
+// `git checkout -- src/app/components/ClientSideUpload.ts`.
+const DEFAULT_CONCURRENCY = 64;
 
 /**
  * Minimum delay between two `saveStamperState` writes during an upload.
@@ -97,7 +99,9 @@ const CHUNK_HTTP_TIMEOUT_MS = 15_000;
  * 6-conn-per-host cap doesn't apply; pushing concurrency wide gives a
  * meaningful throughput boost on beeport.xyz and similar setups.
  */
-const HTTP2_TARGET_CONCURRENCY = 32;
+// SPEED TEST: bumped 32 -> 128. The H2 spec allows 100 concurrent streams
+// per connection by default; some gateways advertise more. We'll find out.
+const HTTP2_TARGET_CONCURRENCY = 128;
 
 /**
  * Refuse to start an upload if the projected post-upload bucket utilization
@@ -274,12 +278,66 @@ export async function uploadFileClientSide(
   let detectedHttpProtocol: string | undefined;
   const totalChunksApprox = approxChunkCount(file.size);
 
+  // ── Timing / speed-test instrumentation (TEMP — easy revert) ─────────────
+  // Logs phase markers + a periodic in-flight sampler so we can A/B different
+  // concurrency / chunking parameters and read the impact directly off the
+  // browser console. Prefix is grep-friendly: `⏱`.
+  const fileSizeStr =
+    file.size >= 1024 * 1024
+      ? `${(file.size / 1024 / 1024).toFixed(2)} MB`
+      : `${(file.size / 1024).toFixed(1)} KB`;
+  const mark = (label: string, extra?: Record<string, unknown>) => {
+    const t = performance.now() - startedAt;
+    const extras = extra
+      ? ' ' +
+        Object.entries(extra)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(' ')
+      : '';
+    console.log(`⏱ [ClientSideUpload] +${t.toFixed(0).padStart(5)}ms · ${label}${extras}`);
+  };
+  mark('start', {
+    file: file.name,
+    size: fileSizeStr,
+    chunksApprox: totalChunksApprox,
+    concurrency,
+  });
+
+  // First-chunk latency is the single most useful number for A/B'ing the
+  // gateway: it captures TLS handshake + connection setup + first request
+  // RTT. After this the queue is steady-state.
+  let firstChunkMarked = false;
+
   // ── Per-chunk upload pipeline ──────────────────────────────────────────────
   // Buffer capacity > concurrency so the BMT producer can stay ahead of the
   // network. Without this the FileReader/append loop would block on every
   // enqueue once `concurrency` requests are in flight, defeating the point
   // of the time-overlap between BMT/sign and HTTP I/O.
   const queue = new AsyncQueue(concurrency, concurrency * 2);
+
+  // Rolling-window throughput sampler (part of TEMP timing instrumentation).
+  // Runs every 1s while leaves are uploading; tells us instantaneous
+  // chunks/s + how full the queue is so we can see whether we're
+  // network-bound, BMT-bound, or queue-starved at any given moment.
+  let lastSampleAt = startedAt;
+  let lastSampleChunks = 0;
+  const sampler = setInterval(() => {
+    const now = performance.now();
+    const deltaMs = now - lastSampleAt;
+    const deltaChunks = chunksUploaded - lastSampleChunks;
+    const instCps = deltaMs > 0 ? (deltaChunks * 1000) / deltaMs : 0;
+    const totalElapsed = now - startedAt;
+    const avgCps = totalElapsed > 0 ? (chunksUploaded * 1000) / totalElapsed : 0;
+    console.log(
+      `⏱ [ClientSideUpload] +${totalElapsed.toFixed(0).padStart(5)}ms · in-flight ` +
+        `${chunksUploaded}/${totalChunksApprox} ` +
+        `(inst=${instCps.toFixed(0)}c/s avg=${avgCps.toFixed(0)}c/s ` +
+        `running=${queue.running} queued=${queue.queue.length} conc=${queue.concurrency})`
+    );
+    lastSampleAt = now;
+    lastSampleChunks = chunksUploaded;
+  }, 1000);
+  const stopSampler = () => clearInterval(sampler);
 
   // Adaptive concurrency: after the first chunk completes, peek at the
   // Resource Timing entry to see whether the gateway negotiated HTTP/2.
@@ -310,6 +368,13 @@ export async function uploadFileClientSide(
         console.info(
           `[ClientSideUpload] HTTP/2 gateway detected, ramping concurrency ${concurrency} → ${HTTP2_TARGET_CONCURRENCY}`
         );
+        mark('ramped concurrency', {
+          from: concurrency,
+          to: HTTP2_TARGET_CONCURRENCY,
+          protocol: detectedHttpProtocol,
+        });
+      } else {
+        mark('protocol detected', { protocol: detectedHttpProtocol ?? 'unknown' });
       }
       return;
     }
@@ -377,6 +442,10 @@ export async function uploadFileClientSide(
         chunksUploaded++;
         maybePersistState();
         onProgress?.(chunksUploaded, totalChunksApprox);
+        if (!firstChunkMarked) {
+          firstChunkMarked = true;
+          mark('first chunk uploaded (TTFB-ish)');
+        }
         // After the first successful chunk we have at least one Resource
         // Timing entry; check whether the gateway gave us HTTP/2 and ramp
         // up concurrency if so. No-op on subsequent calls.
@@ -432,6 +501,7 @@ export async function uploadFileClientSide(
     // ── Chunk file → BMT MerkleTree → onChunk → upload ──────────────────────
     onStatus?.('Chunking and stamping file…');
     const fileRootChunk = await streamFileThroughMerkleTree(file, onChunk, abortSignal);
+    mark('BMT producer done (all chunks enqueued)', { uploaded: chunksUploaded });
     await queue.drain();
 
     // Surface any chunk-task failure now — silently returning a reference for
@@ -443,10 +513,12 @@ export async function uploadFileClientSide(
 
     maybePersistState(true);
     const fileChunkCount = chunksUploaded;
+    mark('file leaves uploaded', { count: fileChunkCount });
 
     // The file's root chunk is itself a chunk that must be uploaded —
     // finalize() does NOT push it through onChunk.
     await stampAndUpload(fileRootChunk);
+    mark('file root chunk uploaded');
 
     // ── Build the Mantaray manifest client-side ───────────────────────────
     onStatus?.('Building manifest…');
@@ -488,6 +560,7 @@ export async function uploadFileClientSide(
     maybePersistState(true);
 
     const manifestChunkCount = chunksUploaded - beforeManifest;
+    mark('manifest uploaded', { count: manifestChunkCount });
 
     // ── Defer the SOC backup off the critical path ────────────────────────
     // Push the (possibly updated) stamper state to a Single Owner Chunk on
@@ -500,6 +573,7 @@ export async function uploadFileClientSide(
     // behind one extra round-trip. Since the file is already on Swarm by
     // this point, we kick off the SOC write as a background promise and
     // return immediately. Caller can observe via `result.issuerStateSocPromise`.
+    const socStartedAt = performance.now();
     const issuerStateSocPromise = (async (): Promise<IssuerStateSocResult | undefined> => {
       try {
         onStatus?.('Saving issuer state to Swarm (SOC)…');
@@ -513,6 +587,11 @@ export async function uploadFileClientSide(
         // Persist again — the SOC save itself consumed slots that we want
         // reflected in localStorage so future uploads don't re-allocate them.
         maybePersistState(true);
+        const socMs = performance.now() - socStartedAt;
+        console.log(
+          `⏱ [ClientSideUpload] SOC backup done in ${socMs.toFixed(0)}ms (background, ` +
+            `total wall=${(performance.now() - startedAt).toFixed(0)}ms)`
+        );
         return soc;
       } catch (err) {
         // SOC failures must NEVER fail the upload — the user's file is
@@ -529,6 +608,15 @@ export async function uploadFileClientSide(
     const averageChunksPerSecond =
       elapsedMs > 0 ? (totalChunks * 1000) / elapsedMs : 0;
 
+    stopSampler();
+    mark('upload complete', {
+      totalChunks,
+      cps: averageChunksPerSecond.toFixed(1),
+      retries: retryCount,
+      protocol: detectedHttpProtocol ?? 'unknown',
+      conc: queue.concurrency,
+    });
+
     return {
       reference: `0x${manifestRef.toHex()}` as `0x${string}`,
       fileChunkCount,
@@ -544,6 +632,8 @@ export async function uploadFileClientSide(
     // Anything thrown by chunk upload / manifest / validation lands here.
     // Make sure we don't leak the beforeunload listener; the SOC promise
     // never got a chance to remove it because we never created it.
+    stopSampler();
+    mark('FAILED', { error: err instanceof Error ? err.message : String(err) });
     removeBeforeUnloadListener();
     throw err;
   }
