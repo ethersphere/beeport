@@ -729,7 +729,17 @@ export async function uploadFileClientSide(
       } catch (err) {
         // SOC failures must NEVER fail the upload — the user's file is
         // already on Swarm. Log it so issuer-state recovery is debuggable.
-        console.warn('Failed to save issuer state to SOC (upload itself succeeded):', err);
+        // Surface BeeResponseError fields explicitly: `responseBody` carries
+        // the gateway's `{code, message}` JSON which is the only thing that
+        // distinguishes "bucket full" vs "duplicate / immutable rewrite" vs
+        // "stamp not yet propagated". Without it the console just shows
+        // `Request failed with status code 400` and we can't tell which.
+        const detail = describeSocError(err);
+        console.warn(
+          'Failed to save issuer state to SOC (upload itself succeeded):',
+          detail,
+          err
+        );
         return undefined;
       } finally {
         removeBeforeUnloadListener();
@@ -1080,6 +1090,68 @@ function stripHex(value: string): string {
 function isRetryable(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /network|timeout|fetch|ECONN|ETIMEDOUT|stalled|429|5\d\d/i.test(msg);
+}
+
+/**
+ * Pull the diagnostic fields off a `BeeResponseError` (or anything axios-
+ * shaped) into a flat object for `console.warn`. The bare `BeeResponseError`
+ * stringifies to just `Request failed with status code 400`, which tells you
+ * nothing about the failure mode. The Bee gateway puts the actual reason on
+ * `responseBody.message` (e.g. `bucket is full`, `batch not yet usable`,
+ * `chunk already exists`) — this helper surfaces it next to the status code
+ * so the cause is obvious in DevTools without expanding the error object.
+ */
+function describeSocError(err: unknown): {
+  status: number | undefined;
+  method: string | undefined;
+  url: string | undefined;
+  gatewayCode: string | number | undefined;
+  gatewayMessage: string | undefined;
+  responseBody: unknown;
+} {
+  const e = (err ?? {}) as {
+    status?: unknown;
+    statusCode?: unknown;
+    method?: unknown;
+    url?: unknown;
+    responseBody?: unknown;
+    response?: { status?: unknown; data?: unknown; config?: { method?: unknown; url?: unknown } };
+    config?: { method?: unknown; url?: unknown };
+  };
+
+  const status =
+    typeof e.status === 'number'
+      ? e.status
+      : typeof e.statusCode === 'number'
+        ? e.statusCode
+        : typeof e.response?.status === 'number'
+          ? e.response.status
+          : undefined;
+
+  const method =
+    (typeof e.method === 'string' && e.method) ||
+    (typeof e.config?.method === 'string' && e.config.method) ||
+    (typeof e.response?.config?.method === 'string' && e.response.config.method) ||
+    undefined;
+
+  const url =
+    (typeof e.url === 'string' && e.url) ||
+    (typeof e.config?.url === 'string' && e.config.url) ||
+    (typeof e.response?.config?.url === 'string' && e.response.config.url) ||
+    undefined;
+
+  const body = e.responseBody ?? e.response?.data ?? null;
+  let gatewayCode: string | number | undefined;
+  let gatewayMessage: string | undefined;
+  if (body && typeof body === 'object') {
+    const b = body as { code?: unknown; message?: unknown };
+    if (typeof b.code === 'string' || typeof b.code === 'number') gatewayCode = b.code;
+    if (typeof b.message === 'string') gatewayMessage = b.message;
+  } else if (typeof body === 'string') {
+    gatewayMessage = body;
+  }
+
+  return { status, method, url, gatewayCode, gatewayMessage, responseBody: body };
 }
 
 /**
