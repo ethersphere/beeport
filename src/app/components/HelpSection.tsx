@@ -197,36 +197,52 @@ const HelpSection: React.FC<HelpSectionProps> = ({
         </div>
 
         <h2>How to use this dapp?</h2>
+        <p className={styles.hint}>
+          Beeport is fully self-custody: every chunk is BMT-hashed and postage-stamped in your
+          browser before it is POSTed to a Bee node. There is no application server — you just
+          need a Bee node that&apos;s reachable from your browser. Pick whichever fits your setup:
+        </p>
         <ol>
           <li>
-            <h3>Using swarm central node</h3>
+            <h3>Default Bee gateway</h3>
             <p>
-              By default this app provides central node for uploads and you can just buy storage and
-              upload data
+              Out of the box the app talks to a public Bee gateway, so you can connect your wallet,
+              buy storage, and upload right away — nothing to install.
             </p>
           </li>
           <li>
-            <h3>Using local node</h3>
+            <h3>Local Bee node</h3>
             <p>
-              Connect to your local node, you need a PAID plan for NGROK to expose it to world and
-              then start it with this command &quot;ngrok http 1633
-              --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;&quot;
-            </p>
-          </li>
-          <li>
-            <h3>Remote node</h3>
-            <p>
-              This app can also be run with remote node, hosted on a server and its endpoints
-              exposed, you can use{' '}
+              Install{' '}
               <a
-                href="https://github.com/ethersphere/beeport/blob/main/backend/index.js"
+                href="https://www.ethswarm.org/build/swarm-desktop"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.link}
               >
-                this code snippet
+                Swarm Desktop
               </a>{' '}
-              for that, or make your own
+              or run a standalone Bee node, then enable <strong>Custom Node</strong> above and
+              point it at <code>http://localhost:1633</code>. No tunnel is needed when you&apos;re
+              using the dapp on the same machine.
+            </p>
+          </li>
+          <li>
+            <h3>Self-hosted remote Bee node</h3>
+            <p>
+              You can also point the app at a Bee node on your own server. All you need is TLS
+              termination and permissive CORS in front of it — a minimal nginx config is in{' '}
+              <a
+                href="https://github.com/ethersphere/beeport/blob/main/backend/README.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.link}
+              >
+                backend/README.md
+              </a>
+              . For a quick demo you can also tunnel a local node with a paid NGROK plan:{' '}
+              <code>ngrok http 1633 --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;</code>
+              .
             </p>
           </li>
         </ol>

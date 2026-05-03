@@ -1,343 +1,182 @@
-## Backend proxy server
+# Self-hosting a Bee gateway for Beeport
 
-This folder contains proxy script to be put on server with BEE Node, serving content and proxying stamps purchases for users.
+Beeport is a fully **self-custody** dapp: every chunk is BMT-hashed and
+postage-stamped in the user's browser before it's POSTed to a Bee node. There
+is no application server. The browser talks directly to a Bee node over HTTPS.
 
-```
-npm install express http-proxy-middleware viem cors dotenv
+This folder used to contain a Node/Express proxy that gated `POST /bzz` on a
+wallet signature and an on-chain `getBatchPayer(batchId)` lookup. With
+[`StampsRegistryV2`](../contracts/StampsRegistryV2.sol) and Bee's
+`presignedStamper`, that authn/authz layer is now handled cryptographically by
+Bee itself — only the holder of a batch's on-chain `_owner` key can produce a
+valid stamp envelope, and Bee rejects everything else with HTTP 400. The
+proxy was redundant and has been removed.
 
-```
+## What you actually need to run
 
-## Config
+For Beeport to talk to your node from a browser you need three things:
 
-```
-cp .env.example .env
-```
+1. **A Bee node** with a recent enough version to support `presignedStamper`
+   (any 2.x). Standard install: <https://docs.ethswarm.org/docs/bee/installation/>.
+2. **TLS termination** — browsers won't let an `https://` page POST chunks
+   to plain `http://`.
+3. **Permissive CORS** for the origin(s) you'll serve Beeport from. The
+   browser hits `/chunks`, `/soc/*`, `/bzz/*`, `/health`, `/chainstate`,
+   `/wallet`, `/stamps/*`, and `/tags`. The relevant request headers are
+   pure Swarm (`swarm-postage-stamp`, `swarm-postage-batch-id`,
+   `swarm-pin`, `swarm-deferred-upload`, `swarm-tag`,
+   `swarm-index-document`, `swarm-error-document`,
+   `swarm-collection`); no app-specific headers are required anymore.
 
-and change values of variables in the .env file
+Nginx + the local Bee node on `127.0.0.1:1633` is the recommended stack. If
+your platform already gives you HTTPS + CORS (e.g. Cloudflare in front of a
+Bee node), you can skip nginx.
 
-## Nginx config example
+## Minimal nginx config
+
+This is a pure pass-through. No application code, no auth.
 
 ```nginx
 map $http_origin $cors_origin {
     default "";
-    "~^https://buzz-mint\.eth\.limo$" "https://buzz-mint.eth.limo";
-    "~^https://beeport\.eth\.limo$" "https://beeport.eth.limo";
-    "~^https://swarming\.site$" "https://swarming.site";
-    "~^https://www\.swarming\.site$" "https://www.swarming.site";
-    "~^http://localhost:3000$" "http://localhost:3000";
-    "~^https://localhost:3000$" "https://localhost:3000";
-    "~^http://127\.0\.0\.1:3000$" "http://127.0.0.1:3000";
-    "~^https://127\.0\.0\.1:3000$" "https://127.0.0.1:3000";
-}
-
-# Define CORS headers once to avoid duplication
-map $request_method $cors_allow_headers {
-    default "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload";
-    OPTIONS "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,registry-address,swarm-collection,x-upload-signed-message,x-uploader-address,x-file-name,x-message-content,Swarm-Index-Document,Swarm-Error-Document,swarm-tag,x-upload-session-token,x-multi-file-upload";
-}
-
-map $request_method $cors_expose_headers {
-    default "Content-Length,Content-Range,x-session-token,x-session-created,x-session-valid";
-    OPTIONS "Content-Length,Content-Range,x-session-token,x-session-created,x-session-valid";
+    "~^https://buzz-mint\.eth\.limo$"      "https://buzz-mint.eth.limo";
+    "~^https://beeport\.eth\.limo$"        "https://beeport.eth.limo";
+    "~^https://beeport\.ethswarm\.org$"    "https://beeport.ethswarm.org";
+    "~^https://swarming\.site$"            "https://swarming.site";
+    "~^https://www\.swarming\.site$"       "https://www.swarming.site";
+    "~^http://localhost:3000$"             "http://localhost:3000";
 }
 
 map $request_method $cors_allow_methods {
     default "GET, POST, OPTIONS, PUT, DELETE";
-    OPTIONS "GET, POST, OPTIONS, PUT, DELETE";
 }
 
-# Redirect HTTP to HTTPS
+# Headers the browser sends. Everything app-specific is gone — only the
+# stock Swarm headers + Content-Type / Range remain.
+map $request_method $cors_allow_headers {
+    default "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-postage-stamp,swarm-postage-batch-id,swarm-pin,swarm-deferred-upload,swarm-collection,swarm-tag,swarm-index-document,swarm-error-document,swarm-act,swarm-encrypt,swarm-redundancy-level,swarm-redundancy-strategy,swarm-redundancy-fallback-mode,swarm-chunk-retrieval-timeout";
+}
+
+# Headers the browser is allowed to read from the response.
+map $request_method $cors_expose_headers {
+    default "Content-Length,Content-Range,Swarm-Tag,Swarm-Act-History-Address";
+}
+
+# Redirect HTTP → HTTPS
 server {
     listen 80;
     server_name swarming.site www.swarming.site;
     return 301 https://$host$request_uri;
 }
 
-# Main Server Block (HTTPS)
 server {
     listen 443 ssl;
     server_name swarming.site www.swarming.site;
 
-    # SSL Configuration (Managed by Certbot)
-    ssl_certificate /etc/letsencrypt/live/swarming.site/fullchain.pem;
+    ssl_certificate     /etc/letsencrypt/live/swarming.site/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/swarming.site/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
 
-    # Serve Static Website (Frontend) from beeport/out
+    # Optional: serve the static Beeport export from /var/www/beeport/out
     root /var/www/beeport/out/;
     index index.html;
-
     location / {
         try_files $uri /index.html;
     }
 
-    # Proxy API Requests to Backend for /bzz
-    location /bzz {
-        # Add CORS headers using variables (defined once, used everywhere)
-        add_header 'Access-Control-Allow-Origin' $cors_origin always;
-        add_header 'Access-Control-Allow-Methods' $cors_allow_methods always;
-        add_header 'Access-Control-Allow-Headers' $cors_allow_headers always;
-        add_header 'Access-Control-Expose-Headers' $cors_expose_headers always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
+    # Single CORS-aware proxy block reused for every Bee endpoint.
+    # Use a `location ~ ^/(chunks|soc|bzz|stamps|wallet|tags|health|chainstate|reservestate)`
+    # if you'd rather list them explicitly.
+    location ~ ^/(chunks|soc|bzz|stamps|wallet|tags|health|chainstate|reservestate)(/|$) {
+        add_header 'Access-Control-Allow-Origin'      $cors_origin       always;
+        add_header 'Access-Control-Allow-Methods'     $cors_allow_methods always;
+        add_header 'Access-Control-Allow-Headers'     $cors_allow_headers always;
+        add_header 'Access-Control-Expose-Headers'    $cors_expose_headers always;
+        add_header 'Access-Control-Allow-Credentials' 'true'              always;
 
-        # Handle preflight requests (OPTIONS) - uses same variables
         if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' $cors_origin always;
-            add_header 'Access-Control-Allow-Methods' $cors_allow_methods always;
-            add_header 'Access-Control-Allow-Headers' $cors_allow_headers always;
-            add_header 'Access-Control-Expose-Headers' $cors_expose_headers always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Type'   'text/plain; charset=utf-8';
             add_header 'Content-Length' 0;
             return 204;
         }
 
-        proxy_pass http://localhost:3333;
+        proxy_pass         http://127.0.0.1:1633;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
 
-        # Handle Large Uploads
+        # Large uploads + slow chunk POSTs.
         client_max_body_size 0;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-
-    # Proxy /stamps to Bee node
-    location /stamps {
-        add_header 'Access-Control-Allow-Origin' $cors_origin always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-
-        # Handle preflight requests (OPTIONS)
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' $cors_origin always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-
-        proxy_pass http://localhost:1633;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 0;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-
-    # Proxy /wallet to Bee node
-    location /wallet {
-        add_header 'Access-Control-Allow-Origin' $cors_origin always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-
-        # Handle preflight requests (OPTIONS)
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' $cors_origin always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-
-        proxy_pass http://localhost:1633;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 0;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-
-    # Proxy /tags to Bee node
-    location /tags {
-        add_header 'Access-Control-Allow-Origin' $cors_origin always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-tag' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-
-        # Handle preflight requests (OPTIONS)
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' $cors_origin always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,swarm-tag' always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-
-        proxy_pass http://localhost:1633;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 0;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-
-    # Health check endpoint
-    location /health {
-        add_header 'Access-Control-Allow-Origin' $cors_origin always;
-        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-
-        # Handle preflight requests (OPTIONS)
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' $cors_origin always;
-            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-            add_header 'Access-Control-Allow-Credentials' 'true' always;
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-
-        proxy_pass http://localhost:1633;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout   3600s;
+        proxy_send_timeout   3600s;
     }
 }
 ```
 
-## Benefits of This Configuration
-
-This configuration uses **nginx variables** to eliminate CORS header duplication:
-
-### ✅ **Advantages:**
-
-- **DRY Principle**: Define headers once, use everywhere
-- **Easier Maintenance**: Change headers in one place
-- **Consistent**: Same headers for preflight and actual requests
-- **Cleaner**: Less repetitive code
-
-### 🔧 **How It Works:**
-
-```nginx
-# Define once at the top
-map $request_method $cors_expose_headers {
-    default "Content-Length,Content-Range,x-session-token,x-session-created,x-session-valid";
-    OPTIONS "Content-Length,Content-Range,x-session-token,x-session-created,x-session-valid";
-}
-
-# Use everywhere
-add_header 'Access-Control-Expose-Headers' $cors_expose_headers always;
-```
-
-### 📝 **To Add New Headers:**
-
-Just update the map variables at the top - they'll automatically apply to both preflight and actual requests.
-
-## How to Apply This Configuration
-
-### 1. Find your nginx configuration file
-
-Usually located at:
-
-- `/etc/nginx/sites-available/swarming.site`
-- `/etc/nginx/nginx.conf`
-- `/etc/nginx/conf.d/swarming.site.conf`
-
-### 2. Update your live nginx config
-
-Copy the configuration above to your actual nginx config file, making sure to include:
-
-**Important:** Add this line in TWO places within the `/bzz` location:
-
-```nginx
-add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range,x-session-token,x-session-created,x-session-valid' always;
-```
-
-**Location 1:** In the main `/bzz` block (after other `add_header` lines)
-**Location 2:** Inside the `if ($request_method = 'OPTIONS')` block
-
-### 3. Test and reload nginx
+Apply with:
 
 ```bash
-# Test the configuration
-sudo nginx -t
-
-# If test passes, reload nginx
-sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## Troubleshooting CORS Issues
+## Pointing Beeport at your node
 
-If you're still getting CORS errors, try these debugging steps:
+In the frontend, the Bee gateway URL is read from
+`NEXT_PUBLIC_DEFAULT_BEE_API_URL` (see `src/app/components/constants.ts`):
 
-1. **Check if CORS mapping is working:**
+```bash
+NEXT_PUBLIC_DEFAULT_BEE_API_URL=https://swarming.site
+```
 
-   ```bash
-   # Test the CORS mapping
-   curl -H "Origin: http://localhost:3000" -I https://swarming.site/bzz
-   ```
+The user can also override it from the in-app **Bee node URL** input at
+runtime, so the env var is just a default.
 
-2. **Verify session headers are exposed:**
+## Why the old proxy is gone
 
-   ```bash
-   # Check if session headers are in the response
-   curl -H "Origin: http://localhost:3000" -I https://swarming.site/bzz | grep -i "access-control-expose"
-   ```
+For reference, the previous flow shipped each upload with these custom
+headers: `x-upload-signed-message`, `x-uploader-address`, `x-file-name`,
+`x-message-content`, `x-upload-session-token`, `x-multi-file-upload`. The
+proxy verified the wallet signature with viem's `verifyMessage` and called
+`StampsRegistry.getBatchPayer(batchId)` on Gnosis to confirm the wallet had
+paid for the batch. That was the only thing standing between random wallets
+and your local Bee node's bandwidth.
 
-3. **Add fallback CORS for debugging:**
+Under self-custody both checks become redundant:
 
-   ```nginx
-   # Temporarily add this to /bzz location for debugging
-   add_header 'Access-Control-Allow-Origin' '*' always;
-   ```
+- The user signs **once**, derives a deterministic hot key, registers it
+  on-chain via `StampsRegistryV2` as the batch's `_owner`, and stamps every
+  chunk locally with that key (`src/app/components/ClientStamping.ts` +
+  `src/app/components/ClientSideUpload.ts`).
+- Bee's `presignedStamper` validates each stamp envelope against the
+  on-chain `_owner` directly — wrong owner ⇒ HTTP 400. There is nothing
+  for an application proxy to add on top.
 
-4. **Check nginx error logs:**
+If you still want to gate your Bee node to specific frontends (the proxy's
+side-effect of "only my customers' bandwidth"), use:
 
-   ```bash
-   sudo tail -f /var/log/nginx/error.log
-   ```
+- **An nginx Origin allowlist** (the `map $http_origin $cors_origin` block
+  above already does this for browsers — non-browser clients can fake
+  Origin, but they'd need a valid stamp anyway).
+- **A simple per-IP rate limit** (`limit_req_zone` in nginx).
+- **An API-key layer** (e.g. Cloudflare Workers in front), if you really
+  need a hard gate. None of this is needed for correctness — only for
+  policing your own bandwidth.
 
-5. **Reload nginx after changes:**
-   ```bash
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
+## Smart-contract registry
 
-# Smart contract registry
+The on-chain side of self-custody lives in:
 
-We have here smart contract registry, that is used to keep track of stamps bought by user address. Deployed on Gnosis chain with Remix IDE.
+- [`contracts/StampsRegistryV2.sol`](../contracts/StampsRegistryV2.sol) —
+  current registry. Maps each `batchId` to the hot-key address that owns
+  it; this is what Bee's `presignedStamper` reads.
+- [`contracts/StampsRegistry.sol`](../contracts/StampsRegistry.sol) —
+  legacy V1 registry. Still on-chain because `SushiSwapStampsRouter`'s
+  constructor takes its address; scheduled for retirement (see
+  `docs/TODO.md` §3.1).
+
+Deployments live under `deployments/gnosis/` and can be redeployed with
+`npm run deploy:registry-v2`.

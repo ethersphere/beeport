@@ -43,19 +43,37 @@ npx serve out
 
 ## How to run locally
 
-First install swarm desktop and run it or install and run bee node locally
-Set the BEE API URL to http://localhost:1633
+Install Swarm Desktop (or a standalone Bee node) and run it. Point the app
+at it by leaving the **Bee node URL** input on the default
+`http://localhost:1633`, or set:
 
-## How to setup endpoint to serve content remotely
-
-Add the in the scripts/index.js code to the server and run it
-That will expose bee node endpoints for upload through proxy
-
-or you need a PAID plan for NGROK to run your local Node and expose it to world and then start it with this command
-
-```CLI
-ngrok http 1633 --request-header-add="ngrok-skip-browser-warning:1"
+```bash
+NEXT_PUBLIC_DEFAULT_BEE_API_URL=http://localhost:1633
 ```
+
+That's it — the browser does the BMT, postage stamping and `POST /chunks`
+itself. There is **no application server to run**.
+
+## How to expose your Bee node to the world
+
+Beeport is fully self-custody: every chunk is signed in the browser by a
+hot key registered on-chain via `StampsRegistryV2`, and Bee's
+`presignedStamper` validates each stamp directly. You only need a way for
+browsers to reach a Bee node over HTTPS.
+
+Pick whichever fits your setup:
+
+- **Production**: TLS-terminating reverse proxy (nginx, Caddy, Cloudflare,
+  etc.) in front of a Bee node, with permissive CORS for your frontend's
+  origin. A drop-in nginx config is in [`backend/README.md`](./backend/README.md).
+- **Quick demo / local dev**: a paid NGROK plan to expose `localhost:1633`:
+
+  ```bash
+  ngrok http 1633 --request-header-add="ngrok-skip-browser-warning:1"
+  ```
+
+The legacy Express signature-checking proxy that used to live in `backend/`
+is gone — see `backend/README.md` for the rationale.
 
 ## How to EXPORT this app
 
