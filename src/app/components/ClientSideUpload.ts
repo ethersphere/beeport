@@ -32,7 +32,16 @@ import {
 } from '@ethersphere/bee-js';
 import { AsyncQueue, type Chunk } from 'cafe-utility';
 
-import { loadStamperState, saveStamperState, type DerivedHotKey } from './ClientStamping';
+import {
+  loadStamperState,
+  saveStamperState,
+  clearStamperState,
+  loadStampedAddresses,
+  addStampedAddress,
+  clearStampedAddresses,
+  chunkAddressHex,
+  type DerivedHotKey,
+} from './ClientStamping';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
 
 /**
@@ -92,6 +101,26 @@ const CHUNK_RETRY_BASE_MS = 500;
  * round-trip while letting us recycle dead sockets quickly.
  */
 const CHUNK_HTTP_TIMEOUT_MS = 15_000;
+
+/**
+ * Stamp-readiness probe: how long we sleep between probe attempts and how
+ * many times we retry before giving up. The total budget is intentionally
+ * generous (~2 min) because the failure mode this guards against is a
+ * fresh batch racing the gateway's chain listener — Gnosis poll cycles
+ * can spike to tens of seconds when an RPC tier is backed up. Status
+ * callbacks fire on every retry so the user always sees forward motion.
+ */
+const STAMP_READY_PROBE_DELAY_MS = 4_000;
+const STAMP_READY_PROBE_MAX_ATTEMPTS = 30;
+
+/**
+ * Canonical payload for the readiness probe. A 4 KiB block of zeros
+ * deterministically hashes to one specific chunk address; using that
+ * means re-runs on the same browser hit the dedup set instead of
+ * burning a fresh slot, and any number of users probing the same
+ * gateway converge on the same Bee chunk (cheap on storage).
+ */
+const STAMP_READY_PROBE_DATA = new Uint8Array(4096);
 
 /**
  * Adaptive-concurrency target when an HTTP/2 gateway is detected. HTTP/2
@@ -253,22 +282,41 @@ export async function uploadFileClientSide(
   // ── Stamper: load persisted issuer state or start fresh ────────────────────
   // Bee will reject (bucket conflict) if we re-use a (bucket,cnt) pair, so the
   // counters MUST persist across browser sessions for the same batchId.
-  const persisted = loadStamperState(cleanBatchId);
-  const stamper = persisted
-    ? Stamper.fromState(signer, cleanBatchId, persisted.buckets, persisted.depth)
-    : Stamper.fromBlank(signer, cleanBatchId, depth);
-
+  //
+  // Depth-mismatch handling: if the persisted state was built at a different
+  // depth than the on-chain batch (typically because a previous upload ran
+  // with the wrong `selectedDepth`), we cannot trust ANY of the saved bucket
+  // counters — Bee was validating against a different `maxSlot` than our
+  // local Stamper, so some `cnt` values we counted as consumed were in fact
+  // rejected by Bee, and others we counted as fresh may collide with Bee's
+  // record. The safe move is to discard the bad state, clear the matching
+  // chunk-dedup set (which would otherwise skip uploads we can't prove ever
+  // landed), and start a fresh `fromBlank`.
+  const persisted = await loadStamperState(cleanBatchId);
+  let stamper: Stamper;
   if (persisted && persisted.depth !== depth) {
-    console.warn(
-      `Stamper state depth mismatch (${persisted.depth} vs ${depth}); using persisted state`
+    console.error(
+      `[ClientSideUpload] Refusing persisted issuer state at depth ${persisted.depth} ` +
+        `for batch at depth ${depth}. Clearing local state and starting fresh — ` +
+        `the saved counters were diverging from what Bee accepts.`
     );
+    await clearStamperState(cleanBatchId);
+    await clearStampedAddresses(cleanBatchId);
+    stamper = Stamper.fromBlank(signer, cleanBatchId, depth);
+  } else if (persisted) {
+    stamper = Stamper.fromState(signer, cleanBatchId, persisted.buckets, persisted.depth);
+  } else {
+    stamper = Stamper.fromBlank(signer, cleanBatchId, depth);
   }
 
   // ── Pre-flight: refuse if projected utilization would exceed the cap ──────
   // Cheap synchronous check on the local stamper state; doesn't need the
   // gateway. Avoids burning slots on an upload that's mathematically
-  // guaranteed to hit "Bucket is full".
-  const capacity = checkProjectedStampCapacity(stamper, file.size);
+  // guaranteed to hit "Bucket is full". Also asserts that the local
+  // Stamper's depth matches the on-chain batch depth — after the
+  // `clearStamperState` branch above this should always hold, but the check
+  // is a cheap belt-and-braces against future regressions.
+  const capacity = checkProjectedStampCapacity(stamper, file.size, depth);
   if (capacity.level === 'fail') {
     throw new Error(capacity.message ?? 'Stamp would be over-capacity for this upload');
   }
@@ -383,25 +431,52 @@ export async function uploadFileClientSide(
   };
 
   let lastStatePersistAt = 0;
+  // saveStamperState is now async (IDB-backed). Fire-and-forget the write —
+  // it's a 256 KB structured-clone put on a separate transaction; latency
+  // doesn't block the chunk pipeline. Errors are logged inside saveStamperState.
   const maybePersistState = (force = false) => {
     const now = Date.now();
     if (!force && now - lastStatePersistAt < STATE_PERSIST_MIN_INTERVAL_MS) {
       return;
     }
     lastStatePersistAt = now;
-    saveStamperState(cleanBatchId, {
+    void saveStamperState(cleanBatchId, {
       buckets: stamper.getState(),
       depth: stamper.depth,
     });
   };
 
-  // beforeunload: synchronously flush stamper state if the user closes the
-  // tab mid-upload. Without this, the 2 s debounce window can lose up to
-  // 2 s of bucket increments — small, but trivially preventable since
-  // saveStamperState is sync (just localStorage.setItem). Removed in the
-  // outer try/finally below regardless of how the upload exits.
+  // ── Per-batch chunk-address dedup ──────────────────────────────────────────
+  // Re-uploading the same file (or any file whose chunks we've already
+  // stamped+uploaded under this batch) used to burn a fresh slot per chunk
+  // because bee-js's `Stamper.stamp()` always advances the bucket counter.
+  // We avoid that by short-circuiting the stamp+POST entirely when a chunk's
+  // address is in this set: Bee dedups by chunk hash, the chunk is already
+  // there, and the bucket counter doesn't need to move. New addresses go
+  // through the full `stampAndUpload` and are recorded on success.
+  //
+  // Persistence model: the in-memory `stampedAddrs` Set is the read-side
+  // cache; the IndexedDB `stampedAddrs` store is the durable write-side.
+  // Each successful chunk fires one tiny `addStampedAddress(...)` `put`,
+  // so the dedup set is effectively persisted in real time without the
+  // bulk re-serialization that the previous localStorage layout required
+  // (which is what blew the ~5 MB origin quota — see the IndexedDBStore
+  // header comment).
+  const stampedAddrs = await loadStampedAddresses(cleanBatchId);
+  let dedupSkipCount = 0;
+
+  // beforeunload: best-effort flush of the stamper state if the user closes
+  // the tab mid-upload. The IDB transaction is async — most browsers will
+  // complete an already-issued `put` even after the handler returns, but
+  // this is no longer the strong guarantee the pre-IDB localStorage write
+  // gave us. The 2 s loss window is acceptable because:
+  //   1. Stamped addresses are written-through per chunk (no loss possible).
+  //   2. Stamper-state loss is bounded by the SOC backup on Swarm — a
+  //      cross-device restore replays the missing slots from the last
+  //      successful SOC write.
+  // Listener is removed exactly once via `removeBeforeUnloadListener` below.
   const beforeUnloadHandler = () => {
-    saveStamperState(cleanBatchId, {
+    void saveStamperState(cleanBatchId, {
       buckets: stamper.getState(),
       depth: stamper.depth,
     });
@@ -423,6 +498,20 @@ export async function uploadFileClientSide(
   let firstError: Error | null = null;
 
   const stampAndUpload = async (chunk: Chunk): Promise<void> => {
+    // Dedup short-circuit: if we've already stamped+uploaded this exact
+    // chunk address under this batch, Bee already has the chunk and our
+    // local Stamper has the slot recorded. Re-running stamp() would burn
+    // ANOTHER slot for zero benefit (Bee dedups storage by chunk hash on
+    // its end). Counts toward `chunksUploaded` so the progress bar still
+    // advances normally.
+    const addrHex = chunkAddressHex(chunk.hash());
+    if (stampedAddrs.has(addrHex)) {
+      chunksUploaded++;
+      dedupSkipCount++;
+      onProgress?.(chunksUploaded, totalChunksApprox);
+      return;
+    }
+
     const chunkBytes = chunk.build();
     let envelope: EnvelopeWithBatchId | null = null;
 
@@ -442,6 +531,13 @@ export async function uploadFileClientSide(
           timeout: CHUNK_HTTP_TIMEOUT_MS,
         } as any);
         chunksUploaded++;
+        // Record the address only after Bee has accepted the chunk; we never
+        // want to skip a future re-upload for a chunk we can't prove landed.
+        // Persist incrementally to IDB — one tiny `put` per chunk, no
+        // re-serialization of the whole set on every flush. Fire-and-forget;
+        // errors are logged inside addStampedAddress.
+        stampedAddrs.add(addrHex);
+        void addStampedAddress(cleanBatchId, addrHex);
         maybePersistState();
         onProgress?.(chunksUploaded, totalChunksApprox);
         if (!firstChunkMarked) {
@@ -486,9 +582,17 @@ export async function uploadFileClientSide(
             error
           );
         }
-        // Re-throw so AsyncQueue's `.finally` still decrements `running` —
-        // we only need to remember the first error, not crash the queue.
-        throw error;
+        // DO NOT re-throw here. cafe-utility's AsyncQueue.process() only
+        // attaches `.finally()` to the task promise — there is no `.catch`,
+        // so a rejection from this body bubbles up as an *unhandled*
+        // promise rejection, which Next.js renders as a red runtime-error
+        // overlay (one per failing chunk, so 64 simultaneous 400s = 64
+        // overlays). We capture the first error and let `queue.drain()`
+        // resolve normally; the outer await of `drain()` then re-throws
+        // `firstError` once. The `running` counter is still decremented
+        // by AsyncQueue's `.finally` regardless of whether we throw —
+        // returning here is purely about hiding the rejection from the
+        // global handler, not about queue book-keeping.
       }
     });
   };
@@ -505,6 +609,28 @@ export async function uploadFileClientSide(
   };
 
   try {
+    // ── Pre-flight: prove the gateway will accept stamps from us ────────────
+    // For a freshly-created batch the gateway's batchstore may not yet have
+    // indexed our `createBatch` block; firing the parallel chunk firehose
+    // at that point produces N parallel HTTP 400s and looks (correctly!) to
+    // the user like "the upload just exploded". Probe with one chunk first,
+    // looping with backoff + status updates until the gateway accepts it.
+    // Skipped on second-and-later runs from this browser via the dedup set
+    // (the probe address is deterministic, so a hit means we've succeeded
+    // before — gateway is definitely ready).
+    const probeAddrPreview = chunkAddressHex(
+      (await MerkleTree.root(STAMP_READY_PROBE_DATA)).hash()
+    );
+    if (!stampedAddrs.has(probeAddrPreview)) {
+      onStatus?.('Verifying stamp readiness with Bee gateway…');
+      mark('readiness probe started');
+      const { probeAddrHex } = await waitForStampReady(stamper, bee, abortSignal, onStatus);
+      stampedAddrs.add(probeAddrHex);
+      void addStampedAddress(cleanBatchId, probeAddrHex);
+      maybePersistState(true);
+      mark('readiness probe accepted');
+    }
+
     // ── Chunk file → BMT MerkleTree → onChunk → upload ──────────────────────
     onStatus?.('Chunking and stamping file…');
     const fileRootChunk = await streamFileThroughMerkleTree(file, onChunk, abortSignal);
@@ -520,7 +646,7 @@ export async function uploadFileClientSide(
 
     maybePersistState(true);
     const fileChunkCount = chunksUploaded;
-    mark('file leaves uploaded', { count: fileChunkCount });
+    mark('file leaves uploaded', { count: fileChunkCount, deduped: dedupSkipCount });
 
     // The file's root chunk is itself a chunk that must be uploaded —
     // finalize() does NOT push it through onChunk.
@@ -665,8 +791,28 @@ export async function uploadFileClientSide(
  */
 export function checkProjectedStampCapacity(
   stamper: Stamper,
-  fileSizeBytes: number
+  fileSizeBytes: number,
+  /**
+   * On-chain batch depth this Stamper is supposed to be issuing stamps for.
+   * When provided and disagreeing with `stamper.depth`, we hard-fail rather
+   * than running the bucket math against a depth that doesn't match what
+   * Bee will validate against — that combination silently desyncs local
+   * `cnt`s from Bee's accepted set and is the textbook cause of late-stage
+   * "Bucket is full" with deceptively low byte-fill numbers.
+   */
+  expectedDepth?: number
 ): ProjectedStampCapacity {
+  if (expectedDepth !== undefined && stamper.depth !== expectedDepth) {
+    return {
+      level: 'fail',
+      utilizationPercent: 0,
+      projectedUtilizationPercent: 0,
+      message:
+        `Local issuer state was built at depth ${stamper.depth} but the ` +
+        `batch is at depth ${expectedDepth}. Reset the local stamper state ` +
+        `for this batch and try again.`,
+    };
+  }
   const buckets = stamper.getState();
   const depth = stamper.depth;
   const maxSlot = 2 ** (depth - 16);
@@ -831,6 +977,89 @@ async function uploadOneChunk(
       await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
     }
   }
+}
+
+/**
+ * Pre-flight probe: synchronously upload a single canonical chunk before
+ * opening the parallel chunk firehose. This is the actual gate that says
+ * "the Bee gateway has indexed our batch and will accept stamps from us".
+ *
+ * Why we need it (the bug this fixes):
+ *   The previous flow `waitForGatewayBatchSync` → start uploading would
+ *   race the gateway's chain listener on a fresh batch. The chainstate
+ *   endpoint can be ahead of the batchstore poll, so a `'synced'` result
+ *   does NOT guarantee chunk POSTs will succeed. When they didn't, the
+ *   AsyncQueue would fan out 64 parallel chunks, each immediately failing
+ *   with a bare HTTP 400, and we'd surface "Upload failed" with no hint
+ *   that the user just needs to wait a few seconds.
+ *
+ * What it does instead:
+ *   1. Stamp ONE canonical chunk (4 KiB of zeros — same content addr every
+ *      run, so Bee dedups and we don't bloat storage)
+ *   2. POST it. If accepted: gateway is ready, return.
+ *   3. If rejected as "stamp not ready" (bare 400 / batch-unknown): sleep
+ *      and retry (same envelope, so no slot burn beyond the initial 1).
+ *   4. Up to {@link STAMP_READY_PROBE_MAX_ATTEMPTS} times; on each retry
+ *      we surface a status callback so the UI can show "Waiting for Bee
+ *      gateway to recognize your new stamp… (probe N/M)".
+ *   5. Anything that isn't stamp-not-ready (signature, bucket, network)
+ *      surfaces as the original error — no point retrying, the user has
+ *      to fix something.
+ *
+ * Returns the probe chunk's address hex so the caller can record it in
+ * the per-batch dedup set; a second upload to the same batch from the
+ * same browser then skips the probe entirely (the gateway has obviously
+ * accepted us before, no need to re-prove it).
+ *
+ * Slot accounting: we intentionally re-use the same envelope across
+ * retries (Bee accepts presigned stamps with stale timestamps — the
+ * timestamp is metadata for issuance ordering, not validity). So the
+ * probe burns exactly 1 slot, recorded in the local Stamper state and
+ * mirrored on Bee. That slot is reclaimed on subsequent runs via the
+ * dedup short-circuit.
+ */
+async function waitForStampReady(
+  stamper: Stamper,
+  bee: Bee,
+  abortSignal: AbortSignal | undefined,
+  onStatus?: (msg: string) => void
+): Promise<{ probeAddrHex: string }> {
+  const probeChunk = await MerkleTree.root(STAMP_READY_PROBE_DATA);
+  const probeAddrHex = chunkAddressHex(probeChunk.hash());
+  const probeBytes = probeChunk.build();
+  const envelope = stamper.stamp(probeChunk);
+
+  for (let attempt = 0; attempt < STAMP_READY_PROBE_MAX_ATTEMPTS; attempt++) {
+    if (abortSignal?.aborted) throw new Error('Upload aborted');
+    try {
+      await bee.uploadChunk(envelope, probeBytes, undefined, {
+        timeout: CHUNK_HTTP_TIMEOUT_MS,
+      } as any);
+      return { probeAddrHex };
+    } catch (err) {
+      const stampNotReady = classifyAsStampNotReady(err);
+      if (!stampNotReady) {
+        // Network blip mid-probe: still give the user the courtesy of a
+        // few automatic retries before bubbling it up — same logic the
+        // per-chunk path uses, just with a fixed budget here.
+        if (isRetryable(err) && attempt < 2) {
+          await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
+          continue;
+        }
+        throw err;
+      }
+      if (attempt === STAMP_READY_PROBE_MAX_ATTEMPTS - 1) throw stampNotReady;
+      const seconds = (STAMP_READY_PROBE_DELAY_MS / 1000).toFixed(0);
+      onStatus?.(
+        `Waiting for Bee gateway to recognize your new stamp… ` +
+          `(probe ${attempt + 1}/${STAMP_READY_PROBE_MAX_ATTEMPTS}, retrying in ${seconds}s)`
+      );
+      await sleep(STAMP_READY_PROBE_DELAY_MS);
+    }
+  }
+  // Unreachable — every iteration either returns or throws — but TS can't
+  // prove that.
+  throw new Error('Stamp readiness probe exhausted attempts');
 }
 
 // ─── Misc helpers ─────────────────────────────────────────────────────────────
@@ -1063,12 +1292,24 @@ interface UploadCtx {
   totalChunksApprox: number;
   chunksUploaded: number;
   firstError: Error | null;
+  /**
+   * Per-batch dedup set; mirrors the one in `uploadFileClientSide`. Each
+   * `add()` is paired with a `void addStampedAddress(...)` so the IDB
+   * record persists immediately — no separate "dirty" flag needed.
+   */
+  stampedAddrs: Set<string>;
   persistState: (force?: boolean) => void;
+  /**
+   * Runs the gateway-readiness probe iff this batch hasn't already been
+   * proven ready in this browser. Idempotent — safe to call multiple times.
+   * Surfaces "Waiting for Bee gateway…" status messages on retries.
+   */
+  ensureStampReady: (onStatus?: (msg: string) => void) => Promise<void>;
   stampAndUpload: (chunk: Chunk) => Promise<void>;
   onChunk: (chunk: Chunk) => Promise<void>;
 }
 
-function createUploadContext(opts: {
+async function createUploadContext(opts: {
   batchId: string;
   hotKey: DerivedHotKey;
   depth: number;
@@ -1077,7 +1318,7 @@ function createUploadContext(opts: {
   abortSignal?: AbortSignal;
   onProgress?: (processed: number, total: number) => void;
   totalChunksApprox: number;
-}): UploadCtx {
+}): Promise<UploadCtx> {
   const { batchId, hotKey, depth, beeApiUrl, concurrency, abortSignal, onProgress } = opts;
 
   if (!batchId) throw new Error('No batchId provided');
@@ -1092,7 +1333,7 @@ function createUploadContext(opts: {
   const bee = new Bee(beeApiUrl);
   const signer: PrivateKey = hotKey.signer;
 
-  const persisted = loadStamperState(cleanBatchId);
+  const persisted = await loadStamperState(cleanBatchId);
   const stamper = persisted
     ? Stamper.fromState(signer, cleanBatchId, persisted.buckets, persisted.depth)
     : Stamper.fromBlank(signer, cleanBatchId, depth);
@@ -1105,6 +1346,8 @@ function createUploadContext(opts: {
 
   const queue = new AsyncQueue(concurrency, concurrency * 2);
 
+  const stampedAddrs = await loadStampedAddresses(cleanBatchId);
+
   const ctx: UploadCtx = {
     bee,
     stamper,
@@ -1115,25 +1358,77 @@ function createUploadContext(opts: {
     totalChunksApprox: opts.totalChunksApprox,
     chunksUploaded: 0,
     firstError: null,
+    stampedAddrs,
     persistState: () => {},
+    ensureStampReady: async () => {},
     stampAndUpload: async () => {},
     onChunk: async () => {},
   };
 
   let lastStatePersistAt = 0;
+  // saveStamperState is async (IDB-backed). Fire-and-forget the put — the
+  // chunk pipeline shouldn't block on persistence latency. Errors are
+  // logged inside saveStamperState. Stamped-address writes happen
+  // incrementally inside `stampAndUpload`, so this debounce only covers
+  // the bucket counters.
   ctx.persistState = (force = false) => {
     const now = Date.now();
     if (!force && now - lastStatePersistAt < STATE_PERSIST_MIN_INTERVAL_MS) {
       return;
     }
     lastStatePersistAt = now;
-    saveStamperState(ctx.cleanBatchId, {
+    void saveStamperState(ctx.cleanBatchId, {
       buckets: ctx.stamper.getState(),
       depth: ctx.stamper.depth,
     });
   };
 
+  // The probe runs at most once per ctx — multiple files in a multi-file
+  // or collection upload share one Stamper / one batch, so they share the
+  // same readiness gate. Memoised as a promise so concurrent first-callers
+  // serialise on the same probe instead of racing.
+  let probePromise: Promise<void> | null = null;
+  ctx.ensureStampReady = async (onStatus?: (msg: string) => void) => {
+    if (probePromise) return probePromise;
+    probePromise = (async () => {
+      const probeAddrPreview = chunkAddressHex(
+        (await MerkleTree.root(STAMP_READY_PROBE_DATA)).hash()
+      );
+      if (ctx.stampedAddrs.has(probeAddrPreview)) return;
+      onStatus?.('Verifying stamp readiness with Bee gateway…');
+      const { probeAddrHex } = await waitForStampReady(
+        ctx.stamper,
+        ctx.bee,
+        ctx.abortSignal,
+        onStatus
+      );
+      ctx.stampedAddrs.add(probeAddrHex);
+      void addStampedAddress(ctx.cleanBatchId, probeAddrHex);
+      ctx.persistState(true);
+    })();
+    try {
+      await probePromise;
+    } catch (err) {
+      // Reset the memo so a retry (e.g. after the user fixes whatever the
+      // probe surfaced) can run a fresh probe instead of latching onto the
+      // failed promise forever.
+      probePromise = null;
+      throw err;
+    }
+  };
+
   ctx.stampAndUpload = async (chunk: Chunk): Promise<void> => {
+    // Per-batch dedup short-circuit (mirrors `uploadFileClientSide`):
+    // re-uploading the same chunk under this batch would burn a fresh slot
+    // for nothing — Bee dedups by chunk hash on its end. Counts toward
+    // `chunksUploaded` so progress still advances normally.
+    const addrHex = chunkAddressHex(chunk.hash());
+    if (ctx.stampedAddrs.has(addrHex)) {
+      ctx.chunksUploaded++;
+      ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
+      return;
+    }
+
     const chunkBytes = chunk.build();
     let envelope: EnvelopeWithBatchId | null = null;
 
@@ -1147,6 +1442,8 @@ function createUploadContext(opts: {
           timeout: CHUNK_HTTP_TIMEOUT_MS,
         } as any);
         ctx.chunksUploaded++;
+        ctx.stampedAddrs.add(addrHex);
+        void addStampedAddress(ctx.cleanBatchId, addrHex);
         ctx.persistState();
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
         return;
@@ -1174,7 +1471,10 @@ function createUploadContext(opts: {
             error
           );
         }
-        throw error;
+        // See note in `uploadFileClientSide.onChunk` — re-throwing here
+        // would surface every parallel chunk failure as a separate
+        // unhandled rejection (Next.js red-overlay storm). Captured
+        // `firstError` is re-thrown by the outer drain awaiter exactly once.
       }
     });
   };
@@ -1358,7 +1658,7 @@ export async function uploadMultipleFilesClientSide(
   if (!files || files.length === 0) throw new Error('No files provided');
 
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
-  const ctx = createUploadContext({
+  const ctx = await createUploadContext({
     batchId,
     hotKey,
     depth,
@@ -1370,6 +1670,13 @@ export async function uploadMultipleFilesClientSide(
   });
 
   const results: MultiFileResult[] = [];
+
+  // One-shot readiness probe before the first file's chunks go out. Lifts
+  // the same fresh-batch race that `uploadFileClientSide` was hitting on
+  // the single-file path. Bubbles up as a `StampNotReadyError` if the
+  // gateway never indexes the batch within the probe budget; the caller
+  // gets a clean error instead of N parallel HTTP-400 results.
+  await ctx.ensureStampReady(onStatus);
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -1519,7 +1826,7 @@ export async function uploadFilesAsCollectionClientSide(
     0
   );
 
-  const ctx = createUploadContext({
+  const ctx = await createUploadContext({
     batchId,
     hotKey,
     depth,
@@ -1529,6 +1836,10 @@ export async function uploadFilesAsCollectionClientSide(
     onProgress,
     totalChunksApprox: approxChunkCount(totalBytes),
   });
+
+  // One-shot readiness probe before the first entry's chunks go out — see
+  // the comment in `uploadMultipleFilesClientSide` for the full rationale.
+  await ctx.ensureStampReady(onStatus);
 
   const manifest = new MantarayNode();
   const beforeAllFiles = ctx.chunksUploaded;

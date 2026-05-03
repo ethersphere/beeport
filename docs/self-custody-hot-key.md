@@ -78,7 +78,8 @@ the self-custody flow.
 | Hot-key **private key** | RAM only | Lives in `hotKeyCache: Map<string, DerivedHotKey>` for the lifetime of the tab. Garbage-collected on close. |
 | Hot-key **address** | `localStorage["beeport.hotKeyAddress.<wallet>"]` | Public info. UI display only. |
 | Self-custody batch metadata | `localStorage["beeport.selfCustodyBatches.v1"]` | `{ batchId, walletAddress, hotKeyAddress, depth, totalAmount, … }`. Used by the stamp list when Bee can't tell us about foreign-owned batches. |
-| Stamper **issuer state** (bucket counters) | `localStorage["beeport.stamper.<batchId>"]` | One `Uint32Array(65 536)` per batch. Critical: re-use of `(bucket, cnt)` is rejected by Bee, so this MUST persist across sessions. |
+| Stamper **issuer state** (bucket counters) | `IndexedDB["beeport"].stamperState[batchId]` | One `Uint32Array(65 536)` per batch, stored via structured clone (no JSON round-trip). Critical: re-use of `(bucket, cnt)` is rejected by Bee, so this MUST persist across sessions. Migrated automatically on first load from the legacy `localStorage["beeport.stamper.<batchId>"]` key. |
+| Per-batch chunk-address dedup set | `IndexedDB["beeport"].stampedAddrs` (composite key `[batchId, addrHex]`, `byBatch` index) | One record per chunk address ever stamped+accepted under the batch. Written incrementally — one tiny `put` per chunk — so re-uploading the same file is cheap and there's no quota pressure. Migrated automatically on first load from the legacy `localStorage["beeport.stamped.<batchId>"]` key. |
 | Wallet signature itself | nowhere | Discarded after `keccak256` produces the hot key. |
 
 ---

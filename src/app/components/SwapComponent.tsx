@@ -1534,12 +1534,16 @@ const SwapComponent: React.FC = () => {
     if (err instanceof StampNotReadyError) {
       // The most common case for a freshly-created batch — the gateway's
       // chain listener simply hasn't caught up to our `createBatch` block
-      // yet. Self-resolves within a few seconds on Gnosis.
+      // yet. The uploader's readiness probe already retried for ~2 min
+      // before bubbling this up, so the gateway is unusually slow OR
+      // misconfigured (wrong PostageStamp contract address, RPC issues,
+      // etc.). Telling the user "wait a few seconds" when they just
+      // watched a 2 min spinner would feel like a lie — be honest.
       return {
         message:
-          'Your storage stamp is not ready yet. The Bee gateway has not finished indexing your new batch from the chain.',
+          'The Bee gateway still has not indexed your new batch after waiting 2 minutes.',
         warning:
-          'This usually clears within a minute. Wait a few seconds, then click Upload again — your file selection is preserved.',
+          'This usually means the gateway is slow to poll its RPC, or it is configured to watch a different PostageStamp contract. Wait another minute and click Upload again — your file selection is preserved. If it keeps failing, check the gateway URL and try a different one.',
         transient: true,
       };
     }
@@ -3224,6 +3228,7 @@ Uploading: chain-independent — chunks are BMT-hashed and stamped locally in th
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
+          setSelectedDepth={setSelectedDepth}
         />
       ) : showUploadHistory ? (
         <UploadHistorySection address={address} setShowUploadHistory={setShowUploadHistory} />

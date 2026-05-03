@@ -47,6 +47,48 @@ Now that the helper exists (§1.5), call it from the file-select handler against
 
 Reuse the `healthBanner` CSS classes added for the Bee node health probe.
 
+### 1.8 Fresh-batch readiness probe + suppress unhandled-rejection storm — `[x]` shipped
+**Files:** `src/app/components/ClientSideUpload.ts`, `src/app/components/SwapComponent.tsx`
+
+Two related bugs hit any user uploading to a freshly-created batch:
+- `waitForGatewayBatchSync` only checks Bee's `/chainstate`, which can be ahead of the batchstore poll cycle. So `'synced'` would return, the parallel chunk firehose would open, and N requests would simultaneously fail with bare HTTP 400 ("batch not yet usable") with no UI feedback that this was a transient condition.
+- For each parallel failure, `onChunk` re-threw inside the `cafe-utility` AsyncQueue task body. AsyncQueue attaches only `.finally()` (no `.catch`), so the rejection bubbled to the global handler — Next.js rendered one red "Unhandled Runtime Error" overlay per failing chunk (so 64 simultaneous 400s = 64 overlays).
+
+Fix:
+- New `waitForStampReady(stamper, bee, abortSignal, onStatus)` helper. Stamps **one** canonical chunk (4 KiB of zeros — deterministic address, dedups across runs and across users on Bee's side) and POSTs it in a loop with backoff (`STAMP_READY_PROBE_DELAY_MS = 4_000` × `STAMP_READY_PROBE_MAX_ATTEMPTS = 30` ≈ 2 min budget). Same envelope across retries so the probe burns exactly 1 slot regardless of how long the gateway takes. Surfaces "Waiting for Bee gateway to recognize your new stamp… (probe N/M)" via the upload `onStatus` callback every retry.
+- Called from `uploadFileClientSide` immediately before the chunking pipeline starts. Skipped on second-and-later runs from the same browser via the per-batch `stampedAddrs` dedup set (a hit means the gateway has accepted us before).
+- Same probe wired into `createUploadContext` as `ctx.ensureStampReady(onStatus)`, called once at the top of `uploadMultipleFilesClientSide` and `uploadFilesAsCollectionClientSide`. The collection paths now also run the per-batch chunk-address dedup that the single-file path has had since §1.7.
+- Per-chunk task body in both `onChunk` variants no longer re-throws on failure — captures `firstError` and returns. The outer `await queue.drain()` re-throws `firstError` exactly once, so the user still gets a single error UI without 64 dev-overlay spam pop-ups.
+- Error-translation copy in `SwapComponent.translateSelfCustodyUploadError` updated to reflect the new behaviour ("we already waited 2 min" instead of "wait a few seconds").
+
+### 1.9 Move stamper state + chunk-dedup set to IndexedDB — `[x]` shipped
+**Files:** new `src/app/components/IndexedDBStore.ts`, `src/app/components/ClientStamping.ts`, `src/app/components/ClientSideUpload.ts`, `src/app/components/StampListSection.tsx`, `docs/self-custody-hot-key.md`
+
+The previous `localStorage`-backed persistence layout blew the ~5 MB origin quota on any sufficiently large self-custody upload: a 32 k-chunk batch's `beeport.stamped.<batchId>` set serialised to ~2 MB of JSON, and every debounced flush re-stringified the entire `Set` from scratch. A second active batch tipped us over and `setItem` started throwing `QuotaExceededError` mid-upload (loudly logged but otherwise silent — the dedup benefit was lost on the next run).
+
+Fix:
+- Both `stamperState` (one `Uint32Array(65 536)` per batch) and `stampedAddrs` (unbounded set per batch) now live in IndexedDB via a tiny zero-dep wrapper (`IndexedDBStore.ts`). IDB has effectively no practical quota for this volume (~50 % of free disk on modern browsers).
+- `stampedAddrs` writes are now **incremental** — one `addStampedAddress(batchId, addrHex)` `put` per accepted chunk instead of a debounced bulk re-serialization of the whole set. Drops the `stampedAddrsDirty` / `maybePersistStampedAddrs` machinery from both the single-file path and the multi-file `UploadCtx` path.
+- `stamperState` writes still go through the existing 2 s `STATE_PERSIST_MIN_INTERVAL_MS` debounce but use IDB's structured clone (no JSON round-trip; `Uint32Array` is stored directly).
+- `loadStamperState` / `loadStampedAddresses` lazy-migrate from the legacy `localStorage["beeport.stamper.<batchId>"]` and `localStorage["beeport.stamped.<batchId>"]` keys on first read for any given batch, then delete the legacy entry so the migration only runs once. No user action required.
+- All four load/save/clear helpers and `loadStampUsage` are now `async`. `createUploadContext` is now `async`; the two callers (`uploadMultipleFilesClientSide`, `uploadFilesAsCollectionClientSide`) await it. `StampListSection` pre-fetches the stamper state for every row in parallel via `Promise.all` before constructing the synchronous render shape.
+- `beforeunload` flush degrades from "synchronous `localStorage.setItem`" to "fire-and-forget IDB `put`" — most browsers complete an already-issued IDB transaction even after the handler returns, but it's no longer a strong guarantee. Acceptable trade-off because the stamped-address set is now written-through per chunk (no loss possible) and stamper-state loss is bounded by the SOC backup on Swarm (cross-device replays the missing slots).
+
+### 1.7 Fix depth desync between stamp list and uploads + per-batch chunk dedup — `[x]` shipped
+**Files:** `src/app/components/StampListSection.tsx`, `src/app/components/SwapComponent.tsx`, `src/app/components/ClientSideUpload.ts`, `src/app/components/ClientStamping.ts`
+
+`handleStampSelect` now calls `setSelectedDepth(stamp.depth)` so "Upload with these stamps" runs the upload at the actual on-chain depth instead of the parent's `useState(22)` default. The previous bug silently built local Stampers at depth 22 for depth-20 batches, handing out `cnt`s past Bee's `maxSlot`; Bee rejected those stamps while the local bucket counters kept climbing, eventually tripping `Bucket is full` with deceptively low byte fill.
+
+Defence in depth:
+- `uploadFileClientSide` now refuses any persisted state whose depth disagrees with the batch depth — it `clearStamperState` + `clearStampedAddresses` and starts `fromBlank` rather than running the math against a divergent state.
+- `checkProjectedStampCapacity(stamper, fileSize, expectedDepth?)` hard-fails on depth mismatch as an extra belt-and-braces.
+- `computeStampUsage(state, expectedDepth?)` now exposes `depthMismatch` + `exceedsMaxSlot` flags. `StampListSection` renders a red "⚠ corrupted local state" badge and a "Reset local state" button on cards with a divergent state.
+
+Per-batch chunk-address dedup so repeated uploads of the same file are cheap:
+- New `loadStampedAddresses` / `saveStampedAddresses` / `clearStampedAddresses` in `ClientStamping.ts` (`localStorage` key `beeport.stamped.<batchId>` → array of 64-char hexes).
+- `stampAndUpload` consults the set BEFORE calling `stamper.stamp()` and short-circuits the entire (stamp, sign, POST) on a hit. New addresses are recorded only after Bee accepts the chunk. Persisted on the same debounce as the bucket state and force-flushed at end-of-file / end-of-manifest.
+- Net effect: re-uploading the same file 100× to the same stamp consumes the same slots as uploading it once. Manifest + SOC chunks are still re-stamped fresh (their bytes change per upload).
+
 ---
 
 ## 2. Real refactors (1–3 days, medium risk, large gains)

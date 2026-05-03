@@ -36,6 +36,8 @@ import {
   loadStamperState,
   saveStamperState,
   computeStampUsage,
+  clearStamperState,
+  clearStampedAddresses,
   type StampUsageStats,
 } from './ClientStamping';
 import { loadIssuerStateFromSOC } from './IssuerStateSOC';
@@ -48,6 +50,17 @@ interface StampListSectionProps {
   setPostageBatchId: (id: string) => void;
   setShowOverlay: (show: boolean) => void;
   setUploadStep: (step: UploadStep) => void;
+  /**
+   * Propagate the selected stamp's depth back to the parent so subsequent
+   * uploads use the correct on-chain depth.
+   *
+   * Without this, "Upload with these stamps" falls through to the parent's
+   * `selectedDepth` default (currently 22) regardless of the actual batch
+   * depth — which silently builds the local Stamper at the wrong depth, lets
+   * `cnt` values run past Bee's `maxSlot`, and eventually trips
+   * `Bucket is full` before any chunk reaches the gateway.
+   */
+  setSelectedDepth: (depth: number) => void;
 }
 
 interface BatchEvent {
@@ -84,6 +97,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setPostageBatchId,
   setShowOverlay,
   setUploadStep,
+  setSelectedDepth,
 }) => {
   const { data: walletClient } = useWalletClient();
 
@@ -125,14 +139,29 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       stored.map(b => b.batchId)
     );
 
+    // Pre-fetch every batch's local Stamper state in parallel. Previously
+    // this was a sync `localStorage.getItem` inside the `.map`, but the
+    // backend is now IndexedDB (async) so we resolve them all up-front and
+    // hand the resulting map into the synchronous render-shape construction.
+    const localStates = new Map<string, Awaited<ReturnType<typeof loadStamperState>>>();
+    await Promise.all(
+      stored.map(async s => {
+        localStates.set(s.batchId, await loadStamperState(s.batchId));
+      })
+    );
+
     return stored.map(s => {
       const id = s.batchId.toLowerCase().startsWith('0x')
         ? s.batchId.toLowerCase()
         : `0x${s.batchId.toLowerCase()}`;
       const onChain: ChainBatchInfo | undefined = onChainMap.get(id);
-      const localState = loadStamperState(s.batchId);
+      const localState = localStates.get(s.batchId) ?? null;
       const hasLocalIssuerState = !!localState;
-      const usage = localState ? computeStampUsage(localState) : undefined;
+      // Compute usage against the BATCH's depth (s.depth), not the persisted
+      // Stamper's depth — if they disagree we want the user to see a number
+      // grounded in the real on-chain stamp size, plus the depthMismatch
+      // banner that explains why the local state is unreliable.
+      const usage = localState ? computeStampUsage(localState, s.depth) : undefined;
       const base: BatchEvent = {
         batchId: s.batchId,
         totalAmount: formatUnits(BigInt(s.totalAmount), 16),
@@ -237,8 +266,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           // Only restore if we still have nothing locally — prevents a slow
           // SOC read from clobbering a fresh save written by another tab
           // while we were waiting.
-          if (!loadStamperState(ev.batchId)) {
-            saveStamperState(ev.batchId, result.state);
+          if (!(await loadStamperState(ev.batchId))) {
+            await saveStamperState(ev.batchId, result.state);
             restored++;
           }
         } catch (err) {
@@ -270,7 +299,54 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     }
   };
 
+  /**
+   * Wipe the local Stamper state and the chunk-dedup set for one batch.
+   *
+   * Used when the persisted state is corrupted (typically a depth mismatch
+   * created by the now-fixed `handleStampSelect` regression that didn't
+   * propagate the stamp's depth — see TODO §1.7). After clearing, a fresh
+   * upload re-seeds both from `Stamper.fromBlank` at the correct on-chain
+   * depth, and the SOC backup gets overwritten on the first successful
+   * upload. We don't try to "salvage" the buckets — counters past Bee's
+   * cap can't be reconciled without the ordered history of which stamps
+   * Bee accepted vs. rejected, which we don't have.
+   */
+  const handleResetLocalState = async (stamp: BatchEvent) => {
+    const idLabel = (stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId)
+      .slice(0, 10);
+    const ok = window.confirm(
+      `Reset local issuer state for batch ${idLabel}…?\n\n` +
+        `This clears the bucket counters and chunk-dedup cache stored in this ` +
+        `browser. The next upload to this stamp will start fresh and re-seed ` +
+        `the SOC backup. The stamp itself is unaffected on-chain or on Bee.`
+    );
+    if (!ok) return;
+    // Both helpers are now async (IndexedDB-backed). Await them so the
+    // status message and the row update reflect the post-clear state.
+    await Promise.all([
+      clearStamperState(stamp.batchId),
+      clearStampedAddresses(stamp.batchId),
+    ]);
+    setStamps(prev =>
+      prev.map(s =>
+        s.batchId === stamp.batchId
+          ? { ...s, hasLocalIssuerState: false, usage: undefined }
+          : s
+      )
+    );
+    setStatusMessage(
+      `Local state cleared for ${idLabel}. Run a fresh upload to seed it again.`
+    );
+  };
+
   const handleStampSelect = (stamp: BatchEvent) => {
+    // CRITICAL: align the upload depth with the on-chain batch depth.
+    // The parent's `selectedDepth` default doesn't necessarily match this
+    // stamp; passing through the wrong depth builds a Stamper that hands
+    // out `cnt` values past Bee's `maxSlot`, which Bee silently rejects
+    // while local bucket counters keep climbing — manifesting later as a
+    // bogus "Bucket is full" with usage at 100% / 0.0% avg.
+    setSelectedDepth(stamp.depth);
     setPostageBatchId(stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId);
     setShowOverlay(true);
     setUploadStep('ready');
@@ -361,14 +437,16 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                 {stamp.usage ? (
                   (() => {
                     const u = stamp.usage;
+                    const corrupted = u.depthMismatch || u.exceedsMaxSlot;
                     const pct = Math.min(100, u.maxBucketPercent);
-                    const barClass =
-                      u.maxBucketPercent >= 95
+                    const barClass = corrupted
+                      ? styles.usageBarDanger
+                      : u.maxBucketPercent >= 95
                         ? styles.usageBarDanger
                         : u.maxBucketPercent >= 80
                           ? styles.usageBarWarn
                           : styles.usageBarOk;
-                    const skewed = u.maxBucketPercent - u.avgPercent > 15;
+                    const skewed = !corrupted && u.maxBucketPercent - u.avgPercent > 15;
                     return (
                       <div className={styles.usageWrapper}>
                         <div className={styles.usageRow}>
@@ -393,6 +471,18 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                               ⚠ uneven
                             </span>
                           )}
+                          {corrupted && (
+                            <span
+                              className={styles.usageCorruptBadge}
+                              title={
+                                u.depthMismatch
+                                  ? `This browser's local Stamper state was built at a different depth than the on-chain batch (depth ${stamp.depth}). The bucket counters can't be trusted: some local 'used' slots were rejected by Bee, and some 'free' slots may already be claimed. Reset to recover.`
+                                  : `Local bucket counters exceed Bee's per-bucket cap for this batch's depth — usually means this state was inherited from an upload at the wrong depth and can no longer accept new uploads. Reset to recover.`
+                              }
+                            >
+                              ⚠ corrupted local state
+                            </span>
+                          )}
                         </div>
                         <div className={styles.usageBarContainer}>
                           <div
@@ -400,6 +490,20 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                             style={{ width: `${pct}%` }}
                           />
                         </div>
+                        {corrupted && (
+                          <div className={styles.usageCorruptDetail}>
+                            <button
+                              type="button"
+                              className={styles.usageResetButton}
+                              onClick={() => {
+                                void handleResetLocalState(stamp);
+                              }}
+                              title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain stamp is untouched."
+                            >
+                              Reset local state
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })()

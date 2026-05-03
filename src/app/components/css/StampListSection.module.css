@@ -139,6 +139,40 @@
   cursor: help;
 }
 
+.usageCorruptBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  background-color: rgba(229, 83, 75, 0.12);
+  color: #ff8a82;
+  border: 1px solid rgba(229, 83, 75, 0.4);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: help;
+}
+
+.usageCorruptDetail {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.usageResetButton {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(229, 83, 75, 0.5);
+  color: #ff8a82;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.usageResetButton:hover {
+  background: rgba(229, 83, 75, 0.12);
+}
+
 .usageBarContainer {
   width: 100%;
   height: 6px;
