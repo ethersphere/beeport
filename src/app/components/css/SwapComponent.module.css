@@ -300,6 +300,89 @@
   color: #ffffff;
 }
 
+.healthBanner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.healthBannerError {
+  background-color: rgba(229, 83, 75, 0.12);
+  border: 1px solid rgba(229, 83, 75, 0.45);
+  color: #ffb3ad;
+}
+
+.healthBannerWarn {
+  background-color: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  color: #ffe082;
+}
+
+.healthBannerBody {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.healthBannerBody strong {
+  display: block;
+  color: #ffffff;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+
+.healthBannerBody p {
+  margin: 0 0 6px 0;
+  line-height: 1.45;
+}
+
+.healthBannerBody p:last-child {
+  margin-bottom: 0;
+}
+
+.healthBannerMeta {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.healthBannerHint {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.healthBannerRetry {
+  padding: 8px 14px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.healthBannerRetry:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.healthBannerRetry:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .uploadWarning {
   margin-bottom: 15px;
   padding: 8px 12px;

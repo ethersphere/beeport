@@ -80,6 +80,7 @@ graph TB
 src/app/
 ├── components/
 │   ├── SwapComponent.tsx           # Main upload interface
+│   ├── BeeNodeHealth.ts            # Bee /health probe + hook for upload gating
 │   ├── FileUploadUtils.ts          # Upload logic and utilities
 │   ├── NFTCollectionProcessor.ts   # NFT collection processing
 │   ├── ArchiveProcessor.ts         # ZIP/TAR file handling
