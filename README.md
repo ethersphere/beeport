@@ -122,16 +122,6 @@ In contrast, for a direct upload, the data will be completely uploaded to the Sw
 
 We are using **non-deferred upload** because we want to upload directly to the Swarm network for better performance and reliability.
 
-## Recent Changes
-
-### v0.2.x - Relay Integration
-
-- ✅ **Replaced LiFi execution** with Relay API for better reliability
-- ✅ **Smart gas management** - only top up when destination balance < 1 xDAI
-- ✅ **Improved error handling** - user-friendly messages for all failure scenarios
-- ✅ **Performance optimization** - reduced timer buffer from 10s to 5s
-- ✅ **File size tracking** - display file sizes in upload history
-- ✅ **Code cleanup** - removed ~149 lines of unused LiFi execution code
 
 ### Configuration
 
@@ -142,3 +132,7 @@ export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum balance to skip gas top-
 export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 top-up amount
 export const RELAY_TIMER_BUFFER_SECONDS = 5; // Timer buffer
 ```
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for the full release history.
