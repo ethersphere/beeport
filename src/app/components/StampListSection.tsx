@@ -521,7 +521,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             <div className={styles.healthBannerBody}>
               <strong>Bee Node gateway not working</strong>
               <p className={styles.healthBannerSub}>
-                Change the Bee API gateway URL in Settings or try again later
+                Change the Bee API gateway in Settings or try again later
               </p>
             </div>
             <button
