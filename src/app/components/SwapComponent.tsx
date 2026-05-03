@@ -2137,18 +2137,9 @@ const SwapComponent: React.FC = () => {
                         role="alert"
                       >
                         <div className={styles.healthBannerBody}>
-                          <strong>Bee gateway not ready</strong>
-                          <p>
-                            {beeNodeHealth.message ??
-                              'Uploads are blocked until the Bee node responds healthy at /health.'}
-                          </p>
-                          {beeNodeHealth.version != null && beeNodeHealth.status === 'unhealthy' && (
-                            <p className={styles.healthBannerMeta}>
-                              Reported version: {beeNodeHealth.version}
-                            </p>
-                          )}
-                          <p className={styles.healthBannerHint}>
-                            Reloading this page runs the same check.
+                          <strong>Bee Node gateway not working</strong>
+                          <p className={styles.healthBannerSub}>
+                            Change the Bee API gateway URL in Settings
                           </p>
                         </div>
                         <button

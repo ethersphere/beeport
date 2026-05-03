@@ -1,14 +1,14 @@
 /**
- * Lightweight liveness probe for the Bee gateway shown on the Upload page.
+ * Lightweight liveness probe for the Bee gateway (Your Stamps + upload step).
  *
  * Why this exists:
  *   Self-custody upload silently dies a hundred different ways when the
  *   gateway is unhealthy — chunks 5xx, the manifest GET 502s, etc. The
  *   user sees a frozen progress bar and assumes the app is broken. A
- *   one-time `/health` check when the upload step opens catches "node is
- *   down / wrong URL / syncing" up-front: (a) show a clear message,
- *   (b) disable Upload until it passes. Users can Retry to probe again
- *   after fixing the gateway.
+ *   one-time `/health` check when Your Stamps loads or the upload step opens
+ *   catches "node is down / wrong URL / syncing" up-front: (a) show a clear message,
+ *   (b) disable Upload until it passes and skip Bee stamp API calls until healthy.
+ *   Users can Retry to probe again after fixing the gateway.
  *
  * The probe uses a raw `fetch` (not `bee.getHealth()`) so we can pin a
  * tight 5-second timeout via AbortController; bee-js falls back to axios
