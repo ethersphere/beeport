@@ -21,7 +21,7 @@ import {
   StoredSelfCustodyBatch,
   type ChainBatchInfo,
 } from './SelfCustodyBatch';
-import { STORAGE_OPTIONS } from './constants';
+import { STORAGE_OPTIONS, guaranteedStampCapacityBytes } from './constants';
 import { UploadStep } from './types';
 import {
   formatDateEU,
@@ -29,6 +29,7 @@ import {
   getGnosisPublicClient,
   isExpiringSoon,
   isExpiryWarning,
+  parseHumanStorageSize,
 } from './utils';
 import { refreshBatchesFromContract } from './PostageContract';
 import { deriveHotKey } from './ClientStamping';
@@ -36,9 +37,12 @@ import {
   loadStamperState,
   saveStamperState,
   computeStampUsage,
+  computeBucketStatsVisualization,
   clearStamperState,
   clearStampedAddresses,
+  BUCKET_HEAT_STRIP_COLS,
   type StampUsageStats,
+  type BucketStatsVisualization,
 } from './ClientStamping';
 import { loadIssuerStateFromSOC } from './IssuerStateSOC';
 import styles from './css/StampListSection.module.css';
@@ -105,6 +109,17 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  /** Which stamp card has the bucket-distribution panel expanded. */
+  const [expandedStatsBatchId, setExpandedStatsBatchId] = useState<string | null>(null);
+  /** Lazy-loaded bucket histogram / heat strip per batch (expand panel). */
+  const [bucketStatsById, setBucketStatsById] = useState<
+    Record<
+      string,
+      | { status: 'ready'; viz: BucketStatsVisualization }
+      | { status: 'unavailable' }
+    >
+  >({});
+  const [statsLoadingBatchId, setStatsLoadingBatchId] = useState<string | null>(null);
 
   const getSizeForDepth = (depth: number): string => {
     const option = STORAGE_OPTIONS.find(o => o.depth === depth);
@@ -122,6 +137,44 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     }
     const rounded = v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1);
     return `${rounded} ${units[i]}`;
+  };
+
+  const TOTAL_SWARM_BUCKETS = 65536;
+
+  const toggleBucketStats = async (stamp: BatchEvent) => {
+    if (!stamp.usage) return;
+    if (expandedStatsBatchId === stamp.batchId) {
+      setExpandedStatsBatchId(null);
+      return;
+    }
+    setExpandedStatsBatchId(stamp.batchId);
+    const cached = bucketStatsById[stamp.batchId];
+    if (cached) return;
+
+    setStatsLoadingBatchId(stamp.batchId);
+    try {
+      const state = await loadStamperState(stamp.batchId);
+      if (!state) {
+        setBucketStatsById(prev => ({
+          ...prev,
+          [stamp.batchId]: { status: 'unavailable' },
+        }));
+        return;
+      }
+      const viz = computeBucketStatsVisualization(state, stamp.depth);
+      setBucketStatsById(prev => ({
+        ...prev,
+        [stamp.batchId]: { status: 'ready', viz },
+      }));
+    } catch (err) {
+      console.error('Bucket stats load failed:', err);
+      setBucketStatsById(prev => ({
+        ...prev,
+        [stamp.batchId]: { status: 'unavailable' },
+      }));
+    } finally {
+      setStatsLoadingBatchId(null);
+    }
   };
 
   /**
@@ -327,6 +380,12 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       clearStamperState(stamp.batchId),
       clearStampedAddresses(stamp.batchId),
     ]);
+    setBucketStatsById(prev => {
+      const next = { ...prev };
+      delete next[stamp.batchId];
+      return next;
+    });
+    setExpandedStatsBatchId(cur => (cur === stamp.batchId ? null : cur));
     setStamps(prev =>
       prev.map(s =>
         s.batchId === stamp.batchId
@@ -428,83 +487,207 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   {stamp.timestamp && <span>Created: {formatDateEU(stamp.timestamp * 1000)}</span>}
                 </div>
 
-                {/* Storage utilization. Derived purely from the local
-                    Stamper buckets — Bee's `/stamps/:id` 404s for self-custody
-                    batches so we never have a server-reported number. The
-                    headline %, like Bee's own UI, is the *worst-bucket* fill:
-                    uploads start failing as soon as any bucket hits 100%, well
-                    before the average byte usage approaches the labelled size. */}
+                {/* Storage utilization: % and bar are usedBytes / product
+                    “guaranteed” label (STORAGE_OPTIONS), not 2^depth theory. */}
                 {stamp.usage ? (
                   (() => {
                     const u = stamp.usage;
                     const corrupted = u.depthMismatch || u.exceedsMaxSlot;
-                    const pct = Math.min(100, u.maxBucketPercent);
+                    const guaranteedBytes =
+                      guaranteedStampCapacityBytes(stamp.depth) ?? parseHumanStorageSize(stamp.size);
+                    const nominalPct =
+                      guaranteedBytes && guaranteedBytes > 0
+                        ? Math.min(100, (u.usedBytes / guaranteedBytes) * 100)
+                        : Math.min(100, u.avgPercent);
+                    const worstPct = Math.min(100, u.maxBucketPercent);
                     const barClass = corrupted
                       ? styles.usageBarDanger
-                      : u.maxBucketPercent >= 95
+                      : nominalPct >= 95
                         ? styles.usageBarDanger
-                        : u.maxBucketPercent >= 80
+                        : nominalPct >= 80
                           ? styles.usageBarWarn
                           : styles.usageBarOk;
-                    const skewed = !corrupted && u.maxBucketPercent - u.avgPercent > 15;
                     return (
-                      <div className={styles.usageWrapper}>
-                        <div className={styles.usageRow}>
-                          <span
-                            className={styles.usageLabel}
-                            title="Worst-bucket utilization. Bucket distribution is hash-driven, so a stamp can refuse new uploads while its average byte fill is much lower."
-                          >
-                            Used: {pct.toFixed(1)}%
-                          </span>
-                          <span className={styles.usageDetail}>
-                            ≈ {formatBytes(u.usedBytes)} of {stamp.size}
-                          </span>
-                          {skewed && (
+                      <>
+                        <div className={styles.usageWrapper}>
+                          <div className={styles.usageRow}>
                             <span
-                              className={styles.usageSkewBadge}
-                              title={`Chunks have clustered into a few buckets — average byte fill is only ${u.avgPercent.toFixed(
-                                1
-                              )}% but the worst bucket is at ${u.maxBucketPercent.toFixed(
-                                1
-                              )}%. The stamp will start refusing uploads at 100% worst-bucket.`}
-                            >
-                              ⚠ uneven
-                            </span>
-                          )}
-                          {corrupted && (
-                            <span
-                              className={styles.usageCorruptBadge}
+                              className={styles.usageLabel}
                               title={
-                                u.depthMismatch
-                                  ? `This browser's local Stamper state was built at a different depth than the on-chain batch (depth ${stamp.depth}). The bucket counters can't be trusted: some local 'used' slots were rejected by Bee, and some 'free' slots may already be claimed. Reset to recover.`
-                                  : `Local bucket counters exceed Bee's per-bucket cap for this batch's depth — usually means this state was inherited from an upload at the wrong depth and can no longer accept new uploads. Reset to recover.`
+                                guaranteedBytes
+                                  ? `Used bytes ÷ labelled capacity (${stamp.size}, same as the buy flow) — the % matches “${formatBytes(u.usedBytes)} of ${stamp.size}”.`
+                                  : 'Could not resolve labelled capacity; showing average fill vs on-chain 2^depth capacity instead.'
                               }
                             >
-                              ⚠ corrupted local state
+                              Used: {nominalPct.toFixed(1)}%
                             </span>
+                            <span
+                              className={styles.usageDetail}
+                              title="Same basis as the percentage: ≈ used bytes out of the product’s labelled size for this depth."
+                            >
+                              ≈ {formatBytes(u.usedBytes)} of {stamp.size}
+                            </span>
+                            {corrupted && (
+                              <span
+                                className={styles.usageCorruptBadge}
+                                title={
+                                  u.depthMismatch
+                                    ? `This browser's local Stamper state was built at a different depth than the on-chain batch (depth ${stamp.depth}). The bucket counters can't be trusted: some local 'used' slots were rejected by Bee, and some 'free' slots may already be claimed. Reset to recover.`
+                                    : `Local bucket counters exceed Bee's per-bucket cap for this batch's depth — usually means this state was inherited from an upload at the wrong depth and can no longer accept new uploads. Reset to recover.`
+                                }
+                              >
+                                ⚠ corrupted local state
+                              </span>
+                            )}
+                          </div>
+                          <div className={styles.usageBarContainer}>
+                            <div
+                              className={`${styles.usageBar} ${barClass}`}
+                              style={{ width: `${nominalPct}%` }}
+                            />
+                          </div>
+                          {corrupted && (
+                            <div className={styles.usageCorruptDetail}>
+                              <button
+                                type="button"
+                                className={styles.usageResetButton}
+                                onClick={() => {
+                                  void handleResetLocalState(stamp);
+                                }}
+                                title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain stamp is untouched."
+                              >
+                                Reset local state
+                              </button>
+                            </div>
                           )}
                         </div>
-                        <div className={styles.usageBarContainer}>
-                          <div
-                            className={`${styles.usageBar} ${barClass}`}
-                            style={{ width: `${pct}%` }}
-                          />
+
+                        <div className={styles.bucketStatsWrap}>
+                          <button
+                            type="button"
+                            className={styles.bucketStatsToggle}
+                            onClick={() => void toggleBucketStats(stamp)}
+                            aria-expanded={expandedStatsBatchId === stamp.batchId}
+                            title="Worst-bucket fill, per-bucket histogram, and hash-space heat strip"
+                          >
+                            <span className={styles.bucketStatsChevron} aria-hidden>
+                              {expandedStatsBatchId === stamp.batchId ? '▼' : '▶'}
+                            </span>
+                            Bucket stats
+                          </button>
+
+                          {expandedStatsBatchId === stamp.batchId && (
+                            <div className={styles.bucketStatsPanel}>
+                              <div className={styles.bucketWorstSection}>
+                                <div className={styles.bucketWorstLine}>
+                                  <span className={styles.bucketWorstLabel}>Worst bucket</span>
+                                  <span
+                                    className={styles.bucketWorstValue}
+                                    title="The single fullest of 65 536 logical buckets, as a % of that bucket’s chunk cap (maxSlot). Bee rejects new stamps when any bucket hits 100%, even if nominal fill is low."
+                                  >
+                                    {worstPct.toFixed(1)}%
+                                  </span>
+                                  <span className={styles.bucketWorstHint}>
+                                    of per-bucket capacity — uploads fail if any bucket reaches 100%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {statsLoadingBatchId === stamp.batchId && (
+                                <p className={styles.bucketStatsMuted}>Loading bucket layout…</p>
+                              )}
+                              {statsLoadingBatchId !== stamp.batchId &&
+                                bucketStatsById[stamp.batchId]?.status === 'unavailable' && (
+                                  <p className={styles.bucketStatsMuted}>
+                                    Could not load issuer state for this batch.
+                                  </p>
+                                )}
+                              {statsLoadingBatchId !== stamp.batchId &&
+                                (() => {
+                                  const bsEntry = bucketStatsById[stamp.batchId];
+                                  if (bsEntry?.status !== 'ready') return null;
+                                  const { viz } = bsEntry;
+                                  const partialSum = viz.partialBins.reduce(
+                                    (a: number, b: number) => a + b,
+                                    0
+                                  );
+                                  const histEntries: { label: string; count: number }[] = [
+                                    { label: 'Empty', count: viz.emptyBuckets },
+                                    ...viz.partialBins.map((count: number, i: number) => ({
+                                      label:
+                                        i === 9
+                                          ? '91–100% (not full)'
+                                          : `${i * 10 + 1}–${(i + 1) * 10}%`,
+                                      count,
+                                    })),
+                                    { label: 'Full', count: viz.fullBuckets },
+                                  ];
+                                  const maxHist = Math.max(
+                                    1,
+                                    ...histEntries.map(e => e.count)
+                                  );
+                                  const bucketsPerStripCell = Math.round(
+                                    TOTAL_SWARM_BUCKETS / BUCKET_HEAT_STRIP_COLS
+                                  );
+                                  return (
+                                    <>
+                                      <p className={styles.bucketStatsCaption}>
+                                        {partialSum + viz.emptyBuckets + viz.fullBuckets ===
+                                        TOTAL_SWARM_BUCKETS
+                                          ? `${TOTAL_SWARM_BUCKETS.toLocaleString()} logical buckets`
+                                          : 'Bucket counts'}
+                                        {' · '}
+                                        max {viz.maxSlot} chunks per bucket at depth {stamp.depth}
+                                      </p>
+                                      <div className={styles.bucketHist}>
+                                        {histEntries.map(entry => (
+                                          <div key={entry.label} className={styles.bucketHistRow}>
+                                            <span className={styles.bucketHistLabel}>{entry.label}</span>
+                                            <div className={styles.bucketHistBarTrack}>
+                                              <div
+                                                className={styles.bucketHistBarFill}
+                                                style={{
+                                                  width: `${(entry.count / maxHist) * 100}%`,
+                                                }}
+                                              />
+                                            </div>
+                                            <span className={styles.bucketHistCount}>
+                                              {entry.count.toLocaleString()}
+                                              <span className={styles.bucketHistPct}>
+                                                {' '}
+                                                ({((entry.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}
+                                                %)
+                                              </span>
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <p className={styles.bucketStatsHeatCaption}>
+                                        Mean slot fill along bucket index (Swarm address hash space) — each
+                                        column ≈{bucketsPerStripCell} buckets
+                                      </p>
+                                      <div
+                                        className={styles.heatStrip}
+                                        role="img"
+                                        aria-label="Heat strip of average bucket utilization along hash space"
+                                      >
+                                        {viz.heatStrip.map((p: number, i: number) => (
+                                          <div key={i} className={styles.heatCell}>
+                                            <div
+                                              className={styles.heatFill}
+                                              style={{ height: `${Math.max(0.5, p)}%` }}
+                                              title={`Columns ${i + 1}/${BUCKET_HEAT_STRIP_COLS}: ~${p.toFixed(0)}% avg slot fill`}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
+                            </div>
+                          )}
                         </div>
-                        {corrupted && (
-                          <div className={styles.usageCorruptDetail}>
-                            <button
-                              type="button"
-                              className={styles.usageResetButton}
-                              onClick={() => {
-                                void handleResetLocalState(stamp);
-                              }}
-                              title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain stamp is untouched."
-                            >
-                              Reset local state
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      </>
                     );
                   })()
                 ) : (

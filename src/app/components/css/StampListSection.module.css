@@ -127,18 +127,6 @@
   color: #8b949e;
 }
 
-.usageSkewBadge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  background-color: rgba(255, 200, 0, 0.1);
-  color: #ffd166;
-  border: 1px solid rgba(255, 200, 0, 0.3);
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: help;
-}
-
 .usageCorruptBadge {
   display: inline-flex;
   align-items: center;
@@ -197,6 +185,178 @@
 
 .usageBarDanger {
   background-color: #f85149;
+}
+
+.bucketStatsWrap {
+  margin-top: 10px;
+}
+
+.bucketStatsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(48, 54, 61, 0.4);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.bucketStatsToggle:hover {
+  background: rgba(48, 54, 61, 0.65);
+  border-color: #6e7681;
+  color: #c9d1d9;
+}
+
+.bucketStatsChevron {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  color: #6e7681;
+  font-size: 10px;
+}
+
+.bucketStatsPanel {
+  margin-top: 10px;
+  padding: 12px;
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.bucketWorstSection {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.bucketWorstLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 13px;
+  color: #c9d1d9;
+}
+
+.bucketWorstLabel {
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.bucketWorstValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #f0f6fc;
+}
+
+.bucketWorstHint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.35;
+}
+
+.bucketStatsMuted {
+  margin: 0;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.bucketStatsCaption {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #6e7681;
+}
+
+.bucketHist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bucketHistRow {
+  display: grid;
+  grid-template-columns: 124px 1fr minmax(7.5rem, auto);
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+@media (max-width: 520px) {
+  .bucketHistRow {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .bucketHistLabel {
+    margin-top: 4px;
+  }
+}
+
+.bucketHistLabel {
+  color: #8b949e;
+  text-align: right;
+}
+
+.bucketHistBarTrack {
+  height: 8px;
+  background: rgba(48, 54, 61, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bucketHistBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #238636, #56d364);
+  border-radius: 4px;
+  min-width: 0;
+  transition: width 0.2s ease;
+}
+
+.bucketHistCount {
+  font-variant-numeric: tabular-nums;
+  color: #c9d1d9;
+  text-align: right;
+}
+
+.bucketHistPct {
+  color: #6e7681;
+  font-size: 10px;
+}
+
+.bucketStatsHeatCaption {
+  margin: 14px 0 8px;
+  font-size: 11px;
+  color: #6e7681;
+}
+
+.heatStrip {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 52px;
+}
+
+.heatCell {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(48, 54, 61, 0.45);
+  border-radius: 2px 2px 0 0;
+}
+
+.heatFill {
+  width: 100%;
+  min-height: 1px;
+  background: linear-gradient(to top, #238636, #56d364);
+  border-radius: 2px 2px 0 0;
+  transition: height 0.15s ease;
 }
 
 .usageUnknown {

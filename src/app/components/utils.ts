@@ -38,6 +38,31 @@ export const formatErrorMessage = (error: unknown): string => {
 };
 
 /**
+ * Parses product labels like "680MB", "2.6GB", "110MB" (binary SI: 1 MB = 1024² B).
+ * Returns null if the string is not recognized.
+ */
+export function parseHumanStorageSize(label: string): number | null {
+  const m = label.trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const unit = m[2].toUpperCase();
+  const mult =
+    unit === 'B'
+      ? 1
+      : unit === 'KB'
+        ? 1024
+        : unit === 'MB'
+          ? 1024 ** 2
+          : unit === 'GB'
+            ? 1024 ** 3
+            : unit === 'TB'
+              ? 1024 ** 4
+              : 1;
+  return n * mult;
+}
+
+/**
  * Calculates batch ID from nonce and sender address (pure function)
  * @param nonce The batch nonce as hex string
  * @param sender The sender address

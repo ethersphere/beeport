@@ -1,5 +1,6 @@
 import { ChainId } from '@lifi/sdk';
 import { StorageOption, SwarmConfigType } from './types';
+import { parseHumanStorageSize } from './utils';
 
 // Environment variable configuration
 export const LIFI_API_KEY =
@@ -190,6 +191,17 @@ const CONSERVATIVE_STORAGE_OPTIONS: StorageOption[] = [
 
 // Export all storage options for both production and development
 export const STORAGE_OPTIONS: StorageOption[] = ALL_STORAGE_OPTIONS;
+
+/**
+ * Byte capacity matching the UI “guaranteed” / product label for this depth
+ * (same strings as in {@link STORAGE_OPTIONS}).
+ */
+export function guaranteedStampCapacityBytes(depth: number): number | undefined {
+  const opt = STORAGE_OPTIONS.find(o => o.depth === depth);
+  if (!opt) return undefined;
+  const bytes = parseHumanStorageSize(opt.size);
+  return bytes ?? undefined;
+}
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,

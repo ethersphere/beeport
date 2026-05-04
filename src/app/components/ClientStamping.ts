@@ -633,6 +633,82 @@ export async function loadStampUsage(
   return computeStampUsage(state, expectedDepth);
 }
 
+/** Columns in the stamp-card heat strip (65536 / COLS buckets per cell). */
+export const BUCKET_HEAT_STRIP_COLS = 96;
+
+/**
+ * Histogram + heat-strip inputs for the stamp list “bucket stats” panel.
+ * All ratios use the batch's on-chain depth (`expectedDepth`), matching
+ * {@link computeStampUsage}.
+ */
+export interface BucketStatsVisualization {
+  maxSlot: number;
+  emptyBuckets: number;
+  /** Buckets with cnt ≥ maxSlot (full — uploads fail if any bucket hits this). */
+  fullBuckets: number;
+  /**
+   * Ten bins for buckets with 0 < cnt < maxSlot — index `i` is roughly
+   * ((i/10)×100, ((i+1)/10)×100]% of per-bucket capacity.
+   */
+  partialBins: number[];
+  /** Mean utilization % (0–100) per {@link BUCKET_HEAT_STRIP_COLS} segment of bucket index space. */
+  heatStrip: number[];
+}
+
+/**
+ * Derive a compact visualization of how stamp slots are spread across the
+ * 65 536 Swarm buckets — pure sync, safe to call after `loadStamperState`.
+ */
+export function computeBucketStatsVisualization(
+  state: PersistedStamperState,
+  expectedDepth: number
+): BucketStatsVisualization {
+  const { buckets } = state;
+  const maxSlot = 2 ** (expectedDepth - 16);
+  const partialBins = new Array(10).fill(0);
+  let emptyBuckets = 0;
+  let fullBuckets = 0;
+
+  for (let i = 0; i < buckets.length; i++) {
+    const cnt = buckets[i];
+    if (cnt === 0) {
+      emptyBuckets++;
+      continue;
+    }
+    if (cnt >= maxSlot) {
+      fullBuckets++;
+      continue;
+    }
+    const r = cnt / maxSlot;
+    const bin = Math.min(9, Math.floor(r * 10));
+    partialBins[bin]++;
+  }
+
+  const cols = BUCKET_HEAT_STRIP_COLS;
+  const heatStrip = new Array<number>(cols);
+  const span = buckets.length / cols;
+  for (let c = 0; c < cols; c++) {
+    const start = Math.floor(c * span);
+    const end = Math.floor((c + 1) * span);
+    let sum = 0;
+    let n = 0;
+    for (let j = start; j < end && j < buckets.length; j++) {
+      sum += buckets[j];
+      n++;
+    }
+    const avg = n > 0 ? sum / n : 0;
+    heatStrip[c] = Math.min(100, (avg / maxSlot) * 100);
+  }
+
+  return {
+    maxSlot,
+    emptyBuckets,
+    fullBuckets,
+    partialBins,
+    heatStrip,
+  };
+}
+
 // ─── Internals ────────────────────────────────────────────────────────────────
 
 function stripHex(value: string): string {
