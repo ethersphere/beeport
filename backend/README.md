@@ -171,12 +171,13 @@ side-effect of "only my customers' bandwidth"), use:
 The on-chain side of self-custody lives in:
 
 - [`contracts/StampsRegistryV2.sol`](../contracts/StampsRegistryV2.sol) —
-  current registry. Maps each `batchId` to the hot-key address that owns
-  it; this is what Bee's `presignedStamper` reads.
-- [`contracts/StampsRegistry.sol`](../contracts/StampsRegistry.sol) —
-  legacy V1 registry. Still on-chain because `SushiSwapStampsRouter`'s
-  constructor takes its address; scheduled for retirement (see
-  `docs/TODO.md` §3.1).
+  sole registry the Beeport app uses (`createSelfCustodyBatch`, wallet index).
+  Bee's `presignedStamper` validates stamp envelopes against the on-chain
+  batch owner (the hot key).
+
+A legacy V1 `StampsRegistry` and `SushiSwapStampsRouter` may still exist on
+Gnosis for older same-chain swap flows; their sources were removed from this
+repo (see `docs/TODO.md` §3.1).
 
 Deployments live under `deployments/gnosis/` and can be redeployed with
 `npm run deploy:registry-v2`.

@@ -2,10 +2,6 @@ import { ChainId } from '@lifi/sdk';
 import { StorageOption, SwarmConfigType } from './types';
 
 // Environment variable configuration
-export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
-  process.env.NEXT_PUBLIC_GNOSIS_CUSTOM_REGISTRY_ADDRESS ||
-  '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
-
 export const LIFI_API_KEY =
   process.env.NEXT_PUBLIC_LIFI_API_KEY ||
   '83f85c7b-97d2-4130-95b0-f72af1f0261e.b11f7330-ebb1-4684-af33-f28759ec6853';
@@ -197,13 +193,14 @@ export const STORAGE_OPTIONS: StorageOption[] = ALL_STORAGE_OPTIONS;
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
   toChain: ChainId.DAI,
-  swarmPostageStampAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+  /** StampsRegistryV2 — same contract the self-custody buy flow uses on Gnosis. */
+  swarmPostageStampAddress: STAMPS_REGISTRY_V2_ADDRESS,
   swarmToken: GNOSIS_BZZ_ADDRESS,
   swarmContractGasLimit: '2000000',
   swarmContractAbi: [
-    'function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
-    'function createBatchRegistry(address _owner,  address _nodeAddress, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
-    'function topUpBatch(bytes32 _batchId, uint256 _topupAmountPerChunk) external',
+    'function createSelfCustodyBatch(address wallet, address hotKeyOwner, uint256 initialBalancePerChunk, uint8 depth, uint8 bucketDepth, bytes32 nonce, bool immutable_) external returns (bytes32 batchId)',
+    'function topUpBatch(bytes32 batchId, uint256 perChunkAmount) external',
+    'function getWalletBatchIds(address wallet) external view returns (bytes32[])',
   ],
   swarmBatchInitialBalance: '477774720',
   swarmBatchDepth: '20',
@@ -450,21 +447,13 @@ export const SUSHI_STAMPS_ROUTER_ABI = [
 ] as const;
 
 /**
- * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.
- * "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the
- * Swarm protocol. "Stamps" is a more user-friendly term used to describe the same concept.
- * For example: "BatchCreated" event, but "StampsRegistry" contract.
- */
-/**
  * Minimal ABI for the upstream Swarm Postage Stamp contract on Gnosis
- * (`GNOSIS_STAMP_ADDRESS`). We talk to it directly when running in
- * **self-custody mode** (SWIP §Client-side stamping, mode α): the user's
- * wallet pays BZZ + gas and registers a hot-key address as `_owner`, so the
- * Bee node never needs custody of any private key.
+ * (`GNOSIS_STAMP_ADDRESS`). Used for read-only calls (`batches`, pricing) and
+ * any direct protocol inspection — **not** for app-side `createBatch` (all
+ * creates go through StampsRegistryV2 (`STAMPS_REGISTRY_V2_ADDRESS`).
  *
- * `batchId` is derived as `keccak256(abi.encode(msg.sender, _nonce))` —
- * note this is the **user's wallet address**, NOT the StampsRegistry, when
- * we call this contract directly.
+ * `batchId` for direct `msg.sender` calls is `keccak256(abi.encode(msg.sender, nonce))`.
+ * Beeport’s buy flow uses the registry as `msg.sender` instead.
  */
 export const POSTAGE_STAMP_ABI = [
   {
@@ -655,33 +644,5 @@ export const STAMPS_REGISTRY_V2_ABI = [
     ],
     name: 'BatchCreated',
     type: 'event',
-  },
-] as const;
-
-// Registry ABI for the functions we need to retrieve batch data
-export const REGISTRY_ABI = [
-  {
-    inputs: [{ internalType: 'address', name: '_owner', type: 'address' }],
-    name: 'getOwnerBatches',
-    outputs: [
-      {
-        components: [
-          { internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
-          { internalType: 'uint256', name: 'totalAmount', type: 'uint256' },
-          { internalType: 'uint256', name: 'normalisedBalance', type: 'uint256' },
-          { internalType: 'address', name: 'nodeAddress', type: 'address' },
-          { internalType: 'address', name: 'payer', type: 'address' },
-          { internalType: 'uint8', name: 'depth', type: 'uint8' },
-          { internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
-          { internalType: 'bool', name: 'immutable_', type: 'bool' },
-          { internalType: 'uint256', name: 'timestamp', type: 'uint256' },
-        ],
-        internalType: 'struct StampsRegistry.BatchInfo[]',
-        name: '',
-        type: 'tuple[]',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
   },
 ] as const;

@@ -21,7 +21,6 @@
     "deploy:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat deploy --network gnosis --tags SushiSwapStampsRouter",
     "deploy:registry-v2": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat deploy --network gnosis --tags StampsRegistryV2",
     "verify:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_router.ts --network gnosis",
-    "verify:registry": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry.ts --network gnosis",
     "verify:registry-v2": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry_v2.ts --network gnosis"
   },
   "dependencies": {

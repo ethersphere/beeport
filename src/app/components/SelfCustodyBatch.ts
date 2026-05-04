@@ -1,34 +1,14 @@
 /**
- * On-chain helpers for SELF-CUSTODY postage batch creation (SWIP mode α).
+ * On-chain helpers for self-custody postage batch creation (SWIP mode α).
  *
- * Two on-chain paths are supported, both ending in a non-custodial batch
- * (on-chain `_owner` is a hot key the browser tab derived; the Bee node
- * holds no key material):
+ * All create/top-up flows go through {@link STAMPS_REGISTRY_V2_ADDRESS}.
+ * The registry is always `msg.sender` to the upstream Postage Stamp contract,
+ * so batch IDs are deterministic:
  *
- *  1. **Direct path** (legacy): the user's wallet calls the upstream
- *     Postage Stamp contract directly. `msg.sender` to PostageStamp is the
- *     wallet, so:
+ *     batchId = keccak256(abi.encode(STAMPS_REGISTRY_V2_ADDRESS, nonce))
  *
- *         batchId = keccak256(abi.encode(walletAddress, nonce))
- *
- *     Two wallet prompts (BZZ approve → createBatch).
- *
- *  2. **Registry path** (preferred — enables Relay one-shot buy):
- *     the wallet (or a Relay multicaller) calls `StampsRegistryV2`, which
- *     then calls PostageStamp. `msg.sender` to PostageStamp is always the
- *     registry, so:
- *
- *         batchId = keccak256(abi.encode(STAMPS_REGISTRY_V2_ADDRESS, nonce))
- *
- *     This is deterministic regardless of who calls the registry, which
- *     is what lets Relay's `txs` action (post-bridge multicaller) produce
- *     the same `batchId` we computed client-side.
- *
- * Both paths set the same on-chain `_owner = hotKeyAddress` and produce
- * batches that are equally non-custodial. Direction of new code should
- * prefer the registry path; the direct helpers are kept for non-Relay
- * fallback (e.g. the user is already on Gnosis with BZZ and wants to skip
- * any aggregator).
+ * regardless of whether the caller is the user's EOA or a Relay multicaller
+ * (one-shot bridge → buy stamp).
  */
 
 import {
@@ -42,8 +22,6 @@ import type { PublicClient, WalletClient } from 'viem';
 
 import {
   GNOSIS_BZZ_ADDRESS,
-  GNOSIS_STAMP_ADDRESS,
-  POSTAGE_STAMP_ABI,
   STAMPS_REGISTRY_V2_ABI,
   STAMPS_REGISTRY_V2_ADDRESS,
 } from './constants';
@@ -91,10 +69,9 @@ export interface SelfCustodyBatchResult {
 
 /**
  * Compute `batchId = keccak256(abi.encode(sender, nonce))` exactly as the
- * upstream Swarm Postage Stamp contract does on `createBatch`.
- *
- * When `sender` is the user's wallet (self-custody mode), use the wallet
- * address. When `sender` is the StampsRegistry (legacy mode), pass that.
+ * upstream Postage Stamp contract does when `createBatch` is invoked with
+ * `msg.sender == sender`. For Beeport, `sender` is always
+ * {@link STAMPS_REGISTRY_V2_ADDRESS}.
  */
 export function computeBatchId(sender: string, nonce: string): `0x${string}` {
   const senderHex = sender.startsWith('0x') ? sender : `0x${sender}`;
@@ -106,102 +83,6 @@ export function computeBatchId(sender: string, nonce: string): `0x${string}` {
   return keccak256(encoded);
 }
 
-/**
- * Approve BZZ to the postage contract (if needed) and call
- * `createBatch(_owner = hotKeyAddress, …)`. Returns the resulting `batchId`
- * once the tx is mined. Persisted to localStorage so the UI can list it
- * without depending on Bee's `/stamps` endpoint (which only enumerates
- * batches owned by Bee's own wallet, not self-custody ones).
- */
-export async function createSelfCustodyBatch(
-  params: CreateSelfCustodyBatchParams
-): Promise<SelfCustodyBatchResult> {
-  const {
-    walletClient,
-    publicClient,
-    walletAddress,
-    hotKeyAddress,
-    initialBalancePerChunk,
-    depth,
-    bucketDepth,
-    nonce,
-    immutable_,
-    approvalType = 'exact',
-    onStatus,
-  } = params;
-
-  const totalAmount = initialBalancePerChunk * BigInt(2 ** depth);
-
-  // ── Step 1: BZZ approval (if needed) ──────────────────────────────────────
-  // Direct postage path requires the user's wallet to approve BZZ to the
-  // postage contract, NOT the StampsRegistry — different spender.
-  onStatus?.('Checking BZZ allowance…');
-  const allowance = await publicClient.readContract({
-    address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-    abi: BZZ_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    args: [walletAddress, GNOSIS_STAMP_ADDRESS as `0x${string}`],
-  });
-
-  let approveTxHash: `0x${string}` | undefined;
-  if ((allowance as bigint) < totalAmount) {
-    onStatus?.('Approving BZZ to the Swarm postage contract…');
-    const approveAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
-    approveTxHash = await walletClient.writeContract({
-      address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-      abi: BZZ_ALLOWANCE_ABI,
-      functionName: 'approve',
-      args: [GNOSIS_STAMP_ADDRESS as `0x${string}`, approveAmount],
-      account: walletAddress,
-      chain: walletClient.chain,
-    });
-
-    const approveReceipt = await publicClient.waitForTransactionReceipt({
-      hash: approveTxHash,
-    });
-    if (approveReceipt.status !== 'success') {
-      throw new Error('BZZ approval transaction reverted');
-    }
-  }
-
-  // ── Step 2: createBatch on the postage contract directly ─────────────────
-  onStatus?.('Creating batch on Swarm postage contract…');
-  const createTxHash = await walletClient.writeContract({
-    address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-    abi: POSTAGE_STAMP_ABI,
-    functionName: 'createBatch',
-    args: [
-      hotKeyAddress,
-      initialBalancePerChunk,
-      depth,
-      bucketDepth,
-      (nonce.startsWith('0x') ? nonce : `0x${nonce}`) as `0x${string}`,
-      immutable_,
-    ],
-    account: walletAddress,
-    chain: walletClient.chain,
-  });
-
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });
-  if (receipt.status !== 'success') {
-    throw new Error('createBatch transaction reverted');
-  }
-
-  // batchId derivation: msg.sender is the user's wallet here.
-  const batchId = computeBatchId(walletAddress, nonce);
-
-  return {
-    batchId,
-    createBatchTxHash: createTxHash,
-    createBatchBlockNumber: receipt.blockNumber,
-    approveTxHash,
-  };
-}
-
-/**
- * Top up a self-custody batch directly on the postage contract.
- * Caller must be the original payer-wallet (or any wallet with enough BZZ).
- */
 export interface TopUpSelfCustodyBatchParams {
   walletClient: WalletClient;
   publicClient: PublicClient;
@@ -215,70 +96,8 @@ export interface TopUpSelfCustodyBatchParams {
   onStatus?: (msg: string) => void;
 }
 
-export async function topUpSelfCustodyBatch(
-  params: TopUpSelfCustodyBatchParams
-): Promise<{ topUpTxHash: `0x${string}`; approveTxHash?: `0x${string}` }> {
-  const {
-    walletClient,
-    publicClient,
-    walletAddress,
-    batchId,
-    topUpAmountPerChunk,
-    depth,
-    approvalType = 'exact',
-    onStatus,
-  } = params;
-
-  const totalAmount = topUpAmountPerChunk * BigInt(2 ** depth);
-
-  onStatus?.('Checking BZZ allowance…');
-  const allowance = await publicClient.readContract({
-    address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-    abi: BZZ_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    args: [walletAddress, GNOSIS_STAMP_ADDRESS as `0x${string}`],
-  });
-
-  let approveTxHash: `0x${string}` | undefined;
-  if ((allowance as bigint) < totalAmount) {
-    onStatus?.('Approving BZZ for top-up…');
-    const approveAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
-    approveTxHash = await walletClient.writeContract({
-      address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-      abi: BZZ_ALLOWANCE_ABI,
-      functionName: 'approve',
-      args: [GNOSIS_STAMP_ADDRESS as `0x${string}`, approveAmount],
-      account: walletAddress,
-      chain: walletClient.chain,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-  }
-
-  onStatus?.('Topping up batch on Swarm postage contract…');
-  const topUpTxHash = await walletClient.writeContract({
-    address: GNOSIS_STAMP_ADDRESS as `0x${string}`,
-    abi: POSTAGE_STAMP_ABI,
-    functionName: 'topUp',
-    args: [batchId, topUpAmountPerChunk],
-    account: walletAddress,
-    chain: walletClient.chain,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: topUpTxHash });
-  if (receipt.status !== 'success') {
-    throw new Error('topUp transaction reverted');
-  }
-  return { topUpTxHash, approveTxHash };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Registry-routed path (StampsRegistryV2)
-//
-// All BZZ + createBatch interactions go through `StampsRegistryV2`, which is
-// the actual `msg.sender` to PostageStamp. This makes `batchId` deterministic
-// (= `keccak256(REGISTRY_V2, nonce)`) regardless of who calls the registry,
-// which in turn lets a Relay multicaller execute the whole "approve BZZ +
-// createSelfCustodyBatch" sequence as a `txs` post-action after a cross-chain
-// fill — restoring the legacy one-signature buy UX.
+// StampsRegistryV2 — sole supported create/top-up path
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -501,15 +320,12 @@ export function encodeRegistryCreateBatchTxs(args: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Self-custody batch persistence (localStorage)
+// Self-custody batch persistence (localStorage) + on-chain index
 //
-// Self-custody batches are NOT discoverable via `StampsRegistry.getOwnerBatches`
-// — they're created directly on the upstream Postage Stamp contract with the
-// user's wallet as `msg.sender` and a hot key as `_owner`. To list them in the
-// "Your Stamps" UI we store metadata locally, keyed by the connected wallet.
-//
-// The Bee gateway is still the source of truth for live state (`utilization`,
-// `batchTTL`, `usable`); we only persist what we need to find the batch later.
+// Batches created via StampsRegistryV2 are also listed on-chain under the
+// payer wallet (`getWalletBatchIds`). The local store is a fast cache and
+// holds extra UI metadata. Live TTL/depth still come from the Postage Stamp
+// contract (`refreshBatchesFromContract` in the stamp list).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface StoredSelfCustodyBatch {
@@ -539,14 +355,10 @@ export interface StoredSelfCustodyBatch {
   /** Set true once a top-up has completed. UI hint only. */
   hasBeenToppedUp?: boolean;
   /**
-   * Which on-chain path created this batch. Determines `batchId` derivation:
-   *   - 'direct'   → keccak256(walletAddress, nonce)        [legacy]
-   *   - 'registry' → keccak256(STAMPS_REGISTRY_V2, nonce)   [preferred]
-   *
-   * Defaulted to 'direct' for entries written before this field existed so
-   * the Bee gateway lookup logic remains correct after upgrade.
+   * Always set for new rows; present for all StampsRegistryV2 creates.
+   * Omitted on very old local entries only.
    */
-  createdVia?: 'direct' | 'registry';
+  createdVia?: 'registry';
 }
 
 const STORE_KEY = 'beeport.selfCustodyBatches.v1';

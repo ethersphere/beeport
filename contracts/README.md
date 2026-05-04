@@ -1,14 +1,31 @@
 # Swarm Stamps Smart Contracts
 
-This directory contains two smart contracts for purchasing Swarm Postage Stamps on Gnosis chain.
+This directory contains smart contracts for purchasing Swarm Postage Stamps on Gnosis chain.
+
+### StampsRegistryV2 (`contracts/StampsRegistryV2.sol`)
+
+Thin proxy over the upstream Swarm Postage Stamp contract. **This is what the Beeport Next.js app uses** for self-custody batch creation and top-up (`createSelfCustodyBatch`, `topUpBatch`, wallet-indexed `getWalletBatchIds`).
+
+Deploy:
+
+```bash
+npm run deploy:registry-v2
+# or: npx hardhat deploy --network gnosis --tags StampsRegistryV2
+```
+
+Verify:
+
+```bash
+npm run verify:registry-v2
+```
+
+### Legacy StampsRegistry (V1)
+
+The original registry (`createBatchRegistry`, mirrored `BatchInfo` storage) was **removed from this repository**. Historical bytecode and deployment artifacts may still exist under `deployments/gnosis/`. The **SushiSwapStampsRouter** still targets the **V1 interface** at whatever address you pass as `GNOSIS_STAMPS_REGISTRY` — it is **not** interchangeable with StampsRegistryV2 without a new router contract.
 
 ---
 
-## Contracts
-
-### StampsRegistry
-
-A registry for Swarm Postage Stamps that wraps the core Swarm postage contract. Users interact with this contract to create or top up stamp batches using BZZ tokens they already hold.
+## Other contracts
 
 ### SushiSwapStampsRouter
 
@@ -53,17 +70,17 @@ WALLET_SECRET=your_private_key_here
 GNOSIS_RPC_URL=https://rpc.gnosischain.com
 MAINNET_ETHERSCAN_KEY=your_gnosisscan_api_key_here
 
-# StampsRegistry deployment
+# Upstream Swarm PostageStamp (constructor arg for StampsRegistryV2)
 SWARM_CONTRACT_ADDRESS=0x45a1502382541Cd610CC9068e88727426b696293
 
-# SushiSwapStampsRouter deployment (uses existing registry)
+# SushiSwapStampsRouter — legacy V1 StampsRegistry the router calls (not V2)
 GNOSIS_STAMPS_REGISTRY=0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3
 ```
 
-### Deploy StampsRegistry
+### Deploy StampsRegistryV2
 
 ```bash
-npx hardhat deploy --network gnosis --tags StampsRegistry
+npm run deploy:registry-v2
 ```
 
 ### Deploy SushiSwapStampsRouter
@@ -79,7 +96,7 @@ NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS=<deployed address>
 
 ### Verification
 
-Both deploy scripts automatically attempt verification after deployment using two methods:
+StampsRegistryV2 and SushiSwapStampsRouter deploy scripts attempt verification after deployment:
 
 | Method | Tool | API key needed |
 |--------|------|---------------|
@@ -95,9 +112,8 @@ npx hardhat run scripts/verify_router.ts --network gnosis
 # Override address explicitly
 ROUTER_ADDRESS=0x... npx hardhat run scripts/verify_router.ts --network gnosis
 
-# Verify StampsRegistry
-npx hardhat run scripts/verify_registry.ts --network gnosis
-REGISTRY_ADDRESS=0x... npx hardhat run scripts/verify_registry.ts --network gnosis
+# Verify StampsRegistryV2
+npm run verify:registry-v2
 ```
 
 #### Manual one-liners

@@ -135,14 +135,12 @@ This is "the right thing" but probably 2 days of careful work; defer until a use
 
 ## 3. Code-health & repo cleanup
 
-### 3.1 Retire the V1 `StampsRegistry` flow once `SushiSwapStampsRouter` migrates to V2
-**Files:** `contracts/StampsRegistry.sol`, `deploy/01_deploy_stamps_registry.ts`, `scripts/verify_registry.ts`, `contracts/SushiSwapStampsRouter.sol` (uses V1's `IStampsRegistry`)
+### 3.1 Retire V1 `StampsRegistry` from the repo — `[x]` shipped (app + sources)
+**Remaining on-chain:** `SushiSwapStampsRouter` still takes the **legacy V1 registry address** in its constructor (`createBatchRegistry` interface). That deployed router is unrelated to the Next.js app, which uses **only** `StampsRegistryV2`.
 
-V1 is still on-chain because the SushiSwap router's constructor takes its address. Once we either:
-- redeploy `SushiSwapStampsRouter` against `StampsRegistryV2`, **or**
-- write a thin V1-shaped adapter on top of V2,
+**Removed:** `contracts/StampsRegistry.sol`, `deploy/01_deploy_stamps_registry.ts`, `scripts/verify_registry.ts`, `REGISTRY_ABI` / `GNOSIS_CUSTOM_REGISTRY_ADDRESS` from the frontend, direct PostageStamp create/top-up helpers in `SelfCustodyBatch.ts`.
 
-we can delete the V1 contract, deploy script, and verify script. Keep them around until then so the existing on-chain router keeps verifying cleanly.
+**Follow-up (optional, separate project):** redeploy or adapt `SushiSwapStampsRouter` if same-chain swaps should call V2 — requires a new router contract.
 
 ### 3.2 Update `docs/architecture.md` end-to-end
 **Files:** `docs/architecture.md`

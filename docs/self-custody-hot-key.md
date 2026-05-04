@@ -120,7 +120,7 @@ So:
 ### Top-up of an existing batch
 The **user's wallet** calls `topUp(batchId, amountPerChunk)` directly,
 paying BZZ from the wallet. **The hot key is not needed for top-up.**
-This is what `topUpSelfCustodyBatch()` in `SelfCustodyBatch.ts` does today.
+This is what `topUpSelfCustodyBatchViaRegistry()` in `SelfCustodyBatch.ts` does today.
 
 ### Dilution (increaseDepth) — currently a real problem ⚠
 

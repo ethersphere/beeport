@@ -193,9 +193,9 @@ const SwapComponent: React.FC = () => {
   const approvalDropdownRef = useRef<HTMLDivElement>(null);
 
   // ── Self-custody (SWIP §Client-side stamping, mode α) — always on ──────────
-  // Batches are created with `_owner = hotKeyAddress` directly on the upstream
-  // Postage Stamp contract (StampsRegistry is bypassed), and every chunk is
-  // BMT-hashed + stamped locally before being POSTed to the Bee gateway.
+  // Batches are created via StampsRegistryV2 with `_owner = hotKeyAddress`;
+  // the registry is `msg.sender` to Postage Stamp. Every chunk is BMT-hashed
+  // and stamped locally before being POSTed to the Bee gateway.
   const [hotKey, setHotKey] = useState<DerivedHotKey | null>(null);
   const [cachedHotKeyAddress, setCachedHotKeyAddress] = useState<string | null>(null);
 
@@ -2221,8 +2221,7 @@ const SwapComponent: React.FC = () => {
                 Self-custody storage{' '}
                 <span
                   className={styles.tooltip}
-                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis, then your wallet calls createBatch on the upstream Postage Stamp contract directly with a hot-key address as on-chain owner. StampsRegistry is bypassed.
-Uploading: chain-independent — chunks are BMT-hashed and stamped locally in this tab; pre-stamped chunks are POSTed to a key-less Bee gateway."
+                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis, then BZZ is approved to StampsRegistryV2 and `createSelfCustodyBatch` sets the hot key as on-chain owner (the registry calls Postage Stamp). Uploading: chain-independent — chunks are BMT-hashed and stamped locally in this tab; pre-stamped chunks are POSTed to a key-less Bee gateway."
                 >
                   ?
                 </span>
