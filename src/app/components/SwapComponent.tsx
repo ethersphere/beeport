@@ -2415,793 +2415,6 @@ const SwapComponent: React.FC = () => {
             <pre className={styles.resultBox}>{JSON.stringify(executionResult, null, 2)}</pre>
           )}
 
-          {(isLoading || (showOverlay && uploadStep !== 'idle')) && (
-            <div className={styles.overlay}>
-              <div
-                className={`${styles.statusBox} ${statusMessage.isSuccess ? styles.success : ''}`}
-              >
-                {/* Always show close button */}
-                <button
-                  className={styles.closeButton}
-                  onClick={() => {
-                    setShowOverlay(false);
-                    setStatusMessage({ step: '', message: '' });
-                    setUploadStep('idle');
-                    setIsLoading(false);
-                    setExecutionResult(null);
-                    setSelectedFile(null);
-                    setSelectedFiles([]);
-                    setMultiFileResults([]);
-                    setNftCollectionResult(null);
-                    setIsDistributing(false);
-                    setIsNewStampCreated(false);
-                  }}
-                >
-                  ×
-                </button>
-
-                {!['ready', 'uploading'].includes(uploadStep) && (
-                  <>
-                    {isLoading && statusMessage.step !== 'Complete' && (
-                      <div className={styles.spinner}></div>
-                    )}
-                    <div className={styles.statusMessage}>
-                      <h3 className={statusMessage.isSuccess ? styles.success : ''}>
-                        {statusMessage.message}
-                      </h3>
-                      {statusMessage.error && (
-                        <div className={styles.errorMessage}>{statusMessage.error}</div>
-                      )}
-                      {statusMessage.warning && (
-                        <div className={styles.warningMessage}>{statusMessage.warning}</div>
-                      )}
-
-                      {remainingTime !== null &&
-                        estimatedTime !== null &&
-                        (statusMessage.step === 'Route' ||
-                          statusMessage.step === 'deposit' ||
-                          statusMessage.step === 'Quoting' ||
-                          statusMessage.step === 'Relay') && (
-                          <div className={styles.bridgeTimer}>
-                            <p>Estimated time remaining: {formatTime(remainingTime)}</p>
-                            <div className={styles.progressBarContainer}>
-                              <div
-                                className={styles.progressBar}
-                                style={{
-                                  width: `${Math.max(
-                                    0,
-                                    Math.min(100, (1 - remainingTime / estimatedTime) * 100)
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                    </div>
-                  </>
-                )}
-
-                {['ready', 'uploading'].includes(uploadStep) && (
-                  <div className={styles.uploadBox}>
-                    <h3 className={styles.uploadTitle}>
-                      {postageBatchId
-                        ? `Upload to ${
-                            postageBatchId.startsWith('0x')
-                              ? postageBatchId.slice(2, 8)
-                              : postageBatchId.slice(0, 6)
-                          }...${postageBatchId.slice(-4)}`
-                        : 'Upload File'}
-                    </h3>
-
-                    {/* Bee gateway health banner. Shown only when the node is
-                        not OK so a healthy gateway adds zero visual noise. We
-                        intentionally render it ABOVE the data-cannot-be-deleted
-                        warning because a sick gateway is the more actionable
-                        problem — the user can pick a different node, while the
-                        data warning is informational. */}
-                    {(beeNodeHealth.state.status === 'unreachable' ||
-                      beeNodeHealth.state.status === 'unhealthy') && (
-                      <div
-                        className={`${styles.healthBanner} ${
-                          beeNodeHealth.state.status === 'unreachable'
-                            ? styles.healthBannerError
-                            : styles.healthBannerWarn
-                        }`}
-                      >
-                        <span className={styles.healthBannerTitle}>
-                          {beeNodeHealth.state.status === 'unreachable'
-                            ? '⛔ Bee gateway unreachable'
-                            : '⚠️ Bee gateway unhealthy'}
-                        </span>
-                        <button
-                          type="button"
-                          className={styles.healthBannerRetry}
-                          onClick={beeNodeHealth.refresh}
-                          disabled={beeNodeHealth.isProbing}
-                        >
-                          {beeNodeHealth.isProbing ? 'Checking…' : 'Retry'}
-                        </button>
-                        {beeNodeHealth.state.message && (
-                          <div className={styles.healthBannerDetail}>
-                            {beeNodeHealth.state.message}. Uploads will fail until the gateway
-                            recovers.
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className={styles.uploadWarning}>
-                      Warning! Uploaded data cannot be deleted - it will be removed once the stamp
-                      has expired. Uploaded data exists publicly in the network - anyone who knows
-                      the reference can access it.
-                    </div>
-                    {isNewStampCreated && (
-                      <div className={styles.uploadWarning}>
-                        ⏱️ New storage created: It takes around up to 2 minutes before it becomes
-                        accessible on the network.
-                      </div>
-                    )}
-                    {/* Inline banner shown when the previous upload attempt
-                        failed with a transient "stamp not ready" error. We
-                        keep the user on the upload screen with their file
-                        selected (see catch blocks above) so they can hit
-                        Upload again once the gateway has caught up — but
-                        the regular overlay status box is suppressed while
-                        `uploadStep === 'ready'`, so without this banner
-                        the user wouldn't see *why* their previous click
-                        failed. Dismissable so it doesn't linger after the
-                        next successful upload. */}
-                    {statusMessage.isError && statusMessage.step === 'Error' && (
-                      <div
-                        className={`${styles.healthBanner} ${styles.healthBannerWarn}`}
-                      >
-                        <span className={styles.healthBannerTitle}>
-                          ⚠️ {statusMessage.message}
-                        </span>
-                        <button
-                          type="button"
-                          className={styles.healthBannerRetry}
-                          onClick={() =>
-                            setStatusMessage({ step: '', message: '' })
-                          }
-                        >
-                          Dismiss
-                        </button>
-                        {statusMessage.error && (
-                          <div className={styles.healthBannerDetail}>
-                            {statusMessage.error}
-                          </div>
-                        )}
-                        {statusMessage.warning && (
-                          <div className={styles.healthBannerDetail}>
-                            {statusMessage.warning}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {statusMessage.step === 'waiting_creation' ? (
-                      <div className={styles.waitingMessage}>
-                        <div className={styles.spinner}></div>
-                        <p>{statusMessage.message}</p>
-                      </div>
-                    ) : (
-                      <div className={styles.uploadForm}>
-                        {/* Upload-mode toggles. Each one is mutually exclusive
-                            with the others (the onChange handlers below clear
-                            sibling state when activated), matching how the
-                            legacy 1.1.x UI behaved. */}
-                        <div className={styles.checkboxWrapper}>
-                          <input
-                            type="checkbox"
-                            id="multiple-files"
-                            checked={isMultipleFiles}
-                            onChange={e => {
-                              setIsMultipleFiles(e.target.checked);
-                              setSelectedFile(null);
-                              setSelectedFiles([]);
-                              setIsFolderUpload(false);
-                              setIsNFTCollection(false);
-                            }}
-                            className={styles.checkbox}
-                            disabled={uploadStep === 'uploading'}
-                          />
-                          <label htmlFor="multiple-files" className={styles.checkboxLabel}>
-                            Multiple files separately (separate hashes)
-                          </label>
-                        </div>
-
-                        <div className={styles.checkboxWrapper}>
-                          <input
-                            type="checkbox"
-                            id="folder-upload"
-                            checked={isFolderUpload}
-                            onChange={e => {
-                              setIsFolderUpload(e.target.checked);
-                              if (e.target.checked) {
-                                setIsWebpageUpload(true);
-                              } else {
-                                setIsWebpageUpload(false);
-                              }
-                              setSelectedFile(null);
-                              setSelectedFiles([]);
-                              setIsMultipleFiles(false);
-                              setIsNFTCollection(false);
-                            }}
-                            className={styles.checkbox}
-                            disabled={uploadStep === 'uploading'}
-                          />
-                          <label
-                            htmlFor="folder-upload"
-                            className={styles.checkboxLabel}
-                            title="📁 Select an entire folder. Browser will ask for permission to access folder contents — this is normal security behaviour."
-                          >
-                            Multiple files in a folder (one hash, served as a website)
-                          </label>
-                        </div>
-
-                        <div className={styles.fileInputWrapper}>
-                          <input
-                            type="file"
-                            multiple={isMultipleFiles || isFolderUpload}
-                            {...(isFolderUpload && { webkitdirectory: 'true' })}
-                            onChange={e => {
-                              const files = Array.from(e.target.files || []);
-                              if (isFolderUpload) {
-                                setSelectedFiles(files);
-                                setSelectedFile(null);
-                              } else if (isMultipleFiles) {
-                                setSelectedFiles(files);
-                                setSelectedFile(null);
-                              } else {
-                                setSelectedFile(files[0] || null);
-                                setSelectedFiles([]);
-                              }
-                            }}
-                            className={styles.fileInput}
-                            disabled={uploadStep === 'uploading'}
-                            id="file-upload"
-                          />
-                          <label htmlFor="file-upload" className={styles.fileInputLabel}>
-                            {isFolderUpload
-                              ? selectedFiles.length > 0
-                                ? `Folder: ${
-                                    (selectedFiles[0] as File & { webkitRelativePath?: string })
-                                      .webkitRelativePath?.split('/')[0] || 'folder'
-                                  } (${selectedFiles.length} files)`
-                                : 'Select Folder (auto-index)'
-                              : isMultipleFiles
-                                ? selectedFiles.length > 0
-                                  ? `${selectedFiles.length} files selected`
-                                  : 'Choose files'
-                                : selectedFile
-                                  ? selectedFile.name
-                                  : 'Choose file'}
-                          </label>
-                        </div>
-
-                        {isMultipleFiles && selectedFiles.length > 0 && (
-                          <div className={styles.fileList}>
-                            <h4>Selected files:</h4>
-                            <ul>
-                              {selectedFiles.map((file, index) => (
-                                <li key={index} className={styles.fileName}>
-                                  {file.name} ({formatFileSize(file.size)})
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {(selectedFile || selectedFiles.length > 0) && (
-                          <div className={styles.fileSizeInfo}>
-                            <div className={styles.fileSizeTotal}>
-                              Total size: {formatFileSize(getTotalFileSize())}
-                            </div>
-                            {!exceedsMaximumUploadSize() && hasVeryLargeFiles() && (
-                              <div className={styles.largeFileWarning}>
-                                ⚠️ Large file detected ({'>'}2GB). Self-custody upload chunks +
-                                stamps locally — keep this tab open and your wallet unlocked
-                                throughout. Aborting in the middle is safe (the chunks are
-                                idempotent), but the upload won't resume from where it stopped.
-                              </div>
-                            )}
-                            {exceedsMaximumUploadSize() && (
-                              <div className={styles.errorMessage}>
-                                ❌ Total upload size exceeds the maximum allowed of{' '}
-                                {FILE_SIZE_CONFIG.maximumFileGB}GB. Pick smaller / fewer files.
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Single-file ZIP/GZ extras: serve uncompressed (extract
-                            the archive locally and build a Mantaray manifest)
-                            and the NFT-collection toggle. Same toggles as 1.1.x;
-                            both feed into the new self-custody pipeline. */}
-                        {!isMultipleFiles &&
-                          !isFolderUpload &&
-                          (selectedFile?.name.toLowerCase().endsWith('.zip') ||
-                            selectedFile?.name.toLowerCase().endsWith('.tar') ||
-                            selectedFile?.name.toLowerCase().endsWith('.tar.gz') ||
-                            selectedFile?.name.toLowerCase().endsWith('.tgz') ||
-                            selectedFile?.name.toLowerCase().endsWith('.gz')) && (
-                            <div className={styles.checkboxWrapper}>
-                              <input
-                                type="checkbox"
-                                id="serve-uncompressed"
-                                checked={serveUncompressed}
-                                onChange={e => setServeUncompressed(e.target.checked)}
-                                className={styles.checkbox}
-                                disabled={uploadStep === 'uploading'}
-                              />
-                              <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
-                                Serve uncompressed
-                                <span
-                                  className={styles.tooltip}
-                                  title="Extract the archive locally, upload each file as its own Mantaray fork. The folder will be browseable via index.html on the resulting reference."
-                                >
-                                  ?
-                                </span>
-                              </label>
-                            </div>
-                          )}
-
-                        {!isMultipleFiles &&
-                          !isFolderUpload &&
-                          selectedFile?.name.toLowerCase().endsWith('.zip') && (
-                            <div className={styles.checkboxWrapper}>
-                              <input
-                                type="checkbox"
-                                id="nft-collection"
-                                checked={isNFTCollection}
-                                onChange={e => {
-                                  setIsNFTCollection(e.target.checked);
-                                  if (e.target.checked) {
-                                    setServeUncompressed(false);
-                                  }
-                                }}
-                                className={styles.checkbox}
-                                disabled={uploadStep === 'uploading'}
-                              />
-                              <label htmlFor="nft-collection" className={styles.checkboxLabel}>
-                                Upload NFT collection
-                                <span
-                                  className={styles.tooltip}
-                                  title="Upload a ZIP file containing 'images' and 'json' folders. Images are uploaded as one Mantaray collection; JSON metadata is rewritten to point at bzz.link URLs and uploaded as a second collection."
-                                >
-                                  ?
-                                </span>
-                              </label>
-                            </div>
-                          )}
-
-                        <button
-                          onClick={handleFileUpload}
-                          disabled={
-                            (isMultipleFiles || isFolderUpload
-                              ? selectedFiles.length === 0
-                              : !selectedFile) ||
-                            uploadStep === 'uploading' ||
-                            exceedsMaximumUploadSize() ||
-                            // Block uploads when we KNOW the gateway is broken.
-                            // 'unknown' (no probe yet) and 'checking' do NOT
-                            // block — we'd rather let an early upload through
-                            // than block on a slow first probe.
-                            beeNodeHealth.state.status === 'unreachable' ||
-                            beeNodeHealth.state.status === 'unhealthy'
-                          }
-                          className={styles.uploadButton}
-                        >
-                          {uploadStep === 'uploading' ? (
-                            <>
-                              <div className={styles.smallSpinner}></div>
-                              {statusMessage.step === 'Uploading'
-                                ? isDistributing
-                                  ? 'Distributing file chunks...'
-                                  : `Uploading... ${uploadProgress.toFixed(1)}%`
-                                : 'Processing...'}
-                            </>
-                          ) : isMultipleFiles ? (
-                            `Upload ${selectedFiles.length} files`
-                          ) : isFolderUpload ? (
-                            `Upload folder (${selectedFiles.length} files)`
-                          ) : isNFTCollection ? (
-                            'Upload NFT collection'
-                          ) : (
-                            'Upload'
-                          )}
-                        </button>
-                        {uploadStep === 'uploading' && (
-                          <>
-                            {!isDistributing ? (
-                              // Show the regular progress bar during upload
-                              <div className={styles.progressBarContainer}>
-                                <div
-                                  className={styles.progressBar}
-                                  style={{ width: `${uploadProgress}%` }}
-                                />
-                              </div>
-                            ) : (
-                              // Show the distribution animation when distributing to Swarm
-                              <div className={styles.distributionContainer}>
-                                {/* Center cube (source node) */}
-                                <div className={styles.centerNode}></div>
-
-                                {/* Target nodes (cubes) */}
-                                <div className={`${styles.node} ${styles.node1}`}></div>
-                                <div className={`${styles.node} ${styles.node2}`}></div>
-                                <div className={`${styles.node} ${styles.node3}`}></div>
-                                <div className={`${styles.node} ${styles.node4}`}></div>
-                                <div className={`${styles.node} ${styles.node5}`}></div>
-                                <div className={`${styles.node} ${styles.node6}`}></div>
-                                <div className={`${styles.node} ${styles.node7}`}></div>
-                                <div className={`${styles.node} ${styles.node8}`}></div>
-
-                                {/* Chunks being distributed */}
-                                <div className={`${styles.chunk} ${styles.chunk1}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk2}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk3}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk4}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk5}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk6}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk7}`}></div>
-                                <div className={`${styles.chunk} ${styles.chunk8}`}></div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {uploadStep === 'complete' && (
-                  <div className={styles.successMessage}>
-                    <div className={styles.successIcon}>✓</div>
-                    <h3>
-                      {multiFileResults.length > 0
-                        ? 'Upload Complete!'
-                        : nftCollectionResult
-                          ? 'NFT Collection Uploaded Successfully!'
-                          : 'Upload Successful!'}
-                    </h3>
-
-                    {/* Multi-file: list each file with its own reference. */}
-                    {multiFileResults.length > 0 ? (
-                      <div className={styles.multiFileResults}>
-                        {multiFileResults.map((result, index) => (
-                          <div
-                            key={index}
-                            className={`${styles.fileResult} ${
-                              result.success ? styles.success : styles.error
-                            }`}
-                          >
-                            <div className={styles.fileResultHeader}>
-                              <span className={styles.fileResultName}>{result.filename}</span>
-                              <span
-                                className={`${styles.fileResultStatus} ${
-                                  result.success ? styles.success : styles.error
-                                }`}
-                              >
-                                {result.success ? 'Success' : 'Failed'}
-                              </span>
-                            </div>
-                            {result.success && result.reference && (
-                              <div
-                                className={styles.fileResultReference}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(result.reference || '');
-                                }}
-                                title="Click to copy reference"
-                              >
-                                {result.reference}
-                              </div>
-                            )}
-                            {!result.success && result.error && (
-                              <div className={styles.fileResultError}>{result.error}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : nftCollectionResult ? (
-                      // NFT collection: two references with their own copy/open
-                      // controls. Mirrors the old custodial UI exactly so any
-                      // downstream NFT-deploy scripts that screen-scrape this
-                      // panel keep working.
-                      <div className={styles.nftCollectionResults}>
-                        <div className={styles.nftCollectionSummary}>
-                          <p>
-                            {nftCollectionResult.totalImages} images and{' '}
-                            {nftCollectionResult.totalMetadata} metadata files processed
-                          </p>
-                        </div>
-
-                        <div className={styles.nftReferenceGroup}>
-                          {(() => {
-                            const base = beeApiUrl.endsWith('/')
-                              ? `${beeApiUrl}bzz/`
-                              : `${beeApiUrl}/bzz/`;
-                            const stripHexLocal = (h: string) =>
-                              h.startsWith('0x') ? h.slice(2) : h;
-                            const imagesRef = stripHexLocal(nftCollectionResult.imagesReference);
-                            const metadataRef = stripHexLocal(
-                              nftCollectionResult.metadataReference
-                            );
-                            return (
-                              <>
-                                <div className={styles.referenceBox}>
-                                  <p>
-                                    <strong>Images Reference:</strong>
-                                  </p>
-                                  <div className={styles.referenceCopyWrapper}>
-                                    <code
-                                      className={styles.referenceCode}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(imagesRef);
-                                      }}
-                                      data-copied="false"
-                                    >
-                                      {imagesRef}
-                                    </code>
-                                  </div>
-                                  <div className={styles.linkButtonsContainer}>
-                                    <button
-                                      className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(`${base}${imagesRef}/`);
-                                      }}
-                                    >
-                                      Copy images link
-                                    </button>
-                                    <a
-                                      href={`${base}${imagesRef}/`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={styles.referenceLink}
-                                    >
-                                      View images
-                                    </a>
-                                  </div>
-                                </div>
-
-                                <div className={styles.referenceBox}>
-                                  <p>
-                                    <strong>Metadata Reference:</strong>
-                                  </p>
-                                  <div className={styles.referenceCopyWrapper}>
-                                    <code
-                                      className={styles.referenceCode}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(metadataRef);
-                                      }}
-                                      data-copied="false"
-                                    >
-                                      {metadataRef}
-                                    </code>
-                                  </div>
-                                  <div className={styles.linkButtonsContainer}>
-                                    <button
-                                      className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(`${base}${metadataRef}/`);
-                                      }}
-                                    >
-                                      Copy metadata link
-                                    </button>
-                                    <a
-                                      href={`${base}${metadataRef}/`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={styles.referenceLink}
-                                    >
-                                      View metadata
-                                    </a>
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className={styles.referenceBox}>
-                        <p>Reference:</p>
-                        <div className={styles.referenceCopyWrapper}>
-                          <code
-                            className={styles.referenceCode}
-                            onClick={() => {
-                              navigator.clipboard.writeText(statusMessage.reference || '');
-                              // Show a temporary "Copied!" message by using a data attribute
-                              const codeEl = document.querySelector(`.${styles.referenceCode}`);
-                              if (codeEl) {
-                                codeEl.setAttribute('data-copied', 'true');
-                                setTimeout(() => {
-                                  codeEl.setAttribute('data-copied', 'false');
-                                }, 2000);
-                              }
-                            }}
-                            data-copied="false"
-                          >
-                            {statusMessage.reference}
-                          </code>
-                        </div>
-                        {(() => {
-                          // Resolve the retrieval URL against the same Bee node we
-                          // uploaded to, not the hard-coded public gateway. When a
-                          // user is talking to their own bee (e.g. localhost:1633)
-                          // the chunks exist there first; the public gateway can't
-                          // serve them until they propagate. So the link must
-                          // follow `beeApiUrl`.
-                          const base = beeApiUrl.endsWith('/')
-                            ? `${beeApiUrl}bzz/`
-                            : `${beeApiUrl}/bzz/`;
-                          const retrievalUrl =
-                            statusMessage.filename && !isArchiveFile(statusMessage.filename)
-                              ? `${base}${statusMessage.reference}/${statusMessage.filename}`
-                              : `${base}${statusMessage.reference}/`;
-                          return (
-                            <div className={styles.linkButtonsContainer}>
-                              <button
-                                className={`${styles.referenceLink} ${styles.copyLinkButton}`}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(retrievalUrl);
-                                  const button = document.querySelector(`.${styles.copyLinkButton}`);
-                                  if (button) {
-                                    const originalText = button.textContent;
-                                    button.textContent = 'Link copied!';
-                                    setTimeout(() => {
-                                      button.textContent = originalText;
-                                    }, 2000);
-                                  }
-                                }}
-                              >
-                                Copy link
-                              </button>
-                              <a
-                                href={retrievalUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.referenceLink}
-                              >
-                                Open link
-                              </a>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {uploadStampInfo && multiFileResults.length === 0 && !nftCollectionResult && (
-                      <div className={styles.stampInfoBox}>
-                        <h4>Storage Stamps Details</h4>
-                        <div className={styles.stampDetails}>
-                          <div className={styles.stampDetail}>
-                            <span>Utilization:</span>
-                            <span>
-                              {getStampUsage(
-                                uploadStampInfo.utilization || 0,
-                                uploadStampInfo.depth || 0
-                              ).toFixed(2)}
-                              %
-                            </span>
-                          </div>
-                          <div className={styles.stampDetail}>
-                            <span>Total Size:</span>
-                            <span>{uploadStampInfo.totalSize}</span>
-                          </div>
-                          <div className={styles.stampDetail}>
-                            <span>Created:</span>
-                            <span>{uploadStampInfo.createdDate || 'Unknown'}</span>
-                          </div>
-                          <div className={styles.stampDetail}>
-                            <span>Expires in:</span>
-                            <span>{formatExpiryTime(uploadStampInfo.batchTTL)}</span>
-                          </div>
-                        </div>
-                        <div className={styles.utilizationBarContainer}>
-                          <div
-                            className={styles.utilizationBar}
-                            style={{
-                              width: `${getStampUsage(uploadStampInfo.utilization || 0, uploadStampInfo.depth || 0).toFixed(2)}%`,
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      className={styles.closeSuccessButton}
-                      onClick={() => {
-                        setShowOverlay(false);
-                        setUploadStep('idle');
-                        setStatusMessage({ step: '', message: '' });
-                        setIsLoading(false);
-                        setExecutionResult(null);
-                        setSelectedFile(null);
-                        setSelectedFiles([]);
-                        setMultiFileResults([]);
-                        setNftCollectionResult(null);
-                        setIsDistributing(false);
-                        setUploadStampInfo(null);
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                )}
-
-                {topUpCompleted && (
-                  <div className={styles.successMessage}>
-                    <div className={styles.successIcon}>✓</div>
-                    <h3>Batch Topped Up Successfully!</h3>
-                    <div className={styles.referenceBox}>
-                      <p>Batch ID:</p>
-                      <div className={styles.referenceCopyWrapper}>
-                        <code
-                          className={styles.referenceCode}
-                          onClick={() => {
-                            navigator.clipboard.writeText(topUpInfo?.batchId || '');
-                            // Show a temporary "Copied!" message
-                            const codeEl = document.querySelector(`.${styles.referenceCode}`);
-                            if (codeEl) {
-                              codeEl.setAttribute('data-copied', 'true');
-                              setTimeout(() => {
-                                codeEl.setAttribute('data-copied', 'false');
-                              }, 2000);
-                            }
-                          }}
-                          data-copied="false"
-                        >
-                          {topUpInfo?.batchId}
-                        </code>
-                      </div>
-                    </div>
-
-                    <div className={styles.stampInfoBox}>
-                      <h4>Top-Up Details</h4>
-                      <div className={styles.stampDetails}>
-                        <div className={styles.stampDetail}>
-                          <span>Added Duration:</span>
-                          <span>{topUpInfo?.days} days</span>
-                        </div>
-                        <div className={styles.stampDetail}>
-                          <span>Cost:</span>
-                          <span>${Number(topUpInfo?.cost || 0).toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <div className={styles.updateDelayNotice}>
-                        ⏱️ It will take a few minutes for the stamp expiry to be updated
-                      </div>
-                    </div>
-
-                    <button
-                      className={styles.closeSuccessButton}
-                      onClick={() => {
-                        setShowOverlay(false);
-                        setTopUpCompleted(false);
-                        setTopUpInfo(null);
-                        setStatusMessage({ step: '', message: '' });
-                        setIsLoading(false);
-                        setExecutionResult(null);
-                        setIsNewStampCreated(false); // Reset the new stamp warning
-
-                        // Clear the topup parameter from URL and return to clean state
-                        if (typeof window !== 'undefined') {
-                          const url = new URL(window.location.href);
-                          if (url.searchParams.has('topup')) {
-                            // Remove the topup parameter and navigate to clean URL
-                            window.location.href = window.location.origin;
-                          }
-                        }
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </>
       ) : showHelp ? (
         <HelpSection
@@ -3232,6 +2445,796 @@ const SwapComponent: React.FC = () => {
       ) : showUploadHistory ? (
         <UploadHistorySection address={address} setShowUploadHistory={setShowUploadHistory} />
       ) : null}
+      {/* Overlay must stay mounted across tab switches — otherwise switching
+          Upload / History / Help during a long upload unmounted the UI while
+          chunk POSTs continued in the background. */}
+      {(isLoading || (showOverlay && uploadStep !== 'idle')) && (
+        <div className={styles.overlay}>
+          <div
+            className={`${styles.statusBox} ${statusMessage.isSuccess ? styles.success : ''}`}
+          >
+            {/* Always show close button */}
+            <button
+              className={styles.closeButton}
+              onClick={() => {
+                setShowOverlay(false);
+                setStatusMessage({ step: '', message: '' });
+                setUploadStep('idle');
+                setIsLoading(false);
+                setExecutionResult(null);
+                setSelectedFile(null);
+                setSelectedFiles([]);
+                setMultiFileResults([]);
+                setNftCollectionResult(null);
+                setIsDistributing(false);
+                setIsNewStampCreated(false);
+              }}
+            >
+              ×
+            </button>
+
+            {!['ready', 'uploading'].includes(uploadStep) && (
+              <>
+                {isLoading && statusMessage.step !== 'Complete' && (
+                  <div className={styles.spinner}></div>
+                )}
+                <div className={styles.statusMessage}>
+                  <h3 className={statusMessage.isSuccess ? styles.success : ''}>
+                    {statusMessage.message}
+                  </h3>
+                  {statusMessage.error && (
+                    <div className={styles.errorMessage}>{statusMessage.error}</div>
+                  )}
+                  {statusMessage.warning && (
+                    <div className={styles.warningMessage}>{statusMessage.warning}</div>
+                  )}
+
+                  {remainingTime !== null &&
+                    estimatedTime !== null &&
+                    (statusMessage.step === 'Route' ||
+                      statusMessage.step === 'deposit' ||
+                      statusMessage.step === 'Quoting' ||
+                      statusMessage.step === 'Relay') && (
+                      <div className={styles.bridgeTimer}>
+                        <p>Estimated time remaining: {formatTime(remainingTime)}</p>
+                        <div className={styles.progressBarContainer}>
+                          <div
+                            className={styles.progressBar}
+                            style={{
+                              width: `${Math.max(
+                                0,
+                                Math.min(100, (1 - remainingTime / estimatedTime) * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                </div>
+              </>
+            )}
+
+            {['ready', 'uploading'].includes(uploadStep) && (
+              <div className={styles.uploadBox}>
+                <h3 className={styles.uploadTitle}>
+                  {postageBatchId
+                    ? `Upload to ${
+                        postageBatchId.startsWith('0x')
+                          ? postageBatchId.slice(2, 8)
+                          : postageBatchId.slice(0, 6)
+                      }...${postageBatchId.slice(-4)}`
+                    : 'Upload File'}
+                </h3>
+
+                {/* Bee gateway health banner. Shown only when the node is
+                    not OK so a healthy gateway adds zero visual noise. We
+                    intentionally render it ABOVE the data-cannot-be-deleted
+                    warning because a sick gateway is the more actionable
+                    problem — the user can pick a different node, while the
+                    data warning is informational. */}
+                {(beeNodeHealth.state.status === 'unreachable' ||
+                  beeNodeHealth.state.status === 'unhealthy') && (
+                  <div
+                    className={`${styles.healthBanner} ${
+                      beeNodeHealth.state.status === 'unreachable'
+                        ? styles.healthBannerError
+                        : styles.healthBannerWarn
+                    }`}
+                  >
+                    <span className={styles.healthBannerTitle}>
+                      {beeNodeHealth.state.status === 'unreachable'
+                        ? '⛔ Bee gateway unreachable'
+                        : '⚠️ Bee gateway unhealthy'}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.healthBannerRetry}
+                      onClick={beeNodeHealth.refresh}
+                      disabled={beeNodeHealth.isProbing}
+                    >
+                      {beeNodeHealth.isProbing ? 'Checking…' : 'Retry'}
+                    </button>
+                    {beeNodeHealth.state.message && (
+                      <div className={styles.healthBannerDetail}>
+                        {beeNodeHealth.state.message}. Uploads will fail until the gateway
+                        recovers.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className={styles.uploadWarning}>
+                  Warning! Uploaded data cannot be deleted - it will be removed once the stamp
+                  has expired. Uploaded data exists publicly in the network - anyone who knows
+                  the reference can access it.
+                </div>
+                {isNewStampCreated && (
+                  <div className={styles.uploadWarning}>
+                    ⏱️ New storage created: It takes around up to 2 minutes before it becomes
+                    accessible on the network.
+                  </div>
+                )}
+                {/* Inline banner shown when the previous upload attempt
+                    failed with a transient "stamp not ready" error. We
+                    keep the user on the upload screen with their file
+                    selected (see catch blocks above) so they can hit
+                    Upload again once the gateway has caught up — but
+                    the regular overlay status box is suppressed while
+                    `uploadStep === 'ready'`, so without this banner
+                    the user wouldn't see *why* their previous click
+                    failed. Dismissable so it doesn't linger after the
+                    next successful upload. */}
+                {statusMessage.isError && statusMessage.step === 'Error' && (
+                  <div
+                    className={`${styles.healthBanner} ${styles.healthBannerWarn}`}
+                  >
+                    <span className={styles.healthBannerTitle}>
+                      ⚠️ {statusMessage.message}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.healthBannerRetry}
+                      onClick={() =>
+                        setStatusMessage({ step: '', message: '' })
+                      }
+                    >
+                      Dismiss
+                    </button>
+                    {statusMessage.error && (
+                      <div className={styles.healthBannerDetail}>
+                        {statusMessage.error}
+                      </div>
+                    )}
+                    {statusMessage.warning && (
+                      <div className={styles.healthBannerDetail}>
+                        {statusMessage.warning}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {statusMessage.step === 'waiting_creation' ? (
+                  <div className={styles.waitingMessage}>
+                    <div className={styles.spinner}></div>
+                    <p>{statusMessage.message}</p>
+                  </div>
+                ) : (
+                  <div className={styles.uploadForm}>
+                    {/* Upload-mode toggles. Each one is mutually exclusive
+                        with the others (the onChange handlers below clear
+                        sibling state when activated), matching how the
+                        legacy 1.1.x UI behaved. */}
+                    <div className={styles.checkboxWrapper}>
+                      <input
+                        type="checkbox"
+                        id="multiple-files"
+                        checked={isMultipleFiles}
+                        onChange={e => {
+                          setIsMultipleFiles(e.target.checked);
+                          setSelectedFile(null);
+                          setSelectedFiles([]);
+                          setIsFolderUpload(false);
+                          setIsNFTCollection(false);
+                        }}
+                        className={styles.checkbox}
+                        disabled={uploadStep === 'uploading'}
+                      />
+                      <label htmlFor="multiple-files" className={styles.checkboxLabel}>
+                        Multiple files separately (separate hashes)
+                      </label>
+                    </div>
+
+                    <div className={styles.checkboxWrapper}>
+                      <input
+                        type="checkbox"
+                        id="folder-upload"
+                        checked={isFolderUpload}
+                        onChange={e => {
+                          setIsFolderUpload(e.target.checked);
+                          if (e.target.checked) {
+                            setIsWebpageUpload(true);
+                          } else {
+                            setIsWebpageUpload(false);
+                          }
+                          setSelectedFile(null);
+                          setSelectedFiles([]);
+                          setIsMultipleFiles(false);
+                          setIsNFTCollection(false);
+                        }}
+                        className={styles.checkbox}
+                        disabled={uploadStep === 'uploading'}
+                      />
+                      <label
+                        htmlFor="folder-upload"
+                        className={styles.checkboxLabel}
+                        title="📁 Select an entire folder. Browser will ask for permission to access folder contents — this is normal security behaviour."
+                      >
+                        Multiple files in a folder (one hash, served as a website)
+                      </label>
+                    </div>
+
+                    <div className={styles.fileInputWrapper}>
+                      <input
+                        type="file"
+                        multiple={isMultipleFiles || isFolderUpload}
+                        {...(isFolderUpload && { webkitdirectory: 'true' })}
+                        onChange={e => {
+                          const files = Array.from(e.target.files || []);
+                          if (isFolderUpload) {
+                            setSelectedFiles(files);
+                            setSelectedFile(null);
+                          } else if (isMultipleFiles) {
+                            setSelectedFiles(files);
+                            setSelectedFile(null);
+                          } else {
+                            setSelectedFile(files[0] || null);
+                            setSelectedFiles([]);
+                          }
+                        }}
+                        className={styles.fileInput}
+                        disabled={uploadStep === 'uploading'}
+                        id="file-upload"
+                      />
+                      <label htmlFor="file-upload" className={styles.fileInputLabel}>
+                        {isFolderUpload
+                          ? selectedFiles.length > 0
+                            ? `Folder: ${
+                                (selectedFiles[0] as File & { webkitRelativePath?: string })
+                                  .webkitRelativePath?.split('/')[0] || 'folder'
+                              } (${selectedFiles.length} files)`
+                            : 'Select Folder (auto-index)'
+                          : isMultipleFiles
+                            ? selectedFiles.length > 0
+                              ? `${selectedFiles.length} files selected`
+                              : 'Choose files'
+                            : selectedFile
+                              ? selectedFile.name
+                              : 'Choose file'}
+                      </label>
+                    </div>
+
+                    {isMultipleFiles && selectedFiles.length > 0 && (
+                      <div className={styles.fileList}>
+                        <h4>Selected files:</h4>
+                        <ul>
+                          {selectedFiles.map((file, index) => (
+                            <li key={index} className={styles.fileName}>
+                              {file.name} ({formatFileSize(file.size)})
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {(selectedFile || selectedFiles.length > 0) && (
+                      <div className={styles.fileSizeInfo}>
+                        <div className={styles.fileSizeTotal}>
+                          Total size: {formatFileSize(getTotalFileSize())}
+                        </div>
+                        {!exceedsMaximumUploadSize() && hasVeryLargeFiles() && (
+                          <div className={styles.largeFileWarning}>
+                            ⚠️ Large file detected ({'>'}2GB). Self-custody upload chunks +
+                            stamps locally — keep this tab open and your wallet unlocked
+                            throughout. Aborting in the middle is safe (the chunks are
+                            idempotent), but the upload won't resume from where it stopped.
+                          </div>
+                        )}
+                        {exceedsMaximumUploadSize() && (
+                          <div className={styles.errorMessage}>
+                            ❌ Total upload size exceeds the maximum allowed of{' '}
+                            {FILE_SIZE_CONFIG.maximumFileGB}GB. Pick smaller / fewer files.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Single-file ZIP/GZ extras: serve uncompressed (extract
+                        the archive locally and build a Mantaray manifest)
+                        and the NFT-collection toggle. Same toggles as 1.1.x;
+                        both feed into the new self-custody pipeline. */}
+                    {!isMultipleFiles &&
+                      !isFolderUpload &&
+                      (selectedFile?.name.toLowerCase().endsWith('.zip') ||
+                        selectedFile?.name.toLowerCase().endsWith('.tar') ||
+                        selectedFile?.name.toLowerCase().endsWith('.tar.gz') ||
+                        selectedFile?.name.toLowerCase().endsWith('.tgz') ||
+                        selectedFile?.name.toLowerCase().endsWith('.gz')) && (
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="serve-uncompressed"
+                            checked={serveUncompressed}
+                            onChange={e => setServeUncompressed(e.target.checked)}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label htmlFor="serve-uncompressed" className={styles.checkboxLabel}>
+                            Serve uncompressed
+                            <span
+                              className={styles.tooltip}
+                              title="Extract the archive locally, upload each file as its own Mantaray fork. The folder will be browseable via index.html on the resulting reference."
+                            >
+                              ?
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                    {!isMultipleFiles &&
+                      !isFolderUpload &&
+                      selectedFile?.name.toLowerCase().endsWith('.zip') && (
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="nft-collection"
+                            checked={isNFTCollection}
+                            onChange={e => {
+                              setIsNFTCollection(e.target.checked);
+                              if (e.target.checked) {
+                                setServeUncompressed(false);
+                              }
+                            }}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label htmlFor="nft-collection" className={styles.checkboxLabel}>
+                            Upload NFT collection
+                            <span
+                              className={styles.tooltip}
+                              title="Upload a ZIP file containing 'images' and 'json' folders. Images are uploaded as one Mantaray collection; JSON metadata is rewritten to point at bzz.link URLs and uploaded as a second collection."
+                            >
+                              ?
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                    <button
+                      onClick={handleFileUpload}
+                      disabled={
+                        (isMultipleFiles || isFolderUpload
+                          ? selectedFiles.length === 0
+                          : !selectedFile) ||
+                        uploadStep === 'uploading' ||
+                        exceedsMaximumUploadSize() ||
+                        // Block uploads when we KNOW the gateway is broken.
+                        // 'unknown' (no probe yet) and 'checking' do NOT
+                        // block — we'd rather let an early upload through
+                        // than block on a slow first probe.
+                        beeNodeHealth.state.status === 'unreachable' ||
+                        beeNodeHealth.state.status === 'unhealthy'
+                      }
+                      className={styles.uploadButton}
+                    >
+                      {uploadStep === 'uploading' ? (
+                        <>
+                          <div className={styles.smallSpinner}></div>
+                          {statusMessage.step === 'Uploading'
+                            ? isDistributing
+                              ? 'Distributing file chunks...'
+                              : `Uploading... ${uploadProgress.toFixed(1)}%`
+                            : 'Processing...'}
+                        </>
+                      ) : isMultipleFiles ? (
+                        `Upload ${selectedFiles.length} files`
+                      ) : isFolderUpload ? (
+                        `Upload folder (${selectedFiles.length} files)`
+                      ) : isNFTCollection ? (
+                        'Upload NFT collection'
+                      ) : (
+                        'Upload'
+                      )}
+                    </button>
+                    {uploadStep === 'uploading' && (
+                      <>
+                        {!isDistributing ? (
+                          // Show the regular progress bar during upload
+                          <div className={styles.progressBarContainer}>
+                            <div
+                              className={styles.progressBar}
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        ) : (
+                          // Show the distribution animation when distributing to Swarm
+                          <div className={styles.distributionContainer}>
+                            {/* Center cube (source node) */}
+                            <div className={styles.centerNode}></div>
+
+                            {/* Target nodes (cubes) */}
+                            <div className={`${styles.node} ${styles.node1}`}></div>
+                            <div className={`${styles.node} ${styles.node2}`}></div>
+                            <div className={`${styles.node} ${styles.node3}`}></div>
+                            <div className={`${styles.node} ${styles.node4}`}></div>
+                            <div className={`${styles.node} ${styles.node5}`}></div>
+                            <div className={`${styles.node} ${styles.node6}`}></div>
+                            <div className={`${styles.node} ${styles.node7}`}></div>
+                            <div className={`${styles.node} ${styles.node8}`}></div>
+
+                            {/* Chunks being distributed */}
+                            <div className={`${styles.chunk} ${styles.chunk1}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk2}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk3}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk4}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk5}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk6}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk7}`}></div>
+                            <div className={`${styles.chunk} ${styles.chunk8}`}></div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {uploadStep === 'complete' && (
+              <div className={styles.successMessage}>
+                <div className={styles.successIcon}>✓</div>
+                <h3>
+                  {multiFileResults.length > 0
+                    ? 'Upload Complete!'
+                    : nftCollectionResult
+                      ? 'NFT Collection Uploaded Successfully!'
+                      : 'Upload Successful!'}
+                </h3>
+
+                {/* Multi-file: list each file with its own reference. */}
+                {multiFileResults.length > 0 ? (
+                  <div className={styles.multiFileResults}>
+                    {multiFileResults.map((result, index) => (
+                      <div
+                        key={index}
+                        className={`${styles.fileResult} ${
+                          result.success ? styles.success : styles.error
+                        }`}
+                      >
+                        <div className={styles.fileResultHeader}>
+                          <span className={styles.fileResultName}>{result.filename}</span>
+                          <span
+                            className={`${styles.fileResultStatus} ${
+                              result.success ? styles.success : styles.error
+                            }`}
+                          >
+                            {result.success ? 'Success' : 'Failed'}
+                          </span>
+                        </div>
+                        {result.success && result.reference && (
+                          <div
+                            className={styles.fileResultReference}
+                            onClick={() => {
+                              navigator.clipboard.writeText(result.reference || '');
+                            }}
+                            title="Click to copy reference"
+                          >
+                            {result.reference}
+                          </div>
+                        )}
+                        {!result.success && result.error && (
+                          <div className={styles.fileResultError}>{result.error}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : nftCollectionResult ? (
+                  // NFT collection: two references with their own copy/open
+                  // controls. Mirrors the old custodial UI exactly so any
+                  // downstream NFT-deploy scripts that screen-scrape this
+                  // panel keep working.
+                  <div className={styles.nftCollectionResults}>
+                    <div className={styles.nftCollectionSummary}>
+                      <p>
+                        {nftCollectionResult.totalImages} images and{' '}
+                        {nftCollectionResult.totalMetadata} metadata files processed
+                      </p>
+                    </div>
+
+                    <div className={styles.nftReferenceGroup}>
+                      {(() => {
+                        const base = beeApiUrl.endsWith('/')
+                          ? `${beeApiUrl}bzz/`
+                          : `${beeApiUrl}/bzz/`;
+                        const stripHexLocal = (h: string) =>
+                          h.startsWith('0x') ? h.slice(2) : h;
+                        const imagesRef = stripHexLocal(nftCollectionResult.imagesReference);
+                        const metadataRef = stripHexLocal(
+                          nftCollectionResult.metadataReference
+                        );
+                        return (
+                          <>
+                            <div className={styles.referenceBox}>
+                              <p>
+                                <strong>Images Reference:</strong>
+                              </p>
+                              <div className={styles.referenceCopyWrapper}>
+                                <code
+                                  className={styles.referenceCode}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(imagesRef);
+                                  }}
+                                  data-copied="false"
+                                >
+                                  {imagesRef}
+                                </code>
+                              </div>
+                              <div className={styles.linkButtonsContainer}>
+                                <button
+                                  className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${base}${imagesRef}/`);
+                                  }}
+                                >
+                                  Copy images link
+                                </button>
+                                <a
+                                  href={`${base}${imagesRef}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.referenceLink}
+                                >
+                                  View images
+                                </a>
+                              </div>
+                            </div>
+
+                            <div className={styles.referenceBox}>
+                              <p>
+                                <strong>Metadata Reference:</strong>
+                              </p>
+                              <div className={styles.referenceCopyWrapper}>
+                                <code
+                                  className={styles.referenceCode}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(metadataRef);
+                                  }}
+                                  data-copied="false"
+                                >
+                                  {metadataRef}
+                                </code>
+                              </div>
+                              <div className={styles.linkButtonsContainer}>
+                                <button
+                                  className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${base}${metadataRef}/`);
+                                  }}
+                                >
+                                  Copy metadata link
+                                </button>
+                                <a
+                                  href={`${base}${metadataRef}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.referenceLink}
+                                >
+                                  View metadata
+                                </a>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.referenceBox}>
+                    <p>Reference:</p>
+                    <div className={styles.referenceCopyWrapper}>
+                      <code
+                        className={styles.referenceCode}
+                        onClick={() => {
+                          navigator.clipboard.writeText(statusMessage.reference || '');
+                          // Show a temporary "Copied!" message by using a data attribute
+                          const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                          if (codeEl) {
+                            codeEl.setAttribute('data-copied', 'true');
+                            setTimeout(() => {
+                              codeEl.setAttribute('data-copied', 'false');
+                            }, 2000);
+                          }
+                        }}
+                        data-copied="false"
+                      >
+                        {statusMessage.reference}
+                      </code>
+                    </div>
+                    {(() => {
+                      // Resolve the retrieval URL against the same Bee node we
+                      // uploaded to, not the hard-coded public gateway. When a
+                      // user is talking to their own bee (e.g. localhost:1633)
+                      // the chunks exist there first; the public gateway can't
+                      // serve them until they propagate. So the link must
+                      // follow `beeApiUrl`.
+                      const base = beeApiUrl.endsWith('/')
+                        ? `${beeApiUrl}bzz/`
+                        : `${beeApiUrl}/bzz/`;
+                      const retrievalUrl =
+                        statusMessage.filename && !isArchiveFile(statusMessage.filename)
+                          ? `${base}${statusMessage.reference}/${statusMessage.filename}`
+                          : `${base}${statusMessage.reference}/`;
+                      return (
+                        <div className={styles.linkButtonsContainer}>
+                          <button
+                            className={`${styles.referenceLink} ${styles.copyLinkButton}`}
+                            onClick={() => {
+                              navigator.clipboard.writeText(retrievalUrl);
+                              const button = document.querySelector(`.${styles.copyLinkButton}`);
+                              if (button) {
+                                const originalText = button.textContent;
+                                button.textContent = 'Link copied!';
+                                setTimeout(() => {
+                                  button.textContent = originalText;
+                                }, 2000);
+                              }
+                            }}
+                          >
+                            Copy link
+                          </button>
+                          <a
+                            href={retrievalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.referenceLink}
+                          >
+                            Open link
+                          </a>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {uploadStampInfo && multiFileResults.length === 0 && !nftCollectionResult && (
+                  <div className={styles.stampInfoBox}>
+                    <h4>Storage Stamps Details</h4>
+                    <div className={styles.stampDetails}>
+                      <div className={styles.stampDetail}>
+                        <span>Utilization:</span>
+                        <span>
+                          {getStampUsage(
+                            uploadStampInfo.utilization || 0,
+                            uploadStampInfo.depth || 0
+                          ).toFixed(2)}
+                          %
+                        </span>
+                      </div>
+                      <div className={styles.stampDetail}>
+                        <span>Total Size:</span>
+                        <span>{uploadStampInfo.totalSize}</span>
+                      </div>
+                      <div className={styles.stampDetail}>
+                        <span>Created:</span>
+                        <span>{uploadStampInfo.createdDate || 'Unknown'}</span>
+                      </div>
+                      <div className={styles.stampDetail}>
+                        <span>Expires in:</span>
+                        <span>{formatExpiryTime(uploadStampInfo.batchTTL)}</span>
+                      </div>
+                    </div>
+                    <div className={styles.utilizationBarContainer}>
+                      <div
+                        className={styles.utilizationBar}
+                        style={{
+                          width: `${getStampUsage(uploadStampInfo.utilization || 0, uploadStampInfo.depth || 0).toFixed(2)}%`,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  className={styles.closeSuccessButton}
+                  onClick={() => {
+                    setShowOverlay(false);
+                    setUploadStep('idle');
+                    setStatusMessage({ step: '', message: '' });
+                    setIsLoading(false);
+                    setExecutionResult(null);
+                    setSelectedFile(null);
+                    setSelectedFiles([]);
+                    setMultiFileResults([]);
+                    setNftCollectionResult(null);
+                    setIsDistributing(false);
+                    setUploadStampInfo(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+
+            {topUpCompleted && (
+              <div className={styles.successMessage}>
+                <div className={styles.successIcon}>✓</div>
+                <h3>Batch Topped Up Successfully!</h3>
+                <div className={styles.referenceBox}>
+                  <p>Batch ID:</p>
+                  <div className={styles.referenceCopyWrapper}>
+                    <code
+                      className={styles.referenceCode}
+                      onClick={() => {
+                        navigator.clipboard.writeText(topUpInfo?.batchId || '');
+                        // Show a temporary "Copied!" message
+                        const codeEl = document.querySelector(`.${styles.referenceCode}`);
+                        if (codeEl) {
+                          codeEl.setAttribute('data-copied', 'true');
+                          setTimeout(() => {
+                            codeEl.setAttribute('data-copied', 'false');
+                          }, 2000);
+                        }
+                      }}
+                      data-copied="false"
+                    >
+                      {topUpInfo?.batchId}
+                    </code>
+                  </div>
+                </div>
+
+                <div className={styles.stampInfoBox}>
+                  <h4>Top-Up Details</h4>
+                  <div className={styles.stampDetails}>
+                    <div className={styles.stampDetail}>
+                      <span>Added Duration:</span>
+                      <span>{topUpInfo?.days} days</span>
+                    </div>
+                    <div className={styles.stampDetail}>
+                      <span>Cost:</span>
+                      <span>${Number(topUpInfo?.cost || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className={styles.updateDelayNotice}>
+                    ⏱️ It will take a few minutes for the stamp expiry to be updated
+                  </div>
+                </div>
+
+                <button
+                  className={styles.closeSuccessButton}
+                  onClick={() => {
+                    setShowOverlay(false);
+                    setTopUpCompleted(false);
+                    setTopUpInfo(null);
+                    setStatusMessage({ step: '', message: '' });
+                    setIsLoading(false);
+                    setExecutionResult(null);
+                    setIsNewStampCreated(false); // Reset the new stamp warning
+
+                    // Clear the topup parameter from URL and return to clean state
+                    if (typeof window !== 'undefined') {
+                      const url = new URL(window.location.href);
+                      if (url.searchParams.has('topup')) {
+                        // Remove the topup parameter and navigate to clean URL
+                        window.location.href = window.location.origin;
+                      }
+                    }
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
