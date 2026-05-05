@@ -125,6 +125,26 @@
 3. **Refresh page**: Restart upload process
 4. **Try incognito mode**: Avoid extension interference
 
+#### Large self-custody upload: many `net::ERR_FAILED` on `POST …/chunks`
+
+**Cause**: Too many parallel chunk requests vs what the HTTP/2 edge or browser can sustain (common stream limits are ~128 per connection).
+
+**Solutions**:
+
+1. **Use current Beeport** — parallelism is capped to stay within typical gateway limits; older builds could ramp higher and trigger this.
+2. **Self-hosted gateway**: raise `http2_max_concurrent_streams` (or equivalent) only if you intentionally increase client parallelism in code.
+3. **Stability over raw speed**: if errors persist, try a different network or a gateway closer to you.
+
+See [Client-side chunk pipeline](./client-side-chunk-pipeline.md).
+
+#### React warning: updating one component while rendering another during upload
+
+**Cause**: Extremely high chunk throughput firing progress callbacks faster than React can comfortably schedule updates (often together with wallet / wagmi hydration).
+
+**Solutions**:
+
+1. **Use current Beeport** — progress is throttled so the UI should stay responsive during self-custody uploads.
+
 ### Archive Processing Issues
 
 #### "Failed to extract ZIP/TAR"

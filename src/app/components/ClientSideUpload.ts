@@ -37,11 +37,17 @@ import {
   saveStamperState,
   clearStamperState,
   loadStampedAddresses,
-  addStampedAddress,
   clearStampedAddresses,
   chunkAddressHex,
+  StampedAddrWriteBatcher,
   type DerivedHotKey,
 } from './ClientStamping';
+import {
+  buildStampEnvelope,
+  tryCreateStampSignerPool,
+  uploadChunkPresignedFetch,
+  type StampSignerPool,
+} from './FastPresignedStamp';
 import { DEFAULT_BEE_API_URL } from './constants';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
 
@@ -57,6 +63,27 @@ import { saveIssuerStateToSOC } from './IssuerStateSOC';
  * the `concurrency` param if your gateway tolerates more.
  */
 const DEFAULT_CONCURRENCY = 96;
+
+/**
+ * Coalesce UI progress callbacks: firing `setState` on every successful chunk
+ * (hundreds/sec at high throughput) freezes React and can trigger cross-
+ * component update warnings. Always emit the final tick (processed >= total).
+ */
+const UPLOAD_PROGRESS_MIN_INTERVAL_MS = 120;
+
+function throttleUploadProgress<T extends (processed: number, total: number) => void>(
+  onProgress: T | undefined
+): T | undefined {
+  if (!onProgress) return undefined;
+  let lastEmit = 0;
+  return ((processed: number, total: number) => {
+    const now = performance.now();
+    const terminal = processed >= total;
+    if (!terminal && now - lastEmit < UPLOAD_PROGRESS_MIN_INTERVAL_MS) return;
+    lastEmit = now;
+    onProgress(processed, total);
+  }) as T;
+}
 
 /**
  * Minimum delay between two `saveStamperState` writes during an upload.
@@ -127,11 +154,11 @@ const STAMP_READY_PROBE_DATA = new Uint8Array(4096);
  * 6-conn-per-host cap doesn't apply; pushing concurrency wide gives a
  * meaningful throughput boost on beeport.xyz and similar setups.
  *
- * Browsers multiplex many chunk POSTs over one HTTP/2 connection; nginx’s
- * default `http2_max_concurrent_streams` is often 128 — raise it on the edge
- * if you want this cap to translate into real parallel streams.
+ * Browsers multiplex chunk POSTs over HTTP/2, but edges often cap concurrent
+ * streams (nginx default 128). Exceeding that yields `net::ERR_FAILED` storms
+ * and a frozen UI despite many chunks eventually retrying. Stay at/under 128.
  */
-const HTTP2_TARGET_CONCURRENCY = 256;
+const HTTP2_TARGET_CONCURRENCY = 128;
 
 /**
  * Cross-origin Resource Timing usually hides `nextHopProtocol` unless the
@@ -338,6 +365,8 @@ export async function uploadFileClientSide(
     abortSignal,
   } = params;
 
+  const progressOut = throttleUploadProgress(onProgress);
+
   if (!file) throw new Error('No file provided');
   if (!batchId) throw new Error('No batchId provided');
   if (!hotKey?.signer) throw new Error('No hot key provided');
@@ -350,6 +379,7 @@ export async function uploadFileClientSide(
 
   const bee = new Bee(beeApiUrl);
   const signer: PrivateKey = hotKey.signer;
+  const issuerAddrBytes = signer.publicKey().address().toUint8Array();
 
   // ── Stamper: load persisted issuer state or start fresh ────────────────────
   // Bee will reject (bucket conflict) if we re-use a (bucket,cnt) pair, so the
@@ -491,12 +521,10 @@ export async function uploadFileClientSide(
   //
   // Persistence model: the in-memory `stampedAddrs` Set is the read-side
   // cache; the IndexedDB `stampedAddrs` store is the durable write-side.
-  // Each successful chunk fires one tiny `addStampedAddress(...)` `put`,
-  // so the dedup set is effectively persisted in real time without the
-  // bulk re-serialization that the previous localStorage layout required
-  // (which is what blew the ~5 MB origin quota — see the IndexedDBStore
-  // header comment).
+  // Successful uploads append via {@link StampedAddrWriteBatcher} so we batch
+  // many chunk addresses into one transaction instead of one `put` per chunk.
   const stampedAddrs = await loadStampedAddresses(cleanBatchId);
+  const addrBatcher = new StampedAddrWriteBatcher(cleanBatchId);
   let dedupSkipCount = 0;
 
   // beforeunload: best-effort flush of the stamper state if the user closes
@@ -514,11 +542,14 @@ export async function uploadFileClientSide(
       buckets: stamper.getState(),
       depth: stamper.depth,
     });
+    void addrBatcher.flush();
   };
   const hasWindow = typeof window !== 'undefined';
   if (hasWindow) {
     window.addEventListener('beforeunload', beforeUnloadHandler);
   }
+
+  let stampPool: StampSignerPool | null = null;
 
   // Errors thrown inside a queue task become unhandled promise rejections
   // because cafe-utility's AsyncQueue only `.finally()`s the task — it does
@@ -542,7 +573,7 @@ export async function uploadFileClientSide(
     if (stampedAddrs.has(addrHex)) {
       chunksUploaded++;
       dedupSkipCount++;
-      onProgress?.(chunksUploaded, totalChunksApprox);
+      progressOut?.(chunksUploaded, totalChunksApprox);
       return;
     }
 
@@ -559,21 +590,25 @@ export async function uploadFileClientSide(
       // pragmatic v1 trade-off — slot burn is bounded by MAX_CHUNK_RETRIES.
       try {
         if (envelope === null) {
-          envelope = stamper.stamp(chunk);
+          envelope = await buildStampEnvelope(
+            stamper,
+            chunk,
+            issuerAddrBytes,
+            hotKey.privateKey,
+            stampPool
+          );
         }
-        await bee.uploadChunk(envelope, chunkBytes, undefined, {
-          timeout: CHUNK_HTTP_TIMEOUT_MS,
-        } as any);
+        await uploadChunkPresignedFetch(beeApiUrl, chunkBytes, envelope, {
+          abortSignal,
+          timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
+        });
         chunksUploaded++;
         // Record the address only after Bee has accepted the chunk; we never
         // want to skip a future re-upload for a chunk we can't prove landed.
-        // Persist incrementally to IDB — one tiny `put` per chunk, no
-        // re-serialization of the whole set on every flush. Fire-and-forget;
-        // errors are logged inside addStampedAddress.
         stampedAddrs.add(addrHex);
-        void addStampedAddress(cleanBatchId, addrHex);
+        addrBatcher.add(addrHex);
         maybePersistState();
-        onProgress?.(chunksUploaded, totalChunksApprox);
+        progressOut?.(chunksUploaded, totalChunksApprox);
         if (!firstChunkMarked) {
           firstChunkMarked = true;
           mark('first chunk uploaded (TTFB-ish)');
@@ -659,6 +694,8 @@ export async function uploadFileClientSide(
   };
 
   try {
+    stampPool = tryCreateStampSignerPool(hotKey.privateKey);
+
     // ── Pre-flight: prove the gateway will accept stamps from us ────────────
     // For a freshly-created batch the gateway's batchstore may not yet have
     // indexed our `createBatch` block; firing the parallel chunk firehose
@@ -674,9 +711,17 @@ export async function uploadFileClientSide(
     if (!stampedAddrs.has(probeAddrPreview)) {
       onStatus?.('Verifying stamp readiness with Bee gateway…');
       mark('readiness probe started');
-      const { probeAddrHex } = await waitForStampReady(stamper, bee, abortSignal, onStatus);
+      const { probeAddrHex } = await waitForStampReady(
+        stamper,
+        beeApiUrl,
+        issuerAddrBytes,
+        hotKey.privateKey,
+        stampPool,
+        abortSignal,
+        onStatus
+      );
       stampedAddrs.add(probeAddrHex);
-      void addStampedAddress(cleanBatchId, probeAddrHex);
+      addrBatcher.add(probeAddrHex);
       maybePersistState(true);
       mark('readiness probe accepted');
     }
@@ -732,10 +777,19 @@ export async function uploadFileClientSide(
     onStatus?.('Stamping and uploading manifest…');
     const beforeManifest = chunksUploaded;
     const manifestRef = await saveManifestPresigned(manifest, async (data: Uint8Array) => {
-      return uploadDataPresigned(data, stamper, bee, abortSignal, () => {
-        chunksUploaded++;
-        onProgress?.(chunksUploaded, totalChunksApprox);
-      });
+      return uploadDataPresigned(
+        data,
+        stamper,
+        bee,
+        abortSignal,
+        () => {
+          chunksUploaded++;
+          progressOut?.(chunksUploaded, totalChunksApprox);
+        },
+        issuerAddrBytes,
+        hotKey.privateKey,
+        stampPool
+      );
     });
 
     // Force-persist BEFORE we kick off the SOC promise so a tab close mid-SOC
@@ -809,6 +863,8 @@ export async function uploadFileClientSide(
       conc: queue.concurrency,
     });
 
+    await addrBatcher.flush();
+
     return {
       reference: `0x${manifestRef.toHex()}` as `0x${string}`,
       fileChunkCount,
@@ -827,7 +883,10 @@ export async function uploadFileClientSide(
     stopSampler();
     mark('FAILED', { error: err instanceof Error ? err.message : String(err) });
     removeBeforeUnloadListener();
+    await addrBatcher.flush().catch(() => {});
     throw err;
+  } finally {
+    stampPool?.terminate();
   }
 }
 
@@ -940,12 +999,19 @@ async function streamFileThroughMerkleTree(
     if (abortSignal?.aborted) throw new Error('Upload aborted');
     await tree.append(new Uint8Array(buffer));
   } else {
-    // Larger files: stream 1 MiB slabs via Blob.arrayBuffer(). This is the
-    // promise-based equivalent of FileReader without the event-loop hop.
-    for (let offset = 0; offset < file.size; offset += FILE_READ_SLAB_BYTES) {
+    let offset = 0;
+    let pendingRead: Promise<ArrayBuffer> | null = null;
+    const readSlab = (off: number) => {
+      const end = Math.min(off + FILE_READ_SLAB_BYTES, file.size);
+      return file.slice(off, end).arrayBuffer();
+    };
+    pendingRead = readSlab(0);
+    while (offset < file.size) {
       if (abortSignal?.aborted) throw new Error('Upload aborted');
+      const slabBuf = await pendingRead!;
       const end = Math.min(offset + FILE_READ_SLAB_BYTES, file.size);
-      const slabBuf = await file.slice(offset, end).arrayBuffer();
+      offset = end;
+      pendingRead = offset < file.size ? readSlab(offset) : null;
       if (abortSignal?.aborted) throw new Error('Upload aborted');
       await tree.append(new Uint8Array(slabBuf));
     }
@@ -987,18 +1053,25 @@ async function saveManifestPresigned(
  *
  * Exported so the issuer-state SOC writer can reuse the exact same presigned
  * chunk pipeline for the encrypted state blob.
+ *
+ * @param issuer 20-byte Ethereum address bytes of the hot key (`signer.publicKey().address()`).
+ * @param privKeyBytes Raw 32-byte hot private key (same material as {@link DerivedHotKey.privateKey}).
+ * @param stampPool Optional worker pool for ECDSA; `null` signs on the main thread.
  */
 export async function uploadDataPresigned(
   data: Uint8Array,
   stamper: Stamper,
   bee: Bee,
   abortSignal: AbortSignal | undefined,
-  onUploaded: () => void
+  onUploaded: () => void,
+  issuer: Uint8Array,
+  privKeyBytes: Uint8Array,
+  stampPool: StampSignerPool | null
 ): Promise<Reference> {
   // Single-chunk fast path: most marshalled mantaray nodes are < 4 KB.
   if (data.length <= 4096) {
     const chunk = await MerkleTree.root(data);
-    await uploadOneChunk(chunk, stamper, bee, abortSignal);
+    await uploadOneChunk(chunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
     onUploaded();
     return new Reference(chunk.hash());
   }
@@ -1006,14 +1079,14 @@ export async function uploadDataPresigned(
   // Larger blobs: stream through MerkleTree exactly like a file.
   let lastChunk: Chunk | null = null;
   const tree = new MerkleTree(async chunk => {
-    await uploadOneChunk(chunk, stamper, bee, abortSignal);
+    await uploadOneChunk(chunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
     onUploaded();
   });
   for (let off = 0; off < data.length; off += 4096) {
     await tree.append(data.subarray(off, Math.min(off + 4096, data.length)));
   }
   lastChunk = await tree.finalize();
-  await uploadOneChunk(lastChunk, stamper, bee, abortSignal);
+  await uploadOneChunk(lastChunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
   onUploaded();
   return new Reference(lastChunk.hash());
 }
@@ -1021,20 +1094,30 @@ export async function uploadDataPresigned(
 async function uploadOneChunk(
   chunk: Chunk,
   stamper: Stamper,
-  bee: Bee,
+  beeApiUrl: string,
+  issuer: Uint8Array,
+  privKeyBytes: Uint8Array,
+  stampPool: StampSignerPool | null,
   abortSignal: AbortSignal | undefined
 ): Promise<void> {
   const data = chunk.build();
+  let envelope: EnvelopeWithBatchId | null = null;
   for (let attempt = 0; attempt < MAX_CHUNK_RETRIES; attempt++) {
     if (abortSignal?.aborted) throw new Error('Upload aborted');
     try {
-      const envelope = stamper.stamp(chunk);
-      await bee.uploadChunk(envelope, data);
+      if (envelope === null) {
+        envelope = await buildStampEnvelope(stamper, chunk, issuer, privKeyBytes, stampPool);
+      }
+      await uploadChunkPresignedFetch(beeApiUrl, data, envelope, {
+        abortSignal,
+        timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
+      });
       return;
     } catch (err) {
       const isLast = attempt === MAX_CHUNK_RETRIES - 1;
       if (!isRetryable(err) || isLast) throw classifyAsStampNotReady(err) ?? err;
       await sleep(CHUNK_RETRY_BASE_MS * 2 ** attempt);
+      envelope = null;
     }
   }
 }
@@ -1080,21 +1163,25 @@ async function uploadOneChunk(
  */
 async function waitForStampReady(
   stamper: Stamper,
-  bee: Bee,
+  beeApiUrl: string,
+  issuer: Uint8Array,
+  privKeyBytes: Uint8Array,
+  stampPool: StampSignerPool | null,
   abortSignal: AbortSignal | undefined,
   onStatus?: (msg: string) => void
 ): Promise<{ probeAddrHex: string }> {
   const probeChunk = await MerkleTree.root(STAMP_READY_PROBE_DATA);
   const probeAddrHex = chunkAddressHex(probeChunk.hash());
   const probeBytes = probeChunk.build();
-  const envelope = stamper.stamp(probeChunk);
+  const envelope = await buildStampEnvelope(stamper, probeChunk, issuer, privKeyBytes, stampPool);
 
   for (let attempt = 0; attempt < STAMP_READY_PROBE_MAX_ATTEMPTS; attempt++) {
     if (abortSignal?.aborted) throw new Error('Upload aborted');
     try {
-      await bee.uploadChunk(envelope, probeBytes, undefined, {
-        timeout: CHUNK_HTTP_TIMEOUT_MS,
-      } as any);
+      await uploadChunkPresignedFetch(beeApiUrl, probeBytes, envelope, {
+        abortSignal,
+        timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
+      });
       return { probeAddrHex };
     } catch (err) {
       const stampNotReady = classifyAsStampNotReady(err);
@@ -1406,7 +1493,12 @@ const COMMON_MIME: Record<string, string> = {
  */
 interface UploadCtx {
   bee: Bee;
+  beeApiUrl: string;
   stamper: Stamper;
+  issuerAddrBytes: Uint8Array;
+  privKeyBytes: Uint8Array;
+  stampPool: StampSignerPool | null;
+  addrBatcher: StampedAddrWriteBatcher;
   cleanBatchId: string;
   queue: AsyncQueue;
   abortSignal?: AbortSignal;
@@ -1416,8 +1508,7 @@ interface UploadCtx {
   firstError: Error | null;
   /**
    * Per-batch dedup set; mirrors the one in `uploadFileClientSide`. Each
-   * `add()` is paired with a `void addStampedAddress(...)` so the IDB
-   * record persists immediately — no separate "dirty" flag needed.
+   * successful upload records addresses via {@link StampedAddrWriteBatcher}.
    */
   stampedAddrs: Set<string>;
   persistState: (force?: boolean) => void;
@@ -1442,6 +1533,7 @@ async function createUploadContext(opts: {
   totalChunksApprox: number;
 }): Promise<UploadCtx> {
   const { batchId, hotKey, depth, beeApiUrl, concurrency, abortSignal, onProgress } = opts;
+  const progressOut = throttleUploadProgress(onProgress);
 
   if (!batchId) throw new Error('No batchId provided');
   if (!hotKey?.signer) throw new Error('No hot key provided');
@@ -1475,11 +1567,16 @@ async function createUploadContext(opts: {
 
   const ctx: UploadCtx = {
     bee,
+    beeApiUrl,
     stamper,
+    issuerAddrBytes: hotKey.signer.publicKey().address().toUint8Array(),
+    privKeyBytes: hotKey.privateKey,
+    stampPool: tryCreateStampSignerPool(hotKey.privateKey),
+    addrBatcher: new StampedAddrWriteBatcher(cleanBatchId),
     cleanBatchId,
     queue,
     abortSignal,
-    onProgress,
+    onProgress: progressOut,
     totalChunksApprox: opts.totalChunksApprox,
     chunksUploaded: 0,
     firstError: null,
@@ -1523,12 +1620,15 @@ async function createUploadContext(opts: {
       onStatus?.('Verifying stamp readiness with Bee gateway…');
       const { probeAddrHex } = await waitForStampReady(
         ctx.stamper,
-        ctx.bee,
+        ctx.beeApiUrl,
+        ctx.issuerAddrBytes,
+        ctx.privKeyBytes,
+        ctx.stampPool,
         ctx.abortSignal,
         onStatus
       );
       ctx.stampedAddrs.add(probeAddrHex);
-      void addStampedAddress(ctx.cleanBatchId, probeAddrHex);
+      ctx.addrBatcher.add(probeAddrHex);
       ctx.persistState(true);
     })();
     try {
@@ -1561,14 +1661,21 @@ async function createUploadContext(opts: {
       if (ctx.abortSignal?.aborted) throw new Error('Upload aborted');
       try {
         if (envelope === null) {
-          envelope = ctx.stamper.stamp(chunk);
+          envelope = await buildStampEnvelope(
+            ctx.stamper,
+            chunk,
+            ctx.issuerAddrBytes,
+            ctx.privKeyBytes,
+            ctx.stampPool
+          );
         }
-        await ctx.bee.uploadChunk(envelope, chunkBytes, undefined, {
-          timeout: CHUNK_HTTP_TIMEOUT_MS,
-        } as any);
+        await uploadChunkPresignedFetch(ctx.beeApiUrl, chunkBytes, envelope, {
+          abortSignal: ctx.abortSignal,
+          timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
+        });
         ctx.chunksUploaded++;
         ctx.stampedAddrs.add(addrHex);
-        void addStampedAddress(ctx.cleanBatchId, addrHex);
+        ctx.addrBatcher.add(addrHex);
         ctx.persistState();
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
         if (!uploadRampProbeDone) {
@@ -1658,10 +1765,19 @@ async function uploadManifestThroughCtx(
   onStatus?.('Stamping and uploading manifest…');
   const before = ctx.chunksUploaded;
   const manifestRef = await saveManifestPresigned(manifest, async (data: Uint8Array) => {
-    return uploadDataPresigned(data, ctx.stamper, ctx.bee, ctx.abortSignal, () => {
-      ctx.chunksUploaded++;
-      ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
-    });
+    return uploadDataPresigned(
+      data,
+      ctx.stamper,
+      ctx.bee,
+      ctx.abortSignal,
+      () => {
+        ctx.chunksUploaded++;
+        ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
+      },
+      ctx.issuerAddrBytes,
+      ctx.privKeyBytes,
+      ctx.stampPool
+    );
   });
   ctx.persistState(true);
   return { manifestRef, manifestChunkCount: ctx.chunksUploaded - before };
@@ -1798,79 +1914,90 @@ export async function uploadMultipleFilesClientSide(
     totalChunksApprox: approxChunkCount(totalBytes),
   });
 
-  const results: MultiFileResult[] = [];
+  try {
+    const results: MultiFileResult[] = [];
 
-  // One-shot readiness probe before the first file's chunks go out. Lifts
-  // the same fresh-batch race that `uploadFileClientSide` was hitting on
-  // the single-file path. Bubbles up as a `StampNotReadyError` if the
-  // gateway never indexes the batch within the probe budget; the caller
-  // gets a clean error instead of N parallel HTTP-400 results.
-  await ctx.ensureStampReady(onStatus);
+    // One-shot readiness probe before the first file's chunks go out. Lifts
+    // the same fresh-batch race that `uploadFileClientSide` was hitting on
+    // the single-file path. Bubbles up as a `StampNotReadyError` if the
+    // gateway never indexes the batch within the probe budget; the caller
+    // gets a clean error instead of N parallel HTTP-400 results.
+    await ctx.ensureStampReady(onStatus);
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    if (abortSignal?.aborted) {
-      results.push({ filename: file.name, success: false, error: 'Upload aborted' });
-      continue;
-    }
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (abortSignal?.aborted) {
+        results.push({ filename: file.name, success: false, error: 'Upload aborted' });
+        continue;
+      }
 
-    const before = ctx.chunksUploaded;
-    onStatus?.(`Uploading file ${i + 1}/${files.length}: ${file.name}`);
+      const before = ctx.chunksUploaded;
+      onStatus?.(`Uploading file ${i + 1}/${files.length}: ${file.name}`);
 
-    try {
-      ctx.firstError = null;
+      try {
+        ctx.firstError = null;
 
-      const fileTotalApprox = approxChunkCount(file.size);
-      ctx.onProgress = (processed: number) => {
-        onProgress?.(i, files.length, {
-          processed: Math.max(0, processed - before),
-          total: fileTotalApprox,
+        const fileTotalApprox = approxChunkCount(file.size);
+        let lastMultiEmit = 0;
+        ctx.onProgress = (processed: number) => {
+          const adj = Math.max(0, processed - before);
+          const now = performance.now();
+          const terminal = adj >= fileTotalApprox;
+          if (!terminal && now - lastMultiEmit < UPLOAD_PROGRESS_MIN_INTERVAL_MS) return;
+          lastMultiEmit = now;
+          onProgress?.(i, files.length, {
+            processed: adj,
+            total: fileTotalApprox,
+          });
+        };
+
+        const { rootChunk } = await streamFileThroughCtx(file, ctx);
+        const fileChunkCount = ctx.chunksUploaded - before;
+
+        const manifest = new MantarayNode();
+        const filename = sanitiseFilename(file.name);
+        const contentType = inferContentType(file);
+        manifest.addFork(filename, rootChunk.hash(), {
+          'Content-Type': contentType,
+          Filename: filename,
         });
-      };
+        manifest.addFork('/', new Uint8Array(32), {
+          'website-index-document': filename,
+        });
 
-      const { rootChunk } = await streamFileThroughCtx(file, ctx);
-      const fileChunkCount = ctx.chunksUploaded - before;
+        const beforeManifest = ctx.chunksUploaded;
+        const { manifestRef } = await uploadManifestThroughCtx(manifest, ctx);
+        const manifestChunkCount = ctx.chunksUploaded - beforeManifest;
 
-      const manifest = new MantarayNode();
-      const filename = sanitiseFilename(file.name);
-      const contentType = inferContentType(file);
-      manifest.addFork(filename, rootChunk.hash(), {
-        'Content-Type': contentType,
-        Filename: filename,
-      });
-      manifest.addFork('/', new Uint8Array(32), {
-        'website-index-document': filename,
-      });
-
-      const beforeManifest = ctx.chunksUploaded;
-      const { manifestRef } = await uploadManifestThroughCtx(manifest, ctx);
-      const manifestChunkCount = ctx.chunksUploaded - beforeManifest;
-
-      results.push({
-        filename: file.name,
-        reference: `0x${manifestRef.toHex()}` as `0x${string}`,
-        fileChunkCount,
-        manifestChunkCount,
-        success: true,
-      });
-    } catch (err) {
-      console.error(`Failed to upload ${file.name}:`, err);
-      results.push({
-        filename: file.name,
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
+        results.push({
+          filename: file.name,
+          reference: `0x${manifestRef.toHex()}` as `0x${string}`,
+          fileChunkCount,
+          manifestChunkCount,
+          success: true,
+        });
+      } catch (err) {
+        console.error(`Failed to upload ${file.name}:`, err);
+        results.push({
+          filename: file.name,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
+
+    ctx.onProgress = undefined;
+    const issuerStateSoc = await maybeSaveIssuerStateToSOC(ctx, hotKey, onStatus);
+
+    return {
+      results,
+      totalChunks: ctx.chunksUploaded,
+      issuerStateSoc,
+    };
+  } finally {
+    ctx.stampPool?.terminate();
+    await ctx.addrBatcher.flush().catch(() => {});
   }
-
-  ctx.onProgress = undefined;
-  const issuerStateSoc = await maybeSaveIssuerStateToSOC(ctx, hotKey, onStatus);
-
-  return {
-    results,
-    totalChunks: ctx.chunksUploaded,
-    issuerStateSoc,
-  };
 }
 
 // ─── Collection upload (N files → ONE manifest → ONE Swarm reference) ────────
@@ -1966,62 +2093,67 @@ export async function uploadFilesAsCollectionClientSide(
     totalChunksApprox: approxChunkCount(totalBytes),
   });
 
-  // One-shot readiness probe before the first entry's chunks go out — see
-  // the comment in `uploadMultipleFilesClientSide` for the full rationale.
-  await ctx.ensureStampReady(onStatus);
+  try {
+    // One-shot readiness probe before the first entry's chunks go out — see
+    // the comment in `uploadMultipleFilesClientSide` for the full rationale.
+    await ctx.ensureStampReady(onStatus);
 
-  const manifest = new MantarayNode();
-  const beforeAllFiles = ctx.chunksUploaded;
+    const manifest = new MantarayNode();
+    const beforeAllFiles = ctx.chunksUploaded;
 
-  for (let i = 0; i < cleanedEntries.length; i++) {
-    if (abortSignal?.aborted) throw new Error('Upload aborted');
-    const entry = cleanedEntries[i];
-    onStatus?.(`Uploading ${i + 1}/${cleanedEntries.length}: ${entry.path}`);
-    ctx.firstError = null;
+    for (let i = 0; i < cleanedEntries.length; i++) {
+      if (abortSignal?.aborted) throw new Error('Upload aborted');
+      const entry = cleanedEntries[i];
+      onStatus?.(`Uploading ${i + 1}/${cleanedEntries.length}: ${entry.path}`);
+      ctx.firstError = null;
 
-    let rootChunk: Chunk;
-    if (entry.data instanceof File) {
-      ({ rootChunk } = await streamFileThroughCtx(entry.data, ctx));
-    } else {
-      ({ rootChunk } = await streamBytesThroughCtx(entry.data, ctx));
+      let rootChunk: Chunk;
+      if (entry.data instanceof File) {
+        ({ rootChunk } = await streamFileThroughCtx(entry.data, ctx));
+      } else {
+        ({ rootChunk } = await streamBytesThroughCtx(entry.data, ctx));
+      }
+
+      const contentType =
+        entry.contentType ??
+        (entry.data instanceof File
+          ? inferContentType(entry.data)
+          : inferContentTypeFromName(entry.path));
+
+      manifest.addFork(entry.path, rootChunk.hash(), {
+        'Content-Type': contentType,
+        Filename: basename(entry.path),
+      });
     }
 
-    const contentType =
-      entry.contentType ??
-      (entry.data instanceof File
-        ? inferContentType(entry.data)
-        : inferContentTypeFromName(entry.path));
+    const fileChunkCount = ctx.chunksUploaded - beforeAllFiles;
 
-    manifest.addFork(entry.path, rootChunk.hash(), {
-      'Content-Type': contentType,
-      Filename: basename(entry.path),
-    });
-  }
+    if (website) {
+      const indexDocument = website.indexDocument ?? 'index.html';
+      const meta: Record<string, string> = {
+        'website-index-document': indexDocument,
+      };
+      if (website.errorDocument) {
+        meta['website-error-document'] = website.errorDocument;
+      }
+      manifest.addFork('/', new Uint8Array(32), meta);
+    }
 
-  const fileChunkCount = ctx.chunksUploaded - beforeAllFiles;
+    const beforeManifest = ctx.chunksUploaded;
+    const { manifestRef } = await uploadManifestThroughCtx(manifest, ctx, onStatus);
+    const manifestChunkCount = ctx.chunksUploaded - beforeManifest;
 
-  if (website) {
-    const indexDocument = website.indexDocument ?? 'index.html';
-    const meta: Record<string, string> = {
-      'website-index-document': indexDocument,
+    const issuerStateSoc = await maybeSaveIssuerStateToSOC(ctx, hotKey, onStatus);
+
+    return {
+      reference: `0x${manifestRef.toHex()}` as `0x${string}`,
+      totalChunkCount: ctx.chunksUploaded,
+      fileChunkCount,
+      manifestChunkCount,
+      issuerStateSoc,
     };
-    if (website.errorDocument) {
-      meta['website-error-document'] = website.errorDocument;
-    }
-    manifest.addFork('/', new Uint8Array(32), meta);
+  } finally {
+    ctx.stampPool?.terminate();
+    await ctx.addrBatcher.flush().catch(() => {});
   }
-
-  const beforeManifest = ctx.chunksUploaded;
-  const { manifestRef } = await uploadManifestThroughCtx(manifest, ctx, onStatus);
-  const manifestChunkCount = ctx.chunksUploaded - beforeManifest;
-
-  const issuerStateSoc = await maybeSaveIssuerStateToSOC(ctx, hotKey, onStatus);
-
-  return {
-    reference: `0x${manifestRef.toHex()}` as `0x${string}`,
-    totalChunkCount: ctx.chunksUploaded,
-    fileChunkCount,
-    manifestChunkCount,
-    issuerStateSoc,
-  };
 }

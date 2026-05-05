@@ -474,6 +474,48 @@ export async function addStampedAddress(
 }
 
 /**
+ * Buffers chunk-address writes so we issue one IndexedDB transaction per flush
+ * instead of one `put` per chunk on the upload hot path.
+ */
+export class StampedAddrWriteBatcher {
+  private readonly buf: string[] = [];
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private readonly batchId: string,
+    private readonly flushEveryMs = 250,
+    private readonly flushEveryCount = 256
+  ) {}
+
+  add(addrHex: string): void {
+    this.buf.push(addrHex);
+    if (this.buf.length >= this.flushEveryCount) {
+      void this.flush();
+    } else {
+      this.schedule();
+    }
+  }
+
+  private schedule(): void {
+    if (this.timer !== null) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.flush();
+    }, this.flushEveryMs);
+  }
+
+  async flush(): Promise<void> {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.buf.length === 0) return;
+    const chunk = this.buf.splice(0, this.buf.length);
+    await addStampedAddresses(this.batchId, chunk);
+  }
+}
+
+/**
  * Bulk-append variant: writes all entries in a single transaction. Used by
  * the legacy-migration path and by any future bulk-recovery flow.
  */

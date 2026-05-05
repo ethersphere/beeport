@@ -358,3 +358,11 @@ For top-ups the user's wallet does the on-chain work directly. For dilution
 we'll need to fund the hot key with a sliver of xDAI just-in-time (not yet
 implemented). For just uploading more files, the wallet only needs to sign
 the canonical message once per session and the rest is browser-side work.
+
+### Browser upload implementation
+
+For how chunks are signed (including optional Web Workers), how `/chunks` POSTs
+are made, HTTP/2 concurrency caps, and why SOC backup uses bee-js
+`Stamper.stamp`, see **[Client-side chunk pipeline](./client-side-chunk-pipeline.md)**.
+
+---

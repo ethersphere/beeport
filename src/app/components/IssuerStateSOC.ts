@@ -43,10 +43,12 @@ import {
   Stamper,
   type EnvelopeWithBatchId,
 } from '@ethersphere/bee-js';
+import type { Chunk } from 'cafe-utility';
 import { keccak_256 } from '@noble/hashes/sha3';
 
 import type { DerivedHotKey, PersistedStamperState } from './ClientStamping';
 import { uploadDataPresigned } from './ClientSideUpload';
+import { uploadChunkPresignedFetch } from './FastPresignedStamp';
 
 /** Stable namespace baked into the SOC identifier. Bumping this orphans every existing issuer-state SOC. */
 const PURPOSE = 'beeport.issuerState';
@@ -126,13 +128,24 @@ export async function saveIssuerStateToSOC(params: {
   );
   const blob = concatBytes(iv, ciphertext);
 
+  const issuerAddrBytes = hotKey.signer.publicKey().address().toUint8Array();
+
   // ── Push the encrypted blob through the same presigned-chunks pipeline
   //    we use for files. Each chunk consumes a slot in the batch and mutates
   //    `stamper`'s buckets. We diff before/after to get the blob delta.
   let blobChunks = 0;
-  const blobRef = await uploadDataPresigned(blob, stamper, bee, abortSignal, () => {
-    blobChunks++;
-  });
+  const blobRef = await uploadDataPresigned(
+    blob,
+    stamper,
+    bee,
+    abortSignal,
+    () => {
+      blobChunks++;
+    },
+    issuerAddrBytes,
+    hotKey.privateKey,
+    null
+  );
   const afterBlobBuckets = stamper.getState();
 
   // ── Compute the SOC's address. It only depends on identifier + owner, so
@@ -186,8 +199,11 @@ export async function saveIssuerStateToSOC(params: {
   const inner = bee.makeContentAddressedChunk(socPayload);
   const soc = inner.toSingleOwnerChunk(new Identifier(socIdentifier), hotKey.signer);
 
-  const envelope = stampSocAddress(stamper, soc.address.toUint8Array());
-  await bee.uploadChunk(envelope, soc, undefined, { timeout: 60_000 } as any);
+  const envelope = stampSocEnvelope(stamper, soc.address.toUint8Array());
+  await uploadChunkPresignedFetch(bee.url, soc.data, envelope, {
+    abortSignal,
+    timeoutMs: 60_000,
+  });
 
   return {
     socAddress: `0x${soc.address.toHex()}` as `0x${string}`,
@@ -416,20 +432,13 @@ async function deriveAesKey(privateKey: Uint8Array): Promise<CryptoKey> {
 
 // ─── Chunk-stamping bridge for SOC ───────────────────────────────────────────
 
-/**
- * Stamper.stamp() expects a `Chunk` from cafe-utility, but it only ever calls
- * `chunk.hash()`. For a SOC we want the stamp scoped to the SOC's address
- * (= keccak256(identifier || owner)) NOT the inner CAC's BMT root, so we feed
- * the stamper a thin shim that just returns the SOC address.
- */
-function stampSocAddress(stamper: Stamper, socAddress: Uint8Array): EnvelopeWithBatchId {
-  const fakeChunk: any = {
+/** Postage for SOC: use bee-js {@link Stamper.stamp} so the envelope matches Bee's verifier (noble path was rejected for this upload on some gateways). */
+function stampSocEnvelope(stamper: Stamper, socAddress: Uint8Array): EnvelopeWithBatchId {
+  const fakeChunk = {
     hash: () => socAddress,
-    // build/span/writer are unused by Stamper.stamp; provide stubs for type
-    // checkers that try to introspect the value.
     build: () => new Uint8Array(),
     span: 0n,
-  };
+  } as unknown as Chunk;
   return stamper.stamp(fakeChunk);
 }
 
