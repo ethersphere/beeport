@@ -198,11 +198,13 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  /* Above fixed chrome (PriceTracker, disclaimer dialog, etc. use ~1000). */
+  z-index: 50000;
 }
 
 .statusBox {
   position: relative;
+  z-index: 1;
   width: 90%;
   max-width: 500px;
   background-color: #0f131a;

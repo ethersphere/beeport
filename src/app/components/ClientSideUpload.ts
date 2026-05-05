@@ -794,7 +794,13 @@ export async function uploadFileClientSide(
 
     // Force-persist BEFORE we kick off the SOC promise so a tab close mid-SOC
     // doesn't lose the bucket counters consumed by the file + manifest upload.
-    maybePersistState(true);
+    // Await so callers (e.g. post-upload utilization from `loadStampUsage`) see
+    // the final counters immediately — `maybePersistState` alone is fire-and-forget.
+    lastStatePersistAt = Date.now();
+    await saveStamperState(cleanBatchId, {
+      buckets: stamper.getState(),
+      depth: stamper.depth,
+    });
 
     const manifestChunkCount = chunksUploaded - beforeManifest;
     mark('manifest uploaded', { count: manifestChunkCount });

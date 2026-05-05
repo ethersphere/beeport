@@ -590,6 +590,11 @@ export { chunkAddressHex };
 export interface StampUsageStats {
   /** Worst-bucket fill as a fraction of bucket capacity (0–100, capped). */
   maxBucketPercent: number;
+  /**
+   * Raw slot count in the fullest bucket — same units as Bee `/stamps/:id`
+   * `utilization` for gateway-managed batches.
+   */
+  maxBucketUsed: number;
   /** Sum of all buckets divided by total stamp capacity (0–100). */
   avgPercent: number;
   /** Bytes stored = sum(buckets) × 4096 (each chunk is a 4 KiB slot). */
@@ -651,6 +656,7 @@ export function computeStampUsage(
     // Capped: counters past Bee's maxSlot are meaningless except as a "this
     // state is corrupted" signal — see `exceedsMaxSlot` below.
     maxBucketPercent: Math.min(100, (maxBucket / maxSlot) * 100),
+    maxBucketUsed: maxBucket,
     avgPercent: Math.min(100, (totalUsed / totalChunks) * 100),
     usedBytes: totalUsed * CHUNK_BYTES,
     totalChunks,

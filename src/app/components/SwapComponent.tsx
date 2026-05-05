@@ -59,6 +59,7 @@ import {
 import {
   deriveHotKey,
   getCachedHotKeyAddress,
+  loadStampUsage,
   type DerivedHotKey,
 } from './ClientStamping';
 import {
@@ -1411,16 +1412,23 @@ const SwapComponent: React.FC = () => {
       }
 
       // Stamp + history bookkeeping. Self-custody batches are hot-key–owned;
-      // Bee's `/stamps/:id` always 404s, so we never hit the network — use
-      // local batch metadata and a conservative history expiry.
+      // Bee's `/stamps/:id` usually 404s — utilization comes from persisted
+      // issuer state (`loadStampUsage`). Batch label/TTL still use local metadata.
       try {
         const displayDepth = storedBatchEntry?.depth ?? depthForUpload;
         const displayBucket = storedBatchEntry?.bucketDepth ?? 16;
         const totalSizeString =
           STORAGE_OPTIONS.find(o => o.depth === displayDepth)?.size ?? `depth ${displayDepth}`;
+        const localUsage = await loadStampUsage(batchIdHex, displayDepth);
+        const rawUtilization = localUsage?.maxBucketUsed ?? 0;
+        const realUtilizationPercent = getStampUsage(
+          rawUtilization,
+          displayDepth,
+          displayBucket
+        );
         setUploadStampInfo({
           batchID: batchIdHex,
-          utilization: 0,
+          utilization: rawUtilization,
           usable: true,
           depth: displayDepth,
           amount: storedBatchEntry?.totalAmount ?? '0',
@@ -1428,9 +1436,14 @@ const SwapComponent: React.FC = () => {
           exists: true,
           batchTTL: 0,
           totalSize: totalSizeString,
-          usedSize: '—',
-          remainingSize: '—',
-          utilizationPercent: 0,
+          usedSize:
+            localUsage != null ? `${realUtilizationPercent.toFixed(1)}%` : '—',
+          remainingSize:
+            localUsage != null
+              ? `${(100 - Math.min(100, realUtilizationPercent)).toFixed(1)}%`
+              : '—',
+          utilizationPercent:
+            localUsage != null ? realUtilizationPercent : undefined,
           createdDate: formatDateEU(new Date()),
         });
         saveUploadReference(
@@ -1479,6 +1492,7 @@ const SwapComponent: React.FC = () => {
       setUploadStep('complete');
       setSelectedDays(null);
       setIsDistributing(false);
+      setIsLoading(false);
       // Same long auto-close as the legacy upload path; the user can also
       // close manually via the success screen's Close button.
       setTimeout(() => {
@@ -1651,6 +1665,7 @@ const SwapComponent: React.FC = () => {
       setUploadStep('complete');
       setSelectedDays(null);
       setIsDistributing(false);
+      setIsLoading(false);
       setTimeout(() => {
         setUploadStep('idle');
         setShowOverlay(false);
@@ -1794,6 +1809,7 @@ const SwapComponent: React.FC = () => {
       setUploadStep('complete');
       setSelectedDays(null);
       setIsDistributing(false);
+      setIsLoading(false);
       setTimeout(() => {
         setUploadStep('idle');
         setShowOverlay(false);
@@ -1909,6 +1925,7 @@ const SwapComponent: React.FC = () => {
       setUploadStep('complete');
       setSelectedDays(null);
       setIsDistributing(false);
+      setIsLoading(false);
       setTimeout(() => {
         setUploadStep('idle');
         setShowOverlay(false);
@@ -2061,6 +2078,24 @@ const SwapComponent: React.FC = () => {
 
   // Add a new state variable to the component
   const [uploadStampInfo, setUploadStampInfo] = useState<StampInfo | null>(null);
+
+  const dismissStatusOverlay = useCallback(() => {
+    setShowOverlay(false);
+    setStatusMessage({ step: '', message: '' });
+    setUploadStep('idle');
+    setIsLoading(false);
+    setExecutionResult(null);
+    setSelectedFile(null);
+    setSelectedFiles([]);
+    setMultiFileResults([]);
+    setNftCollectionResult(null);
+    setIsDistributing(false);
+    setIsNewStampCreated(false);
+    setUploadStampInfo(null);
+    setUploadProgress(0);
+    setTopUpCompleted(false);
+    setTopUpInfo(null);
+  }, []);
 
   // originalStampInfo state declaration moved to the top with other state declarations
 
@@ -2448,27 +2483,15 @@ const SwapComponent: React.FC = () => {
           Upload / History / Help during a long upload unmounted the UI while
           chunk POSTs continued in the background. */}
       {(isLoading || (showOverlay && uploadStep !== 'idle')) && (
-        <div className={styles.overlay}>
+        <div className={styles.overlay} onClick={dismissStatusOverlay}>
           <div
             className={`${styles.statusBox} ${statusMessage.isSuccess ? styles.success : ''}`}
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
           >
             {/* Always show close button */}
-            <button
-              className={styles.closeButton}
-              onClick={() => {
-                setShowOverlay(false);
-                setStatusMessage({ step: '', message: '' });
-                setUploadStep('idle');
-                setIsLoading(false);
-                setExecutionResult(null);
-                setSelectedFile(null);
-                setSelectedFiles([]);
-                setMultiFileResults([]);
-                setNftCollectionResult(null);
-                setIsDistributing(false);
-                setIsNewStampCreated(false);
-              }}
-            >
+            <button type="button" className={styles.closeButton} onClick={dismissStatusOverlay}>
               ×
             </button>
 
@@ -3110,9 +3133,13 @@ const SwapComponent: React.FC = () => {
                       <div className={styles.stampDetail}>
                         <span>Utilization:</span>
                         <span>
-                          {getStampUsage(
-                            uploadStampInfo.utilization || 0,
-                            uploadStampInfo.depth || 0
+                          {Math.min(
+                            100,
+                            getStampUsage(
+                              uploadStampInfo.utilization || 0,
+                              uploadStampInfo.depth || 0,
+                              uploadStampInfo.bucketDepth ?? 16
+                            )
                           ).toFixed(2)}
                           %
                         </span>
@@ -3134,7 +3161,14 @@ const SwapComponent: React.FC = () => {
                       <div
                         className={styles.utilizationBar}
                         style={{
-                          width: `${getStampUsage(uploadStampInfo.utilization || 0, uploadStampInfo.depth || 0).toFixed(2)}%`,
+                          width: `${Math.min(
+                            100,
+                            getStampUsage(
+                              uploadStampInfo.utilization || 0,
+                              uploadStampInfo.depth || 0,
+                              uploadStampInfo.bucketDepth ?? 16
+                            )
+                          ).toFixed(2)}%`,
                         }}
                       ></div>
                     </div>
@@ -3142,20 +3176,9 @@ const SwapComponent: React.FC = () => {
                 )}
 
                 <button
+                  type="button"
                   className={styles.closeSuccessButton}
-                  onClick={() => {
-                    setShowOverlay(false);
-                    setUploadStep('idle');
-                    setStatusMessage({ step: '', message: '' });
-                    setIsLoading(false);
-                    setExecutionResult(null);
-                    setSelectedFile(null);
-                    setSelectedFiles([]);
-                    setMultiFileResults([]);
-                    setNftCollectionResult(null);
-                    setIsDistributing(false);
-                    setUploadStampInfo(null);
-                  }}
+                  onClick={dismissStatusOverlay}
                 >
                   Close
                 </button>
@@ -3207,15 +3230,10 @@ const SwapComponent: React.FC = () => {
                 </div>
 
                 <button
+                  type="button"
                   className={styles.closeSuccessButton}
                   onClick={() => {
-                    setShowOverlay(false);
-                    setTopUpCompleted(false);
-                    setTopUpInfo(null);
-                    setStatusMessage({ step: '', message: '' });
-                    setIsLoading(false);
-                    setExecutionResult(null);
-                    setIsNewStampCreated(false); // Reset the new stamp warning
+                    dismissStatusOverlay();
 
                     // Clear the topup parameter from URL and return to clean state
                     if (typeof window !== 'undefined') {
