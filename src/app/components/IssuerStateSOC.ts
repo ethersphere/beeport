@@ -41,6 +41,7 @@ import {
   Identifier,
   Reference,
   Stamper,
+  type Chunk as BeeJsCAC,
   type EnvelopeWithBatchId,
 } from '@ethersphere/bee-js';
 import type { Chunk } from 'cafe-utility';
@@ -148,58 +149,59 @@ export async function saveIssuerStateToSOC(params: {
   );
   const afterBlobBuckets = stamper.getState();
 
-  // ── Compute the SOC's address. It only depends on identifier + owner, so
-  //    it's known before signing — which means we know its bucket and the
-  //    slot it WILL consume when we stamp it next.
-  const ownerAddress = hotKey.signer.publicKey().address();
   const socIdentifier = computeIssuerStateIdentifier(cleanBatchId);
-  const socAddressRef = bee.calculateSingleOwnerChunkAddress(
-    new Identifier(socIdentifier),
-    ownerAddress
-  );
-  const socAddressBytes = socAddressRef.toUint8Array();
-  const socBucket = (socAddressBytes[0] << 8) | socAddressBytes[1];
 
-  // ── Build the delta = (afterBlob − beforeBuckets) + 1 in socBucket.
-  //    `Stamper.stamp()` always consumes the bucket whose first 16 bits of
-  //    the chunk address match — so the SOC is guaranteed to land in
-  //    `socBucket`, exactly accounted for by the +1 below.
-  const deltaMap = new Map<number, number>();
+  const baseBlobDelta = new Map<number, number>();
   for (let b = 0; b < 65536; b++) {
     const inc = afterBlobBuckets[b] - beforeBuckets[b];
-    if (inc > 0) deltaMap.set(b, inc);
+    if (inc > 0) baseBlobDelta.set(b, inc);
   }
-  deltaMap.set(socBucket, (deltaMap.get(socBucket) ?? 0) + 1);
 
-  // Sanity: total increments must equal `blobChunks + 1`. If a single bucket
-  // accumulated > 255 stamps in one save we'd lose precision in the u8
-  // increment field — extremely unlikely (would require thousands of
-  // colliding addresses) but explicit:
-  for (const [bucket, inc] of deltaMap) {
+  const bucketBE = (addr: Reference): number => {
+    const u = addr.toUint8Array();
+    return (u[0] << 8) | u[1];
+  };
+
+  // The v2 payload embeds the slot-delta list, but the inner CAC address (and
+  // thus the postage-stamp bucket Bee validates) depends on those bytes. Find
+  // a fixed point: bucket(CAC(payload)) === bucket receiving the SOC +1 line.
+  const savedAt = Date.now();
+  let stampBucket = -1;
+  let inner: BeeJsCAC;
+  let converged = false;
+  for (let iter = 0; iter < 16; iter++) {
+    const delta = new Map(baseBlobDelta);
+    if (stampBucket >= 0) {
+      delta.set(stampBucket, (delta.get(stampBucket) ?? 0) + 1);
+    }
+    const socPayload = encodeSocPayloadV2({
+      blobRef: blobRef.toUint8Array(),
+      savedAt,
+      cipherLen: blob.length,
+      delta,
+    });
+    inner = bee.makeContentAddressedChunk(socPayload);
+    const nextB = bucketBE(inner.address);
+    if (nextB === stampBucket) {
+      converged = true;
+      break;
+    }
+    stampBucket = nextB;
+  }
+  if (!converged) {
+    throw new Error('SOC issuer-state payload did not converge (stamp bucket / inner address)');
+  }
+
+  const finalDelta = new Map(baseBlobDelta);
+  finalDelta.set(stampBucket, (finalDelta.get(stampBucket) ?? 0) + 1);
+  for (const [, inc] of finalDelta) {
     if (inc > 255) {
-      throw new Error(
-        `Delta increment for bucket ${bucket} is ${inc}, exceeds the u8 ` +
-          'encoding limit. Bug or absurdly large save?'
-      );
+      throw new Error('Delta increment exceeds u8 limit (bug or absurdly large save).');
     }
   }
 
-  // ── Encode the v2 SOC payload.
-  const savedAt = Date.now();
-  const socPayload = encodeSocPayloadV2({
-    blobRef: blobRef.toUint8Array(),
-    savedAt,
-    cipherLen: blob.length,
-    delta: deltaMap,
-  });
-
-  // ── Construct + sign the SOC, then stamp+upload it. The stamp here MUST
-  //    land in `socBucket` (the stamper enforces this), at exactly the slot
-  //    encoded by the delta entry above.
-  const inner = bee.makeContentAddressedChunk(socPayload);
   const soc = inner.toSingleOwnerChunk(new Identifier(socIdentifier), hotKey.signer);
-
-  const envelope = stampSocEnvelope(stamper, soc.address.toUint8Array());
+  const envelope = stampSocEnvelope(stamper, inner.address.toUint8Array());
   await uploadChunkPresignedFetch(bee.url, soc.data, envelope, {
     abortSignal,
     timeoutMs: 60_000,
@@ -210,7 +212,7 @@ export async function saveIssuerStateToSOC(params: {
     blobReference: `0x${blobRef.toHex()}` as `0x${string}`,
     savedAt,
     slotsConsumed: blobChunks + 1,
-    deltaEntries: deltaMap.size,
+    deltaEntries: finalDelta.size,
   };
 }
 

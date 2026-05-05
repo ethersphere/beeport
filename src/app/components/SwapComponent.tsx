@@ -1410,40 +1410,39 @@ const SwapComponent: React.FC = () => {
         console.warn('Retrieval probe failed:', probeErr);
       }
 
-      // Stamp + history bookkeeping (try, but don't fail upload on errors).
+      // Stamp + history bookkeeping. Self-custody batches are hot-key–owned;
+      // Bee's `/stamps/:id` always 404s, so we never hit the network — use
+      // local batch metadata and a conservative history expiry.
       try {
-        const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
-        if (stampStatus) {
-          const totalSizeString =
-            STORAGE_OPTIONS.find(o => o.depth === stampStatus.depth)?.size ??
-            `depth ${stampStatus.depth}`;
-          const realUtilizationPercent = getStampUsage(
-            stampStatus.utilization,
-            stampStatus.depth,
-            stampStatus.bucketDepth || 16
-          );
-          setUploadStampInfo({
-            ...stampStatus,
-            totalSize: totalSizeString,
-            usedSize: `${realUtilizationPercent.toFixed(1)}%`,
-            remainingSize: `${(100 - realUtilizationPercent).toFixed(1)}%`,
-            utilizationPercent: realUtilizationPercent,
-            createdDate: formatDateEU(new Date()),
-          });
-          const expiryDate = Date.now() + (stampStatus.batchTTL ?? 0) * 1000;
-          saveUploadReference(refHex, postageBatchId, expiryDate, file.name, false, file.size);
-        } else {
-          saveUploadReference(
-            refHex,
-            postageBatchId,
-            Date.now() + 30 * 24 * 60 * 60 * 1000,
-            file.name,
-            false,
-            file.size
-          );
-        }
+        const displayDepth = storedBatchEntry?.depth ?? depthForUpload;
+        const displayBucket = storedBatchEntry?.bucketDepth ?? 16;
+        const totalSizeString =
+          STORAGE_OPTIONS.find(o => o.depth === displayDepth)?.size ?? `depth ${displayDepth}`;
+        setUploadStampInfo({
+          batchID: batchIdHex,
+          utilization: 0,
+          usable: true,
+          depth: displayDepth,
+          amount: storedBatchEntry?.totalAmount ?? '0',
+          bucketDepth: displayBucket,
+          exists: true,
+          batchTTL: 0,
+          totalSize: totalSizeString,
+          usedSize: '—',
+          remainingSize: '—',
+          utilizationPercent: 0,
+          createdDate: formatDateEU(new Date()),
+        });
+        saveUploadReference(
+          refHex,
+          postageBatchId,
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+          file.name,
+          false,
+          file.size
+        );
       } catch (err) {
-        console.warn('Failed to fetch stamp info post-upload:', err);
+        console.warn('Self-custody post-upload bookkeeping failed:', err);
       }
 
       const retrievalSuffix =
