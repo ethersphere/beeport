@@ -41,14 +41,13 @@ import {
   Identifier,
   Reference,
   Stamper,
-  type EnvelopeWithBatchId,
 } from '@ethersphere/bee-js';
 import { Binary, type Chunk } from 'cafe-utility';
 import { keccak_256 } from '@noble/hashes/sha3';
 
 import type { DerivedHotKey, PersistedStamperState } from './ClientStamping';
 import { uploadDataPresigned } from './ClientSideUpload';
-import { uploadChunkPresignedFetch } from './FastPresignedStamp';
+import { buildStampEnvelope, uploadSocPresignedFetch } from './FastPresignedStamp';
 
 /** Stable namespace baked into the SOC identifier. Bumping this orphans every existing issuer-state SOC. */
 const PURPOSE = 'beeport.issuerState';
@@ -198,11 +197,51 @@ export async function saveIssuerStateToSOC(params: {
   });
   const inner = bee.makeContentAddressedChunk(socPayload);
   const soc = inner.toSingleOwnerChunk(new Identifier(socIdentifier), hotKey.signer);
-  const envelope = stampSocEnvelope(stamper, socAddressBytes);
-  await uploadChunkPresignedFetch(bee.url, soc.data, envelope, {
-    abortSignal,
-    timeoutMs: 60_000,
-  });
+  const socAddrBytes = soc.address.toUint8Array();
+  if (!Binary.equals(socAddrBytes, socAddressRef.toUint8Array())) {
+    throw new Error(
+      'SOC address from bee-js does not match calculateSingleOwnerChunkAddress — cannot stamp safely.'
+    );
+  }
+
+  // The stamp signature must be over the SOC address — Bee verifies the
+  // postage stamp against `chunk.Address()`, and for a SOC that's
+  // `keccak256(identifier || owner)` (see `pkg/soc/soc.go: CreateAddress`).
+  // We sign with the same Noble + `ethSignedHashForStampPayload` path used
+  // for every other presigned chunk; the only SOC-specific bit is the
+  // address we feed into the digest.
+  const fakeChunk = {
+    hash: () => socAddrBytes,
+    build: () => inner.data,
+    span: inner.span.toBigInt(),
+  } as unknown as Chunk;
+
+  const envelope = await buildStampEnvelope(
+    stamper,
+    fakeChunk,
+    issuerAddrBytes,
+    hotKey.privateKey,
+    null
+  );
+
+  // Bee's `/chunks` endpoint is for Content-Addressed Chunks: it BMT-hashes
+  // the body to derive the chunk address and verifies the stamp against
+  // that. Posting `soc.data` (or even just span+payload) there would always
+  // make the stamp invalid for a SOC. SOC uploads must go to
+  // `/soc/{owner}/{identifier}?sig={sig}` so Bee assembles the SOC and
+  // checks the stamp against the SOC address.
+  const ownerHex = ownerAddress.toHex();
+  const identifierHex = Binary.uint8ArrayToHex(socIdentifier);
+  const sigHex = soc.signature.toHex();
+  await uploadSocPresignedFetch(
+    bee.url,
+    inner.data,
+    ownerHex,
+    identifierHex,
+    sigHex,
+    envelope,
+    { abortSignal, timeoutMs: 60_000 }
+  );
 
   return {
     socAddress: `0x${soc.address.toHex()}` as `0x${string}`,
@@ -427,18 +466,6 @@ async function deriveAesKey(privateKey: Uint8Array): Promise<CryptoKey> {
     'encrypt',
     'decrypt',
   ]);
-}
-
-// ─── Chunk-stamping bridge for SOC ───────────────────────────────────────────
-
-/** Postage for SOC: use bee-js {@link Stamper.stamp} so the envelope matches Bee's verifier (noble path was rejected for this upload on some gateways). */
-function stampSocEnvelope(stamper: Stamper, socAddress: Uint8Array): EnvelopeWithBatchId {
-  const fakeChunk = {
-    hash: () => socAddress,
-    build: () => new Uint8Array(),
-    span: 0n,
-  } as unknown as Chunk;
-  return stamper.stamp(fakeChunk);
 }
 
 // ─── Compression + low-level utils ───────────────────────────────────────────

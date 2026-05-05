@@ -216,6 +216,78 @@ export async function uploadChunkPresignedFetch(
   }
 }
 
+/**
+ * Lean `POST /soc/{owner}/{identifier}?sig={sig}` for presigned SOC uploads.
+ *
+ * The `/chunks` endpoint is for Content-Addressed Chunks: it BMT-hashes the
+ * body to get the chunk address and verifies the postage stamp against that
+ * address. SOCs need this endpoint instead — Bee assembles the SOC from
+ * `(identifier, owner, sig, body)` and validates the stamp against the SOC
+ * address (`keccak256(identifier || owner)`), which is what we signed.
+ *
+ * @param chunkBytes  Inner CAC bytes (`span(8) || payload`). Do NOT include the
+ *                    identifier or signature here — those go in the URL.
+ * @param ownerHex    Hot-key Ethereum address as 40-char hex (no `0x`).
+ * @param identifierHex  32-byte SOC identifier as 64-char hex (no `0x`).
+ * @param sigHex      65-byte SOC signature (`r||s||v`) as 130-char hex (no `0x`).
+ * @param envelope    Postage envelope built over the SOC address.
+ */
+export async function uploadSocPresignedFetch(
+  beeApiBase: string,
+  chunkBytes: Uint8Array,
+  ownerHex: string,
+  identifierHex: string,
+  sigHex: string,
+  envelope: EnvelopeWithBatchId,
+  opts: { abortSignal?: AbortSignal; timeoutMs: number }
+): Promise<void> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+  const signal = mergeAbortSignals(opts.abortSignal, ctrl.signal);
+  try {
+    const body = new Uint8Array(chunkBytes);
+    const url = `${joinUrl(beeApiBase, `soc/${ownerHex}/${identifierHex}`)}?sig=${sigHex}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      body,
+      headers: {
+        'content-type': 'application/octet-stream',
+        'swarm-postage-stamp': marshaledStampHex(envelope),
+      },
+      signal,
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      let body: unknown = undefined;
+      try {
+        body = await res.json();
+      } catch {
+        try {
+          body = await res.text();
+        } catch {
+          body = undefined;
+        }
+      }
+      const detail =
+        body && typeof body === 'object' && 'message' in (body as object)
+          ? String((body as { message?: unknown }).message)
+          : typeof body === 'string'
+            ? body
+            : '';
+      throw new ChunkUploadHttpError(
+        detail
+          ? `Request failed with status code ${res.status}: ${detail}`
+          : `Request failed with status code ${res.status}`,
+        res.status,
+        body
+      );
+    }
+    res.body?.cancel().catch(() => {});
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function defaultWorkerCount(): number {
   if (typeof navigator === 'undefined') return 2;
   const c = navigator.hardwareConcurrency ?? 4;
