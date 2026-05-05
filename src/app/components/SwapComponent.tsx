@@ -1570,11 +1570,11 @@ const SwapComponent: React.FC = () => {
     const raw = err instanceof Error ? err.message : String(err);
     const lower = raw.toLowerCase();
 
-    if (lower.includes('issuer-state v2') || lower.includes('soc issuer-state')) {
+    if (lower.includes('issuer-state') || lower.includes('soc issuer-state')) {
       return {
         message: 'Issuer-state backup to Swarm failed',
         warning:
-          'Your file may already be on the network; only the encrypted bucket snapshot (for recovering this stamp in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
+          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this stamp in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
         detail: raw,
       };
     }

@@ -41,7 +41,6 @@ import {
   Identifier,
   Reference,
   Stamper,
-  type Chunk as BeeJsCAC,
   type EnvelopeWithBatchId,
 } from '@ethersphere/bee-js';
 import { Binary, type Chunk } from 'cafe-utility';
@@ -157,93 +156,32 @@ export async function saveIssuerStateToSOC(params: {
     if (inc > 0) baseBlobDelta.set(b, inc);
   }
 
-  const bucketFromRef = (addr: Reference): number =>
-    Binary.uint16ToNumber(addr.toUint8Array(), 'BE');
+  // Bee validates the postage stamp against `chunk.Address()` (see
+  // `pkg/postage/stamp.go: Valid`). For a SOC, `Chunk()` is built with the
+  // SOC address (`pkg/soc/soc.go: Chunk()`), so the stamp signature, the
+  // bucket, and the bucket-cap check must all use `soc.address`, not the
+  // inner CAC address. The SOC address is `keccak256(identifier || owner)`
+  // and is constant for a given (batchId, hotKey) — no fixed-point search
+  // is needed (and the previous Picard/exhaustive loop blocked the main
+  // thread for seconds on heavily-used stamps).
+  const ownerAddress = hotKey.signer.publicKey().address();
+  const socAddressRef = bee.calculateSingleOwnerChunkAddress(
+    new Identifier(socIdentifier),
+    ownerAddress
+  );
+  const socAddressBytes = socAddressRef.toUint8Array();
+  const stampBucket = Binary.uint16ToNumber(socAddressBytes, 'BE');
 
   const maxSlot = 2 ** (stamper.depth - 16);
-  const bucketHasCapacity = (b: number): boolean => afterBlobBuckets[b] < maxSlot;
-
-  // The v2 payload embeds the slot-delta list, but the inner CAC address (and
-  // thus the postage-stamp bucket — same rule as FastPresignedStamp's
-  // allocateStampSlot) depends on those bytes. We need B with
-  // bucket(CAC(payload(δ + +1@B))) === B.
-  //
-  // That B must also have a free slot *after* the encrypted-blob chunks: the SOC
-  // line consumes one more in the same bucket hash(inner) picks. Hitting a
-  // saturated fixed point is a real failure mode — aggregate "680MB" usage can
-  // still be far from the theoretical 2^depth cap — so we scan all fixed
-  // points for this payload, then bump `savedAt` (payload bytes change → new
-  // inner address) until we find one with headroom.
-  const baseSavedAt = Date.now();
-  // Each bump is at most one Picard orbit + one exhaustive scan (≤65k CACs).
-  const MAX_SAVED_AT_BUMPS = 64;
-  let savedAt = baseSavedAt;
-  let stampBucket!: number;
-  let inner!: BeeJsCAC;
-  let resolved = false;
-
-  outer: for (let bump = 0; bump < MAX_SAVED_AT_BUMPS; bump++) {
-    savedAt = baseSavedAt + bump;
-    let picardB = -1;
-    let picardInner: BeeJsCAC;
-    const seenStampBuckets = new Set<number>();
-
-    for (let iter = 0; iter < 65536; iter++) {
-      if (picardB >= 0) {
-        if (seenStampBuckets.has(picardB)) {
-          break;
-        }
-        seenStampBuckets.add(picardB);
-      }
-      const delta = new Map(baseBlobDelta);
-      if (picardB >= 0) {
-        delta.set(picardB, (delta.get(picardB) ?? 0) + 1);
-      }
-      const socPayload = encodeSocPayloadV2({
-        blobRef: blobRef.toUint8Array(),
-        savedAt,
-        cipherLen: blob.length,
-        delta,
-      });
-      picardInner = bee.makeContentAddressedChunk(socPayload);
-      const nextB = bucketFromRef(picardInner.address);
-      if (nextB === picardB) {
-        if (picardB >= 0 && bucketHasCapacity(picardB)) {
-          stampBucket = picardB;
-          inner = picardInner;
-          resolved = true;
-          break outer;
-        }
-        // Fixed point whose bucket is already full — try another B or bump savedAt.
-        break;
-      }
-      picardB = nextB;
-    }
-
-    for (let B = 0; B < 65536; B++) {
-      const delta = new Map(baseBlobDelta);
-      delta.set(B, (delta.get(B) ?? 0) + 1);
-      const socPayload = encodeSocPayloadV2({
-        blobRef: blobRef.toUint8Array(),
-        savedAt,
-        cipherLen: blob.length,
-        delta,
-      });
-      inner = bee.makeContentAddressedChunk(socPayload);
-      if (bucketFromRef(inner.address) === B && bucketHasCapacity(B)) {
-        stampBucket = B;
-        resolved = true;
-        break outer;
-      }
-    }
-  }
-
-  if (!resolved) {
+  if (afterBlobBuckets[stampBucket] >= maxSlot) {
     throw new Error(
-      'SOC issuer-state v2: no fixed-point payload with a free slot in its postage bucket (top up, use a deeper stamp, or reset local state)'
+      `SOC issuer-state bucket ${stampBucket} is full (${afterBlobBuckets[stampBucket]}/${maxSlot}). ` +
+        'The hot-key + batchId pair always lands in this bucket — top up to a deeper stamp, ' +
+        'use a different batch, or reset local state if the counter is wrong.'
     );
   }
 
+  const savedAt = Date.now();
   const finalDelta = new Map(baseBlobDelta);
   finalDelta.set(stampBucket, (finalDelta.get(stampBucket) ?? 0) + 1);
   for (const [, inc] of finalDelta) {
@@ -252,8 +190,15 @@ export async function saveIssuerStateToSOC(params: {
     }
   }
 
+  const socPayload = encodeSocPayloadV2({
+    blobRef: blobRef.toUint8Array(),
+    savedAt,
+    cipherLen: blob.length,
+    delta: finalDelta,
+  });
+  const inner = bee.makeContentAddressedChunk(socPayload);
   const soc = inner.toSingleOwnerChunk(new Identifier(socIdentifier), hotKey.signer);
-  const envelope = stampSocEnvelope(stamper, inner.address.toUint8Array());
+  const envelope = stampSocEnvelope(stamper, socAddressBytes);
   await uploadChunkPresignedFetch(bee.url, soc.data, envelope, {
     abortSignal,
     timeoutMs: 60_000,
