@@ -43,3 +43,4 @@ The post-ramp target is **`HTTP2_TARGET_CONCURRENCY`**. It must stay **at or und
 
 - [Self-custody hot key](./self-custody-hot-key.md) — derivation, persistence, SOC backup semantics
 - [Troubleshooting](./troubleshooting.md) — upload failures and browser behaviour
+- [File formats & limits](./file-formats-limits.md) — size caps from app constants

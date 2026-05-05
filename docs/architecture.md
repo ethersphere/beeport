@@ -4,7 +4,9 @@
 
 This Swarm upload application is a Next.js-based decentralized file storage platform that integrates multiple blockchain networks and services to provide seamless file uploads to the Swarm network. The architecture combines Web3 wallet connectivity, cross-chain bridging, and decentralized storage in a user-friendly interface.
 
-## High-Level Architecture
+**Self-custody uploads** (per-chunk stamping in the browser, gateway sees only pre-stamped chunks) are documented in [Self-custody hot key](./self-custody-hot-key.md) and [Client-side chunk pipeline](./client-side-chunk-pipeline.md). Some subsections below predate that flow; treat them as general component layout until [TODO §3.2](./TODO.md) is fully refreshed.
+
+## High-level architecture
 
 The application follows a modular architecture that separates concerns between user interface, blockchain interactions, cross-chain bridging, and decentralized storage:
 

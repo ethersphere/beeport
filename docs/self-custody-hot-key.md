@@ -97,7 +97,7 @@ the self-custody flow.
 5. Wallet pops the **same** canonical message. User signs.
 6. Wallet returns the **same** signature → `keccak256` produces the **same**
    hot key.
-7. The stamper loads its persisted bucket counters from localStorage and
+7. The stamper loads its persisted bucket counters from IndexedDB (migrating legacy `localStorage` keys on first read) and
    resumes signing chunk stamps for the existing `batchId`.
 
 No on-chain interaction is required for this — uploading to an existing
@@ -200,7 +200,7 @@ their ETH/BZZ.
   pattern.)
 - Other users / wallets connected to the same Beeport tab. Each wallet
   derives its own hot key from its own canonical message.
-- Loss of `localStorage`. The hot key is regenerated on next sign-in. The
+- Loss of persisted site data (IndexedDB cleared, or storage eviction). The hot key is regenerated on next sign-in. The
   bucket counters, however, are gone — see issuer-state recovery below.
 
 ---
@@ -293,13 +293,13 @@ state.** Old data stays intact.
    On a different browser, click the gear button on the stamp list. We
    re-derive the hot key (one wallet signature), download the SOC for
    each locally-stored batch, decrypt, apply the delta, and write the
-   reconstructed post-save buckets into localStorage. See
+   reconstructed post-save buckets into IndexedDB. See
    `IssuerStateSOC.ts`.
 
    **No drift.** The delta records every slot the save itself touched —
    K encrypted-blob chunks plus the 1 SOC chunk — and we apply it on
    restore, so the recovered state on browser B is bit-for-bit identical
-   to localStorage on browser A at the moment the save committed.
+   to IndexedDB on browser A at the moment the save committed.
 
    v1 SOCs (without delta, written by an earlier build) are still
    readable but leave a small drift on restore: the K + 1 save slots are
@@ -336,8 +336,7 @@ unavailable. (4) is the worst case.
 
 - **Never switch browser profiles mid-batch.** Pick one browser per batch
   and stick with it.
-- **Do not rely on incognito mode** for the upload step — localStorage
-  evaporates on tab close.
+- **Do not rely on incognito mode** for the upload step — storage for that profile is wiped on exit.
 - **Backups (option 3) only matter if you plan to keep adding files to
   this batch** over a long period from multiple devices. For one-shot
   uploads, no recovery story is needed.

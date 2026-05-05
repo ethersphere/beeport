@@ -10,6 +10,8 @@ created: 2026-04-29
 
 # Client-side postage stamping
 
+Beeport ships **mode (α)** (HTTPS + `Swarm-Postage-Stamp`) today; see [Client-side chunk pipeline](./client-side-chunk-pipeline.md) and [Self-custody hot key](./self-custody-hot-key.md).
+
 > **Pattern 2 of three.** This SWIP defines a **self-custody** stamping pattern: the end-user device (browser / CLI / mobile / desktop app) holds the postage batch's owner key, performs all chunking, hashing, issuer-state allocation and stamp signing locally, and ships pre-stamped chunks to the Swarm network through a Bee node that holds **no** key material. Two transport modes are normative:
 >
 > * **Mode (α)** — HTTPS to a key-less Bee gateway (rides the existing `presignedStamper` path; works against all Bee versions).
