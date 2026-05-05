@@ -43,9 +43,9 @@ npx serve out
 
 ## How to run locally
 
-Install Swarm Desktop (or a standalone Bee node) and run it. Point the app
-at it by leaving the **Bee node URL** input on the default
-`http://localhost:1633`, or set:
+By default the app targets the public gateway **[beeport.xyz](https://beeport.xyz/)**
+(`DEFAULT_BEE_API_URL`). To use Swarm Desktop or a standalone Bee node on your
+machine, set the **Bee node URL** in the UI or via:
 
 ```bash
 NEXT_PUBLIC_DEFAULT_BEE_API_URL=http://localhost:1633
@@ -65,15 +65,15 @@ Pick whichever fits your setup:
 
 - **Production**: TLS-terminating reverse proxy (nginx, Caddy, Cloudflare,
   etc.) in front of a Bee node, with permissive CORS for your frontend's
-  origin. A drop-in nginx config is in [`backend/README.md`](./backend/README.md).
+  origin. A drop-in nginx config is in [`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md).
 - **Quick demo / local dev**: a paid NGROK plan to expose `localhost:1633`:
 
   ```bash
   ngrok http 1633 --request-header-add="ngrok-skip-browser-warning:1"
   ```
 
-The legacy Express signature-checking proxy that used to live in `backend/`
-is gone — see `backend/README.md` for the rationale.
+The legacy Express signature-checking proxy is gone — see
+[`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md) for the rationale and nginx setup.
 
 ## How to EXPORT this app
 

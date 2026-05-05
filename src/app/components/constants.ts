@@ -36,10 +36,9 @@ export const STAMPS_REGISTRY_V2_ADDRESS =
   process.env.NEXT_PUBLIC_STAMPS_REGISTRY_V2_ADDRESS ||
   '0xA1a108E50FdB1aE7848a78577a37f7Bb8F27232f';
 
-// TEMP: default to local Bee node while iterating on the self-custody flow.
-// Revert to 'https://beeport.xyz' before shipping.
+/** Bee API base URL for uploads (`POST /chunks`, health, etc.). Override for a local node. */
 export const DEFAULT_BEE_API_URL =
-  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'http://localhost:1633';
+  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://beeport.xyz';
 
 // Check if we're running on production domains
 const isProductionDomain =

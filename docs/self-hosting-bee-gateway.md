@@ -4,7 +4,7 @@ Beeport is a fully **self-custody** dapp: every chunk is BMT-hashed and
 postage-stamped in the user's browser before it's POSTed to a Bee node. There
 is no application server. The browser talks directly to a Bee node over HTTPS.
 
-This folder used to contain a Node/Express proxy that gated `POST /bzz` on a
+The repo used to ship a `backend/` Node/Express proxy that gated `POST /bzz` on a
 wallet signature and an on-chain `getBatchPayer(batchId)` lookup. With
 [`StampsRegistryV2`](../contracts/StampsRegistryV2.sol) and Bee's
 `presignedStamper`, that authn/authz layer is now handled cryptographically by
@@ -20,10 +20,18 @@ For Beeport to talk to your node from a browser you need three things:
    (any 2.x). Standard install: <https://docs.ethswarm.org/docs/bee/installation/>.
 2. **TLS termination** — browsers won't let an `https://` page POST chunks
    to plain `http://`.
-3. **Permissive CORS** for the origin(s) you'll serve Beeport from. The
-   browser hits `/chunks`, `/soc/*`, `/bzz/*`, `/health`, `/chainstate`,
-   `/wallet`, `/stamps/*`, and `/tags`. The relevant request headers are
-   pure Swarm (`swarm-postage-stamp`, `swarm-postage-batch-id`,
+3. **Permissive CORS** for every **browser origin** that will call this gateway.
+   The app’s default Bee URL is **`https://beeport.xyz`** (`DEFAULT_BEE_API_URL` in
+   `src/app/components/constants.ts`). If you develop the Next app at
+   **`http://localhost:3000`** but POST chunks to **`https://beeport.xyz`**, that
+   is **cross-origin**: nginx on **beeport.xyz** must whitelist
+   `http://localhost:3000` (and usually `http://127.0.0.1:3000`) in the CORS map
+   and return `Access-Control-Allow-*` on **`OPTIONS` preflight** to `/chunks`
+   as well as on **`POST /chunks`**. Missing this shows up as
+   `net::ERR_FAILED` / “No 'Access-Control-Allow-Origin' header” in the
+   browser. The browser hits `/chunks`, `/soc/*`, `/bzz/*`, `/health`,
+   `/chainstate`, `/wallet`, `/stamps/*`, and `/tags`. The relevant request
+   headers are pure Swarm (`swarm-postage-stamp`, `swarm-postage-batch-id`,
    `swarm-pin`, `swarm-deferred-upload`, `swarm-tag`,
    `swarm-index-document`, `swarm-error-document`,
    `swarm-collection`); no app-specific headers are required anymore.
@@ -34,7 +42,10 @@ Bee node), you can skip nginx.
 
 ## Minimal nginx config
 
-This is a pure pass-through. No application code, no auth.
+This is a pure pass-through to Bee. **No extra `location` for “creating”
+`/chunks`** — Bee already implements `/chunks`; nginx only **proxies** it and
+adds CORS. Adjust **`server_name`**, **`root`**, and **TLS paths** to your
+domain (the block below still says `swarming.site` as an illustration).
 
 ```nginx
 map $http_origin $cors_origin {
@@ -42,9 +53,11 @@ map $http_origin $cors_origin {
     "~^https://buzz-mint\.eth\.limo$"      "https://buzz-mint.eth.limo";
     "~^https://beeport\.eth\.limo$"        "https://beeport.eth.limo";
     "~^https://beeport\.ethswarm\.org$"    "https://beeport.ethswarm.org";
+    "~^https://beeport\.xyz$"              "https://beeport.xyz";
     "~^https://swarming\.site$"            "https://swarming.site";
     "~^https://www\.swarming\.site$"       "https://www.swarming.site";
     "~^http://localhost:3000$"             "http://localhost:3000";
+    "~^http://127\.0\.0\.1:3000$"          "http://127.0.0.1:3000";
 }
 
 map $request_method $cors_allow_methods {
@@ -123,13 +136,30 @@ Apply with:
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+## Verify CORS (localhost dev → public gateway)
+
+From any machine, check that preflight for `POST /chunks` allows your dev
+origin:
+
+```bash
+curl -i -X OPTIONS 'https://beeport.xyz/chunks' \
+  -H 'Origin: http://localhost:3000' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type,swarm-postage-stamp'
+```
+
+You should see **`Access-Control-Allow-Origin: http://localhost:3000`** (and
+typically **204**). If that header is missing, the browser will block uploads.
+Replace the URL host if you use a different gateway hostname.
+
 ## Pointing Beeport at your node
 
 In the frontend, the Bee gateway URL is read from
 `NEXT_PUBLIC_DEFAULT_BEE_API_URL` (see `src/app/components/constants.ts`):
 
 ```bash
-NEXT_PUBLIC_DEFAULT_BEE_API_URL=https://swarming.site
+# default in repo is https://beeport.xyz; point at your own Bee:
+NEXT_PUBLIC_DEFAULT_BEE_API_URL=http://localhost:1633
 ```
 
 The user can also override it from the in-app **Bee node URL** input at

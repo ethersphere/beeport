@@ -233,12 +233,12 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               You can also point the app at a Bee node on your own server. All you need is TLS
               termination and permissive CORS in front of it — a minimal nginx config is in{' '}
               <a
-                href="https://github.com/ethersphere/beeport/blob/main/backend/README.md"
+                href="https://github.com/ethersphere/beeport/blob/main/docs/self-hosting-bee-gateway.md"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.link}
               >
-                backend/README.md
+                docs/self-hosting-bee-gateway.md
               </a>
               . For a quick demo you can also tunnel a local node with a paid NGROK plan:{' '}
               <code>ngrok http 1633 --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;</code>
