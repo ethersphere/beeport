@@ -1277,6 +1277,7 @@ const SwapComponent: React.FC = () => {
     setUploadStep('uploading');
     setIsNewStampCreated(false);
     setUploadProgress(0);
+    setStatusMessage({ step: 'Uploading', message: 'Preparing upload…' });
 
     try {
       const derived = await ensureHotKey();
@@ -1507,19 +1508,18 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError
-            ? 'Stamp not ready yet'
-            : 'Self-custody upload failed',
-        error: translated.message,
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+        error:
+          err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
         isError: true,
       });
-      // For transient failures (gateway hasn't indexed the batch yet) keep
-      // the user on the upload screen with their file still selected so
-      // they can hit Upload again without re-picking. Re-stamping the same
-      // file content reproduces the same `(bucket, cnt)` allocations, so
-      // the retry is idempotent — no slot burn.
-      setUploadStep(translated.transient ? 'ready' : 'idle');
+      // Transient = gateway still indexing; keepUploadFormOpen = e.g. bucket
+      // full — same form so the user can switch stamp or file without a stale
+      // banner on the next open.
+      setUploadStep(
+        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
+      );
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1534,16 +1534,22 @@ const SwapComponent: React.FC = () => {
    * NFT).
    *
    * Returns:
-   *   - `message`: the primary headline shown in red.
-   *   - `warning`: optional yellow follow-up text with what to do next.
-   *   - `transient`: true when the failure is plausibly self-resolving
-   *     (e.g. fresh batch hasn't been indexed yet); the UI can use this to
-   *     keep the file selection so the user can hit Upload again without
-   *     re-picking.
+   *   - `message`: primary headline (banner title / status box).
+   *   - `warning`: optional follow-up with what to do next.
+   *   - `detail`: optional technical line (shown under the headline).
+   *   - `transient`: gateway/batch not ready yet — same file selection, retry.
+   *   - `keepUploadFormOpen`: stay on the upload form with file(s) selected
+   *     (e.g. per-bucket full — user may switch stamp or change files).
    */
   const translateSelfCustodyUploadError = (
     err: unknown
-  ): { message: string; warning?: string; transient?: boolean } => {
+  ): {
+    message: string;
+    warning?: string;
+    detail?: string;
+    transient?: boolean;
+    keepUploadFormOpen?: boolean;
+  } => {
     if (err instanceof StampNotReadyError) {
       // The most common case for a freshly-created batch — the gateway's
       // chain listener simply hasn't caught up to our `createBatch` block
@@ -1563,25 +1569,51 @@ const SwapComponent: React.FC = () => {
 
     const raw = err instanceof Error ? err.message : String(err);
     const lower = raw.toLowerCase();
+
+    if (lower.includes('issuer-state v2') || lower.includes('soc issuer-state')) {
+      return {
+        message: 'Issuer-state backup to Swarm failed',
+        warning:
+          'Your file may already be on the network; only the encrypted bucket snapshot (for recovering this stamp in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
+        detail: raw,
+      };
+    }
+
+    if (lower.includes('bucket is full')) {
+      return {
+        message: 'Stamp is full in one Swarm bucket',
+        warning:
+          'Swarm allows only a limited number of chunks per logical bucket (out of 65,536). Total “MB used” can still look low while a single bucket is saturated. Try a deeper/larger stamp, top up, pick a different batch, or use “Reset local state” on this stamp if counters look wrong — then retry.',
+        detail: raw,
+        keepUploadFormOpen: true,
+      };
+    }
+
     if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
       return {
         message:
-          "Bee says it doesn't know this batch. Almost certainly the gateway is configured to watch a different postage-stamp contract than the one we created the batch on. Compare Bee's `--postage-stamp-contract-address` config against GNOSIS_STAMP_ADDRESS in our constants.",
+          "Bee doesn't recognize this batch — check gateway postage contract config",
+        detail:
+          "Almost certainly the gateway watches a different postage-stamp contract than the one that created this batch. Compare Bee's `--postage-stamp-contract-address` with the app's GNOSIS stamp address.",
       };
     }
     if (lower.includes('insufficient') && lower.includes('stamp')) {
       return {
         message:
-          'Bee accepted the batch but says the stamp is not valid for this chunk. Check that the hot-key signing the stamp matches the on-chain `_owner` of the batch.',
+          'Bee says this stamp is not valid for this chunk — check hot-key ownership',
+        detail: raw,
       };
     }
     if (lower.includes('signer') || lower.includes('signature')) {
-      return { message: `Bee rejected the stamp signature: ${raw}` };
+      return { message: 'Bee rejected the stamp signature', detail: raw };
     }
     if (lower.includes('bucket')) {
-      return { message: `Bee rejected the stamp bucket allocation (issuer state): ${raw}` };
+      return {
+        message: 'Bee rejected a stamp / bucket allocation',
+        detail: raw,
+      };
     }
-    return { message: raw };
+    return { message: 'Upload failed', detail: raw };
   };
 
   /**
@@ -1599,6 +1631,7 @@ const SwapComponent: React.FC = () => {
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setMultiFileResults([]);
+    setStatusMessage({ step: 'Uploading', message: 'Preparing multi-file upload…' });
 
     try {
       const derived = await ensureHotKey();
@@ -1678,12 +1711,15 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : 'Multi-file upload failed',
-        error: translated.message,
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+        error:
+          err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(translated.transient ? 'ready' : 'idle');
+      setUploadStep(
+        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
+      );
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1712,6 +1748,7 @@ const SwapComponent: React.FC = () => {
     setUploadStep('uploading');
     setIsNewStampCreated(false);
     setUploadProgress(0);
+    setStatusMessage({ step: 'Uploading', message: 'Preparing collection upload…' });
 
     try {
       const derived = await ensureHotKey();
@@ -1822,12 +1859,15 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : 'Folder upload failed',
-        error: translated.message,
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+        error:
+          err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(translated.transient ? 'ready' : 'idle');
+      setUploadStep(
+        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
+      );
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1850,6 +1890,7 @@ const SwapComponent: React.FC = () => {
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setNftCollectionResult(null);
+    setStatusMessage({ step: 'Uploading', message: 'Preparing NFT collection upload…' });
 
     try {
       const derived = await ensureHotKey();
@@ -1938,14 +1979,15 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError
-            ? 'Stamp not ready yet'
-            : 'NFT collection upload failed',
-        error: translated.message,
+          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+        error:
+          err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(translated.transient ? 'ready' : 'idle');
+      setUploadStep(
+        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
+      );
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -2475,6 +2517,7 @@ const SwapComponent: React.FC = () => {
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}
           setSelectedDepth={setSelectedDepth}
+          clearParentUploadError={() => setStatusMessage({ step: '', message: '' })}
         />
       ) : showUploadHistory ? (
         <UploadHistorySection address={address} setShowUploadHistory={setShowUploadHistory} />
@@ -2596,16 +2639,10 @@ const SwapComponent: React.FC = () => {
                     accessible on the network.
                   </div>
                 )}
-                {/* Inline banner shown when the previous upload attempt
-                    failed with a transient "stamp not ready" error. We
-                    keep the user on the upload screen with their file
-                    selected (see catch blocks above) so they can hit
-                    Upload again once the gateway has caught up — but
-                    the regular overlay status box is suppressed while
-                    `uploadStep === 'ready'`, so without this banner
-                    the user wouldn't see *why* their previous click
-                    failed. Dismissable so it doesn't linger after the
-                    next successful upload. */}
+                {/* Inline banner when the last upload attempt failed. Shown on
+                    the ready/uploading form. Cleared when: user picks a new
+                    file, opens upload from the stamp list (clearParentUploadError),
+                    dismisses, or a new upload starts (status reset to Uploading). */}
                 {statusMessage.isError && statusMessage.step === 'Error' && (
                   <div
                     className={`${styles.healthBanner} ${styles.healthBannerWarn}`}
@@ -2701,6 +2738,9 @@ const SwapComponent: React.FC = () => {
                         {...(isFolderUpload && { webkitdirectory: 'true' })}
                         onChange={e => {
                           const files = Array.from(e.target.files || []);
+                          setStatusMessage(prev =>
+                            prev.isError ? { step: '', message: '' } : prev
+                          );
                           if (isFolderUpload) {
                             setSelectedFiles(files);
                             setSelectedFile(null);

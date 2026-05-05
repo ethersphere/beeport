@@ -65,6 +65,8 @@ interface StampListSectionProps {
    * `Bucket is full` before any chunk reaches the gateway.
    */
   setSelectedDepth: (depth: number) => void;
+  /** Clears a stale upload error banner in the parent overlay (if any). */
+  clearParentUploadError?: () => void;
 }
 
 interface BatchEvent {
@@ -102,6 +104,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setShowOverlay,
   setUploadStep,
   setSelectedDepth,
+  clearParentUploadError,
 }) => {
   const { data: walletClient } = useWalletClient();
 
@@ -399,6 +402,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   };
 
   const handleStampSelect = (stamp: BatchEvent) => {
+    clearParentUploadError?.();
     // CRITICAL: align the upload depth with the on-chain batch depth.
     // The parent's `selectedDepth` default doesn't necessarily match this
     // stamp; passing through the wrong depth builds a Stamper that hands
