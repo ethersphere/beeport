@@ -42,6 +42,7 @@ import {
   chunkAddressHex,
   type DerivedHotKey,
 } from './ClientStamping';
+import { DEFAULT_BEE_API_URL } from './constants';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
 
 /**
@@ -55,9 +56,7 @@ import { saveIssuerStateToSOC } from './IssuerStateSOC';
  * the original 8) that hasn't reproduced any stalls in practice. Bump via
  * the `concurrency` param if your gateway tolerates more.
  */
-// SPEED TEST: bumped 12 -> 64 to see what beeport.xyz can take. Revert via
-// `git checkout -- src/app/components/ClientSideUpload.ts`.
-const DEFAULT_CONCURRENCY = 64;
+const DEFAULT_CONCURRENCY = 96;
 
 /**
  * Minimum delay between two `saveStamperState` writes during an upload.
@@ -127,10 +126,83 @@ const STAMP_READY_PROBE_DATA = new Uint8Array(4096);
  * multiplexes all requests over a single TCP connection so the browser's
  * 6-conn-per-host cap doesn't apply; pushing concurrency wide gives a
  * meaningful throughput boost on beeport.xyz and similar setups.
+ *
+ * Browsers multiplex many chunk POSTs over one HTTP/2 connection; nginx’s
+ * default `http2_max_concurrent_streams` is often 128 — raise it on the edge
+ * if you want this cap to translate into real parallel streams.
  */
-// SPEED TEST: bumped 32 -> 128. The H2 spec allows 100 concurrent streams
-// per connection by default; some gateways advertise more. We'll find out.
-const HTTP2_TARGET_CONCURRENCY = 128;
+const HTTP2_TARGET_CONCURRENCY = 256;
+
+/**
+ * Cross-origin Resource Timing usually hides `nextHopProtocol` unless the
+ * gateway sends `Timing-Allow-Origin`. Ramp anyway for the default prod Bee
+ * URL (same host as {@link DEFAULT_BEE_API_URL}) when the protocol field is
+ * empty but the connection is HTTPS — our public gateway is HTTP/2.
+ *
+ * Set `NEXT_PUBLIC_ASSUME_HTTP2_UPLOAD=true` to apply the same assumption for
+ * any **https** gateway URL (self‑hosted H2 only).
+ */
+function gatewayAssumesHttp2(beeApiUrl: string): boolean {
+  if (process.env.NEXT_PUBLIC_ASSUME_HTTP2_UPLOAD === 'true') {
+    try {
+      return new URL(beeApiUrl).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const u = new URL(beeApiUrl);
+    const def = new URL(DEFAULT_BEE_API_URL);
+    return u.protocol === 'https:' && u.hostname.toLowerCase() === def.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * After the first successful `/chunks` POST, raise {@link HTTP2_TARGET_CONCURRENCY}
+ * when we see `h2` in Resource Timing, or when protocol is hidden but
+ * {@link gatewayAssumesHttp2} applies.
+ */
+function maybeRampUploadQueueForHttp2(
+  queue: { concurrency: number; capacity: number },
+  beeApiUrl: string,
+  startConcurrency: number,
+  onFirstChunk?: (diag: { rawNextHop: string; ramped: boolean }) => void
+): void {
+  if (typeof performance === 'undefined' || !performance.getEntriesByType) return;
+
+  const recent = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+  const scanStart = Math.max(0, recent.length - 50);
+  for (let i = recent.length - 1; i >= scanStart; i--) {
+    const entry = recent[i];
+    if (!entry.name.includes('/chunks')) continue;
+
+    const raw = (entry.nextHopProtocol || '').trim();
+    const wantRamp =
+      raw === 'h2' ||
+      (raw === '' && beeApiUrl.startsWith('https://') && gatewayAssumesHttp2(beeApiUrl));
+
+    let ramped = false;
+    if (wantRamp && queue.concurrency < HTTP2_TARGET_CONCURRENCY) {
+      queue.concurrency = HTTP2_TARGET_CONCURRENCY;
+      queue.capacity = HTTP2_TARGET_CONCURRENCY * 2;
+      ramped = true;
+      console.info(
+        `[ClientSideUpload] HTTP/2 upload concurrency ${startConcurrency} → ${HTTP2_TARGET_CONCURRENCY}` +
+          (raw === 'h2'
+            ? ' (nextHopProtocol=h2)'
+            : ' (nextHopProtocol hidden — using gateway assumption; add Timing-Allow-Origin on /chunks to expose protocol)')
+      );
+    } else if (raw === 'http/1.1') {
+      console.info(
+        '[ClientSideUpload] nextHopProtocol=http/1.1 — keep default parallelism (browser connection limit)'
+      );
+    }
+    onFirstChunk?.({ rawNextHop: raw, ramped });
+    return;
+  }
+}
 
 /**
  * Refuse to start an upload if the projected post-upload bucket utilization
@@ -392,44 +464,6 @@ export async function uploadFileClientSide(
   }, 1000);
   const stopSampler = () => clearInterval(sampler);
 
-  // Adaptive concurrency: after the first chunk completes, peek at the
-  // Resource Timing entry to see whether the gateway negotiated HTTP/2.
-  // If it did, ramp the queue's concurrency up to {@link HTTP2_TARGET_CONCURRENCY}
-  // — HTTP/2 multiplexes over one TCP connection, so the browser's
-  // 6-conn-per-host HTTP/1.1 cap doesn't apply and going wide is essentially
-  // free. cafe-utility's AsyncQueue reads `concurrency` and `capacity` on
-  // every `process()` call so mutating them mid-flight Just Works.
-  let protocolDetectionDone = false;
-  const detectAndMaybeRampConcurrency = () => {
-    if (protocolDetectionDone) return;
-    if (typeof performance === 'undefined' || !performance.getEntriesByType) return;
-    const recent = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-    // Walk from the end — our latest /chunks request will be near the tail.
-    // Cap the scan at 50 entries to keep this O(constant).
-    const start = Math.max(0, recent.length - 50);
-    for (let i = recent.length - 1; i >= start; i--) {
-      const entry = recent[i];
-      if (!entry.name.includes('/chunks')) continue;
-      protocolDetectionDone = true;
-      detectedHttpProtocol = entry.nextHopProtocol || undefined;
-      if (detectedHttpProtocol === 'h2' && queue.concurrency < HTTP2_TARGET_CONCURRENCY) {
-        queue.concurrency = HTTP2_TARGET_CONCURRENCY;
-        queue.capacity = HTTP2_TARGET_CONCURRENCY * 2;
-        console.info(
-          `[ClientSideUpload] HTTP/2 gateway detected, ramping concurrency ${concurrency} → ${HTTP2_TARGET_CONCURRENCY}`
-        );
-        mark('ramped concurrency', {
-          from: concurrency,
-          to: HTTP2_TARGET_CONCURRENCY,
-          protocol: detectedHttpProtocol,
-        });
-      } else {
-        mark('protocol detected', { protocol: detectedHttpProtocol ?? 'unknown' });
-      }
-      return;
-    }
-  };
-
   let lastStatePersistAt = 0;
   // saveStamperState is now async (IDB-backed). Fire-and-forget the write —
   // it's a 256 KB structured-clone put on a separate transaction; latency
@@ -547,7 +581,23 @@ export async function uploadFileClientSide(
         // After the first successful chunk we have at least one Resource
         // Timing entry; check whether the gateway gave us HTTP/2 and ramp
         // up concurrency if so. No-op on subsequent calls.
-        if (chunksUploaded === 1) detectAndMaybeRampConcurrency();
+        if (chunksUploaded === 1) {
+          maybeRampUploadQueueForHttp2(queue, beeApiUrl, concurrency, diag => {
+            if (diag.ramped) {
+              detectedHttpProtocol = diag.rawNextHop === 'h2' ? 'h2' : 'h2-assumed';
+              mark('ramped concurrency', {
+                from: concurrency,
+                to: HTTP2_TARGET_CONCURRENCY,
+                protocol: detectedHttpProtocol,
+              });
+            } else {
+              detectedHttpProtocol = diag.rawNextHop || undefined;
+              mark('protocol detected', {
+                protocol: diag.rawNextHop || 'unknown',
+              });
+            }
+          });
+        }
         return;
       } catch (err) {
         const isLast = attempt === MAX_CHUNK_RETRIES - 1;
@@ -1418,6 +1468,9 @@ async function createUploadContext(opts: {
 
   const queue = new AsyncQueue(concurrency, concurrency * 2);
 
+  /** HTTP/2 concurrency ramp after first real chunk POST (see {@link maybeRampUploadQueueForHttp2}). */
+  let uploadRampProbeDone = false;
+
   const stampedAddrs = await loadStampedAddresses(cleanBatchId);
 
   const ctx: UploadCtx = {
@@ -1518,6 +1571,10 @@ async function createUploadContext(opts: {
         void addStampedAddress(ctx.cleanBatchId, addrHex);
         ctx.persistState();
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
+        if (!uploadRampProbeDone) {
+          uploadRampProbeDone = true;
+          maybeRampUploadQueueForHttp2(ctx.queue, beeApiUrl, concurrency);
+        }
         return;
       } catch (err) {
         const isLast = attempt === MAX_CHUNK_RETRIES - 1;

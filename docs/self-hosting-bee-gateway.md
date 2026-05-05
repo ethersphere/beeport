@@ -136,6 +136,21 @@ Apply with:
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+## HTTP/2 (recommended for client-side chunk uploads)
+
+The Beeport tab issues **tens of thousands** of small `POST /chunks` requests per large file. **HTTP/1.1** is limited to a handful of parallel connections per host; **HTTP/2** multiplexes many streams on one TLS connection and usually improves throughput a lot.
+
+1. Enable HTTP/2 on the public TLS listener, e.g. `listen 443 ssl http2;` (see the [nginx `http2` module](http://nginx.org/en/docs/http/ngx_http_v2_module.html)).
+2. Optional: raise the concurrent stream limit so the edge allows wide parallelism. Beeport ramps to **256** parallel in-flight chunk tasks on HTTP/2 gateways — nginx’s default `http2_max_concurrent_streams` is often **128**, so you may raise it in `http` or `server`:
+   ```nginx
+   http2_max_concurrent_streams 256;
+   ```
+3. Optional: expose **Resource Timing** so the browser reports `nextHopProtocol` on cross-origin `/chunks` (otherwise it is hidden unless the gateway sends `Timing-Allow-Origin`):
+   ```nginx
+   add_header Timing-Allow-Origin "*" always;
+   ```
+   Narrow `*` to specific origins if you prefer.
+
 ## Verify CORS (localhost dev → public gateway)
 
 From any machine, check that preflight for `POST /chunks` allows your dev
