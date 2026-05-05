@@ -82,11 +82,11 @@ graph TB
 src/app/
 ├── components/
 │   ├── SwapComponent.tsx              # Main upload UI / orchestration
-│   ├── ClientSideUpload.ts            # SWIP client-side BMT + stamp + POST /chunks
+│   ├── ClientSideUpload.ts            # SWIP client-side BMT + stamp + POST /chunks (CAC)
 │   ├── ClientStamping.ts              # Hot-key derivation + persisted issuer state
 │   ├── SelfCustodyBatch.ts            # On-chain createBatch (direct + StampsRegistryV2)
 │   ├── PostageContract.ts             # Read-only Postage Stamp contract helpers
-│   ├── IssuerStateSOC.ts              # Issuer-state recovery via Single Owner Chunk
+│   ├── IssuerStateSOC.ts              # Issuer-state backup: blob on /chunks, SOC via /soc + presigned stamp
 │   ├── BeeNodeHealth.ts               # Pre-upload Bee gateway health probe + hook
 │   ├── NFTCollectionClientSide.ts     # NFT collection metadata processing
 │   ├── FolderArchiveExtract.ts        # ZIP/TAR extraction + auto-index generation

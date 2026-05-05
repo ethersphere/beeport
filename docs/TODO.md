@@ -105,7 +105,7 @@ Per-batch chunk-address dedup so repeated uploads of the same file are cheap:
 ### 2.2 Replace bee-js's axios with `fetch` for `/chunks` — `[x]` shipped
 **Files:** `src/app/components/FastPresignedStamp.ts` (`uploadChunkPresignedFetch`), `src/app/components/ClientSideUpload.ts`
 
-Self-custody hot path uses **`fetch`** for `POST /chunks` with `Swarm-Postage-Stamp`, not `bee.uploadChunk` / axios. bee-js remains for SOC helpers, manifest reads, etc.
+Self-custody hot path uses **`fetch`** for `POST /chunks` and issuer-state **`POST /soc/...`** with `Swarm-Postage-Stamp`, not `bee.uploadChunk` / axios. bee-js remains for chunk construction helpers, manifest reads, etc.
 
 ### 2.4 Resumable uploads via persisted progress
 **Files:** `src/app/components/ClientSideUpload.ts`, `src/app/components/ClientStamping.ts`

@@ -296,6 +296,15 @@ state.** Old data stays intact.
    reconstructed post-save buckets into IndexedDB. See
    `IssuerStateSOC.ts`.
 
+   **Upload mechanics:** the encrypted state blob is uploaded as normal CACs
+   (`POST /chunks`). The SOC itself must use Bee's SOC API:
+   `POST /soc/{owner}/{identifier}?sig={ownerSignatureOverIdAndInnerAddress}`
+   with body = **inner CAC bytes only** (`span || payload`), and the
+   postage stamp in `swarm-postage-stamp` built over the **SOC address**
+   (not the inner CAC address). Posting full SOC wire data to `/chunks`
+   makes Bee verify the stamp against the wrong address. See
+   [Client-side chunk pipeline](./client-side-chunk-pipeline.md).
+
    **No drift.** The delta records every slot the save itself touched —
    K encrypted-blob chunks plus the 1 SOC chunk — and we apply it on
    restore, so the recovered state on browser B is bit-for-bit identical
@@ -360,8 +369,8 @@ the canonical message once per session and the rest is browser-side work.
 
 ### Browser upload implementation
 
-For how chunks are signed (including optional Web Workers), how `/chunks` POSTs
-are made, HTTP/2 concurrency caps, and why SOC backup uses bee-js
-`Stamper.stamp`, see **[Client-side chunk pipeline](./client-side-chunk-pipeline.md)**.
+For how chunks are signed (including optional Web Workers), how `POST /chunks`
+and `POST /soc/...` differ, HTTP/2 concurrency caps, and why issuer-state SOC
+uses **`uploadSocPresignedFetch`**, see **[Client-side chunk pipeline](./client-side-chunk-pipeline.md)**.
 
 ---

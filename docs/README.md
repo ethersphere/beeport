@@ -22,7 +22,7 @@ Welcome to the documentation for uploading files to Swarm with Beeport.
 - **[Architecture](./architecture.md)** - Project architecture and third-party integrations
 - **[Postage Stamps](./postage-stamps.md)** - Understanding and managing storage stamps
 - **[Self-custody hot key](./self-custody-hot-key.md)** - How the per-wallet derived key owns batches and signs chunks
-- **[Client-side chunk pipeline](./client-side-chunk-pipeline.md)** - Presigned `fetch`, concurrency caps, workers, SOC stamp path
+- **[Client-side chunk pipeline](./client-side-chunk-pipeline.md)** - Presigned `fetch`, `/chunks` vs `/soc`, concurrency caps, workers
 - **[ENS Integration](./ens-integration.md)** - Link your ENS domains to Swarm content
 - **[ENS Technical Reference](./ens-technical-reference.md)** - Detailed ENS implementation overview
 - **[File Formats & Limits](./file-formats-limits.md)** - Supported formats and size limitations
