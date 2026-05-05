@@ -296,8 +296,14 @@ function defaultWorkerCount(): number {
 
 /**
  * Pool of workers that sign {@link ethSignedHashForStampPayload} digests.
- * If workers fail to load (common in dev when `.ts` is served as `video/mp2t`),
+ * If workers fail to load (e.g. blocked module workers, worker pool exhausted),
  * degrades to {@link signStampMsgHash} on the main thread automatically.
+ *
+ * **Webpack / Next dev:** the worker URL must be written as
+ * `new Worker(new URL('…/file.ts', import.meta.url), …)` **inline** in the
+ * `Worker` call. Assigning `new URL(…)` to a variable breaks webpack’s worker
+ * detection; the dev server then serves raw `*.ts` as MIME `video/mp2t` and
+ * every worker fails until we fall back (noisy console, uploads still work).
  */
 export class StampSignerPool {
   private readonly privKeyBytes: Uint8Array;
@@ -315,15 +321,19 @@ export class StampSignerPool {
   constructor(privateKey: Uint8Array, workerCount = defaultWorkerCount()) {
     this.privKeyBytes = new Uint8Array(privateKey);
     const n = Math.max(1, workerCount);
-    const url = new URL('../../workers/stampSignerWorker.ts', import.meta.url);
-    this.ready = this.startWorkers(url, n, privateKey);
+    this.ready = this.startWorkers(n, privateKey);
   }
 
-  private async startWorkers(url: URL, n: number, privateKey: Uint8Array): Promise<void> {
+  private async startWorkers(n: number, privateKey: Uint8Array): Promise<void> {
     const readyWaits: Promise<void>[] = [];
     try {
       for (let i = 0; i < n; i++) {
-        const w = new Worker(url, { type: 'module' });
+        // Webpack 5 only treats this as a worker entry if the `new URL(...)`
+        // call is nested directly under `new Worker(...)` (same issue in Next
+        // dev: otherwise `*.ts` is served as video/mp2t).
+        const w = new Worker(new URL('../../workers/stampSignerWorker.ts', import.meta.url), {
+          type: 'module',
+        });
         const wait = new Promise<void>((resolve, reject) => {
           const to = setTimeout(() => reject(new Error('stamp worker ready timeout')), 15_000);
           const onMsg = (ev: MessageEvent) => {

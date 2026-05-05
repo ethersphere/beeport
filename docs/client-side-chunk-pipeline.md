@@ -12,6 +12,10 @@ Technical reference for how Beeport stamps and uploads chunks from the browser w
 | `ClientStamping.ts` | Stamper persistence (IndexedDB), chunk-address dedup batching |
 | `IssuerStateSOC.ts` | Encrypted issuer-state backup to Swarm (content blob on `/chunks`, SOC on `/soc`) |
 
+## Stamp signer web worker
+
+Webpack 5 (used by `next dev`) only detects worker entries when **`new URL('…/worker.ts', import.meta.url)` is nested directly inside `new Worker(..., { type: 'module' })`**. If the URL is assigned to a variable first, the dev middleware can serve the raw `*.ts` asset with MIME **`video/mp2t`** (MPEG transport), the browser refuses the module worker, and you see six identical console errors — **`StampSignerPool`** then falls back to main-thread signing, so uploads still succeed. `StampSignerWorker.ts` is constructed inline in `FastPresignedStamp.ts` to avoid that.
+
 ## Postage stamps
 
 Bulk leaf and manifest chunks use **`buildStampEnvelope`** + **`uploadChunkPresignedFetch`** for throughput (`fetch` instead of axios, no JSON parse on success).
