@@ -2324,7 +2324,7 @@ const SwapComponent: React.FC = () => {
                               Upload NFT collection
                               <span
                                 className={styles.tooltip}
-                                title="Upload a ZIP file containing 'images' and 'json' folders. Images will be uploaded separately, and JSON metadata will be updated with bzz.link URLs pointing to the uploaded images."
+                                title="ZIP must include images/ and json/ folders (any parent path is OK, e.g. build/images and build/json). Files are uploaded as flat collections; metadata image fields are rewritten to point at the images manifest."
                               >
                                 ?
                               </span>
@@ -2565,6 +2565,34 @@ const SwapComponent: React.FC = () => {
                                 View metadata
                               </a>
                             </div>
+                          </div>
+                        </div>
+
+                        <div className={styles.nftPathHint}>
+                          <p className={styles.nftPathHintTitle}>How to load each token file</p>
+                          <p className={styles.nftPathHintGatewayLead}>
+                            Example URLs (swap <code className={styles.nftPathHintCode}>1.json</code> /{' '}
+                            <code className={styles.nftPathHintCode}>1.png</code> for your filenames):
+                          </p>
+                          <div className={styles.nftPathHintGatewayLinks}>
+                            <a
+                              href={`${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/1.json`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.nftPathHintLink}
+                            >
+                              {BEE_GATEWAY_URL}
+                              {nftCollectionResult.metadataReference}/1.json
+                            </a>
+                            <a
+                              href={`${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/1.png`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.nftPathHintLink}
+                            >
+                              {BEE_GATEWAY_URL}
+                              {nftCollectionResult.imagesReference}/1.png
+                            </a>
                           </div>
                         </div>
                       </div>
