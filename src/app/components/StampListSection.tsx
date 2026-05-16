@@ -651,7 +651,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   {stamp.isPropagating ? (
                     <div className={styles.propagatingMessage}>
                       <span className={styles.propagatingText}>
-                        🕐 Stamp is propagating on network - will be ready in up to 2 minutes
+                        🕐 Storage is propagating on the network — ready in up to 2 minutes
                       </span>
                     </div>
                   ) : (
@@ -694,8 +694,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       disabled={refreshingStamps.has(stamp.batchId)}
                       title={
                         refreshingStamps.has(stamp.batchId)
-                          ? 'Checking stamp status...'
-                          : 'Refresh to check if stamp is ready'
+                          ? 'Checking status...'
+                          : 'Refresh to check if ready'
                       }
                     >
                       {refreshingStamps.has(stamp.batchId) ? '⏳ Checking...' : 'Refresh'}
@@ -716,8 +716,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     className={styles.topUpButton}
                     title={
                       stamp.isPropagating
-                        ? 'Please wait for stamp to finish propagating'
-                        : 'Top up this stamp'
+                        ? 'Please wait for propagation to finish'
+                        : 'Top up this storage'
                     }
                     disabled={stamp.isPropagating}
                     onClick={() => {
@@ -739,7 +739,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                         } catch (error) {
                           console.error('Error during top-up navigation:', error);
                           // Emergency fallback if all else fails
-                          alert('Navigation failed. Please copy the stamp ID and use it manually.');
+                          alert('Navigation failed. Please copy the ID and try again manually.');
                         }
                       }
                     }}

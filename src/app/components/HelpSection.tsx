@@ -237,17 +237,16 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <h3>What happens if my upload fails?</h3>
             <p>
               If an upload fails, the system will automatically retry several times. If it continues
-              to fail, your stamps and tokens remain safe, and you can try the upload again. The
-              most common cause of upload failures is network connectivity issues.
+              to fail, your tokens remain safe, and you can try the upload again. The most common
+              cause of upload failures is network connectivity issues.
             </p>
           </div>
 
           <div className={styles.faqItem}>
             <h3>How long does it take for my storage to become available?</h3>
             <p>
-              After purchasing storage, it typically takes 2-5 minutes for your storage stamps to
-              become usable. The app will automatically notify you once your storage is ready for
-              use.
+              After purchasing storage, it typically takes 2-5 minutes for it to become usable. The
+              app will automatically notify you once your storage is ready for use.
             </p>
           </div>
           <div className={styles.faqItem}>
@@ -260,13 +259,12 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3>Stamp persistence</h3>
+            <h3>Storage persistence</h3>
             <p>
-              Your storage stamps are linked to your wallet address, not to your browser. This means
-              when you connect the same wallet to Beeport on a different browser or machine, all
-              your previously purchased stamps will automatically be loaded and available for use.
-              You can seamlessly continue uploading files using your existing stamps from any device
-              where you connect your wallet.
+              Your storage is linked to your wallet address, not to your browser. This means when
+              you connect the same wallet to Beeport on a different browser or machine, your
+              previously purchased storage will automatically be loaded and available for use. You
+              can continue uploading from any device where you connect your wallet.
             </p>
           </div>
           <div className={styles.faqItem}>
