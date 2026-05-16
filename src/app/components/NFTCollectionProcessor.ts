@@ -2,6 +2,66 @@ import JSZip from 'jszip';
 import Tar from 'tar-js';
 import { SWARM_DEFERRED_UPLOAD } from './constants';
 
+/** Normalize archive entry paths (OS separators, leading junk). */
+function normalizeZipPath(filename: string): string {
+  return filename
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '')
+    .replace(/^\/+/, '');
+}
+
+function shouldSkipZipEntry(normalizedPath: string): boolean {
+  const lower = normalizedPath.toLowerCase();
+  return (
+    lower.includes('__macosx/') ||
+    lower.endsWith('.ds_store') ||
+    normalizedPath.split('/').some(seg => seg === '.' || seg === '..')
+  );
+}
+
+/**
+ * Find collection files whether the ZIP root is `images/` or nested e.g. `build/images/`.
+ * Uses the last path segment named `images` or `json` before the filename (case-insensitive),
+ * so e.g. …/images/json/1.json is treated as metadata under json/.
+ */
+function classifyNftZipPath(
+  normalizedPath: string
+): { kind: 'images' | 'json'; fileName: string } | null {
+  const parts = normalizedPath.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const fileName = parts[parts.length - 1];
+  const dirs = parts.slice(0, -1);
+
+  for (let i = dirs.length - 1; i >= 0; i--) {
+    const seg = dirs[i].toLowerCase();
+    if (seg === 'images') {
+      return { kind: 'images', fileName };
+    }
+    if (seg === 'json') {
+      return { kind: 'json', fileName };
+    }
+  }
+  return null;
+}
+
+function sampleZipPaths(zipContents: JSZip): string[] {
+  const out: string[] = [];
+  for (const name of Object.keys(zipContents.files)) {
+    const entry = zipContents.files[name];
+    if (entry.dir) continue;
+    const norm = normalizeZipPath(name);
+    if (shouldSkipZipEntry(norm)) continue;
+    out.push(norm);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+const NFT_ZIP_EXPECTED_LAYOUT =
+  'Put metadata JSON files under a json/ folder and image files under an images/ folder. ' +
+  'Example: json/1.json, images/1.png. You may zip a parent folder (e.g. build/ containing build/images and build/json); that layout is supported.';
+
 export interface NFTCollectionResult {
   imagesReference: string;
   metadataReference: string;
@@ -48,23 +108,22 @@ export const processNFTCollection = async (
   const imageFiles: { [key: string]: Uint8Array } = {};
   const jsonFiles: { [key: string]: string } = {};
 
-  // Process all files in the ZIP
+  // Process all files in the ZIP (supports images/ and json/ at any depth, e.g. build/images/)
   for (const [filename, zipEntry] of Object.entries(zipContents.files)) {
-    if (zipEntry.dir) continue; // Skip directories
+    if (zipEntry.dir) continue;
 
-    // Determine if file is in images or json folder
-    const pathParts = filename.split('/');
-    if (pathParts.length < 2) continue; // Skip files not in folders
+    const normalized = normalizeZipPath(filename);
+    if (shouldSkipZipEntry(normalized)) continue;
 
-    const folderName = pathParts[0].toLowerCase();
-    const fileName = pathParts[pathParts.length - 1]; // Get just the filename
+    const classified = classifyNftZipPath(normalized);
+    if (!classified) continue;
 
-    if (folderName === 'images') {
-      // Process image files
+    const { kind, fileName } = classified;
+
+    if (kind === 'images') {
       const content = await zipEntry.async('arraybuffer');
       imageFiles[fileName] = new Uint8Array(content);
-    } else if (folderName === 'json') {
-      // Process JSON files
+    } else {
       const content = await zipEntry.async('string');
       jsonFiles[fileName] = content;
     }
@@ -74,12 +133,20 @@ export const processNFTCollection = async (
     `Found ${Object.keys(imageFiles).length} images and ${Object.keys(jsonFiles).length} JSON files`
   );
 
+  const samples = sampleZipPaths(zipContents);
+  const sampleSuffix =
+    samples.length > 0 ? ` Paths found in the ZIP (sample): ${samples.join('; ')}.` : '';
+
   if (Object.keys(imageFiles).length === 0) {
-    throw new Error('No images found in the images folder');
+    throw new Error(
+      `No image files found under an images/ folder.${sampleSuffix} ${NFT_ZIP_EXPECTED_LAYOUT}`
+    );
   }
 
   if (Object.keys(jsonFiles).length === 0) {
-    throw new Error('No JSON metadata files found in the json folder');
+    throw new Error(
+      `No JSON metadata files found under a json/ folder.${sampleSuffix} ${NFT_ZIP_EXPECTED_LAYOUT}`
+    );
   }
 
   // Step 1: Create TAR with images (without subfolder)
