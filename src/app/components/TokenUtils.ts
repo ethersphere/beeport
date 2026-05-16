@@ -1,7 +1,34 @@
-import { ChainType, getTokenBalancesByChain, getTokens, TokensResponse } from '@lifi/sdk';
+import {
+  ChainId,
+  ChainType,
+  getTokenBalancesByChain,
+  getTokens,
+  TokensResponse,
+} from '@lifi/sdk';
 import { useState, useCallback } from 'react';
 import { formatUnits } from 'viem';
+import { gnosisFromTokenCanReachBzz } from './SushiQuotes';
 import { performWithRetry, toChecksumAddress } from './utils';
+
+/** Parallel RPC checks for Gnosis route gating (each token runs multiple reads). */
+const GNOSIS_ROUTE_CHECK_CONCURRENCY = 4;
+
+async function filterGnosisBalancesToSushiRoutable<T extends { address: string }>(
+  tokensWithPositiveBalance: T[]
+): Promise<T[]> {
+  if (tokensWithPositiveBalance.length === 0) {
+    return [];
+  }
+  const kept: T[] = [];
+  for (let i = 0; i < tokensWithPositiveBalance.length; i += GNOSIS_ROUTE_CHECK_CONCURRENCY) {
+    const chunk = tokensWithPositiveBalance.slice(i, i + GNOSIS_ROUTE_CHECK_CONCURRENCY);
+    const flags = await Promise.all(
+      chunk.map(async t => ((await gnosisFromTokenCanReachBzz(t.address)) ? t : null))
+    );
+    kept.push(...(flags.filter(Boolean) as T[]));
+  }
+  return kept;
+}
 
 // List of popular tokens to prioritize when wallet is not connected
 const POPULAR_TOKENS = [
@@ -118,11 +145,29 @@ export const useTokenManagement = (
             }
           );
           console.log('Token balances:', balances);
-          setTokenBalances(balances);
+
+          let effectiveBalances = balances;
+          if (currentChainId === ChainId.DAI && balances?.[currentChainId]) {
+            const chainList = balances[currentChainId];
+            const positive = chainList.filter(t => (t?.amount ?? 0n) > 0n);
+            if (positive.length > 0) {
+              const routable = await filterGnosisBalancesToSushiRoutable(positive);
+              const allow = new Set(routable.map(t => t.address.toLowerCase()));
+              const filteredChain = chainList.filter(
+                t => (t?.amount ?? 0n) === 0n || allow.has(t.address.toLowerCase())
+              );
+              effectiveBalances = { ...balances, [currentChainId]: filteredChain };
+              console.log(
+                `🍣 Gnosis: ${positive.length} token(s) with balance → ${routable.length} with Sushi route to BZZ`
+              );
+            }
+          }
+
+          setTokenBalances(effectiveBalances);
 
           // Find tokens with balance
-          if (balances?.[currentChainId]) {
-            const tokensWithBalance = balances[currentChainId]
+          if (effectiveBalances?.[currentChainId]) {
+            const tokensWithBalance = effectiveBalances[currentChainId]
               .filter(t => (t?.amount ?? 0n) > 0n)
               .sort((a, b) => {
                 const aUsdValue =
@@ -154,6 +199,9 @@ export const useTokenManagement = (
                 setFromToken(checksumAddress);
                 setSelectedTokenInfo(uniqueTokensWithBalance[0]);
               }
+            } else {
+              setFromToken('');
+              setSelectedTokenInfo(null);
             }
           }
         } else {

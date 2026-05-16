@@ -7,6 +7,7 @@ import {
   http,
 } from 'viem';
 import { gnosis } from 'viem/chains';
+import { getRpcUrlsForChain } from '@/app/wagmi';
 
 // Global state for custom RPC URL
 let globalCustomRpcUrl: string | undefined = undefined;
@@ -294,26 +295,19 @@ export const handleExchangeRateUpdate = async (
  * @returns A public client configured for the Gnosis chain
  */
 export const getGnosisPublicClient = (rpcIndex: number = 0) => {
-  // Use global custom RPC URL if set, otherwise fall back to env variable
-  const envRpcUrl = process.env.NEXT_PUBLIC_GNOSIS_RPC;
+  // Same RPC list as wagmi (single source of truth; no duplicate list here)
+  const fallbackRpcs = getRpcUrlsForChain(gnosis.id)!;
 
-  // Public fallback RPC URLs in order of preference
-  const fallbackRpcs = [
-    'https://rpc.gnosischain.com',
-    'https://gnosis-mainnet.public.blastapi.io',
-    'https://gnosis.drpc.org',
-  ];
-
-  let rpcUrl;
+  let rpcUrl: string;
   if (rpcIndex === 0) {
-    // Primary attempt: use custom/env RPC or first fallback
-    rpcUrl = globalCustomRpcUrl || envRpcUrl || fallbackRpcs[0];
+    // Primary attempt: use global custom RPC or first fallback
+    rpcUrl = globalCustomRpcUrl || fallbackRpcs[0];
   } else {
     // Fallback attempts: use specific fallback RPC
-    rpcUrl = fallbackRpcs[rpcIndex] || fallbackRpcs[fallbackRpcs.length - 1];
+    rpcUrl = fallbackRpcs[rpcIndex] ?? fallbackRpcs[fallbackRpcs.length - 1];
   }
 
-  // We are using public RPC for the Gnosis chain unless a custom RPC is set or env variable is set
+  // We are using public RPC for the Gnosis chain unless a global custom RPC is set
   const client = createPublicClient({
     chain: gnosis,
     transport: rpcUrl ? http(rpcUrl) : http(),
@@ -418,6 +412,76 @@ export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promis
   } catch (error) {
     console.error(`Error fetching stamp info for ${batchId}:`, error);
     return null;
+  }
+};
+
+/**
+ * Update upload history expiry dates for a specific stamp after top-up
+ * @param stampId The stamp batch ID that was topped up
+ * @param additionalDays The number of days added by the top-up
+ * @param address The wallet address whose history to update
+ * @returns boolean True if history was updated, false otherwise
+ */
+export const updateHistoryAfterTopUp = (
+  stampId: string,
+  additionalDays: number,
+  address: string
+): boolean => {
+  try {
+    console.log(`🔄 Updating upload history for topped-up stamp: ${stampId} (+${additionalDays} days)`);
+
+    // Get the upload history from localStorage
+    const savedHistory = localStorage.getItem('uploadHistory');
+    if (!savedHistory) {
+      console.log('No upload history found');
+      return false;
+    }
+
+    const allHistory = JSON.parse(savedHistory);
+    const addressHistory = allHistory[address];
+
+    if (!addressHistory || addressHistory.length === 0) {
+      console.log('No upload history found for this address');
+      return false;
+    }
+
+    // Format stamp ID for comparison (remove 0x prefix if present)
+    const formattedStampId = stampId.startsWith('0x') ? stampId.slice(2) : stampId;
+
+    // Calculate additional milliseconds
+    const additionalMs = additionalDays * 24 * 60 * 60 * 1000;
+
+    // Update all records with this stamp ID
+    let updatedCount = 0;
+    const updatedHistory = addressHistory.map((record: any) => {
+      // Format record's stampId for comparison
+      const recordStampId = record.stampId?.startsWith('0x')
+        ? record.stampId.slice(2)
+        : record.stampId;
+
+      if (recordStampId?.toLowerCase() === formattedStampId.toLowerCase()) {
+        updatedCount++;
+        // Add the additional days to the existing expiry date
+        const newExpiryDate = record.expiryDate + additionalMs;
+        console.log(`📅 Updated expiry: ${new Date(newExpiryDate).toLocaleDateString()}`);
+        return { ...record, expiryDate: newExpiryDate };
+      }
+      return record;
+    });
+
+    if (updatedCount > 0) {
+      // Save updated history
+      allHistory[address] = updatedHistory;
+      localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      console.log(`✅ Updated ${updatedCount} history record(s) with new expiry date`);
+      return true;
+    } else {
+      console.log('No matching history records found for this stamp');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error updating history after top-up:', error);
+    return false;
   }
 };
 

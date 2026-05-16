@@ -366,39 +366,7 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
 
     const messageToSign = `${processedFile.name}:${postageBatchId}`;
 
-    // Helper function to sign with timeout
-    const signWithTimeout = async (message: string, timeoutMs: number = 5000): Promise<string> => {
-      return new Promise(async (resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('WALLET_UNLOCK_REQUIRED'));
-        }, timeoutMs);
-
-        try {
-          const signature = await walletClient.signMessage({ message });
-          clearTimeout(timeout);
-          resolve(signature);
-        } catch (error) {
-          clearTimeout(timeout);
-          reject(error);
-        }
-      });
-    };
-
-    let signedMessage: string;
-    try {
-      signedMessage = await signWithTimeout(messageToSign);
-    } catch (error: any) {
-      if (error.message === 'WALLET_UNLOCK_REQUIRED') {
-        setStatusMessage({
-          step: 'Wallet Locked',
-          message: 'Please unlock your wallet to sign the message',
-          error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
-          isError: true,
-        });
-        throw new Error('Wallet unlock required - please unlock your wallet and try again');
-      }
-      throw error;
-    }
+    const signedMessage = await walletClient.signMessage({ message: messageToSign });
 
     // Determine Content-Type with fallback for unsupported file types
     let contentType: string;
@@ -689,41 +657,7 @@ export const handleMultiFileUpload = async (
       // Only sign message for the very first file
       let signedMessage = '';
       if (fileIndex === 0) {
-        // Helper function to sign with timeout
-        const signWithTimeout = async (
-          message: string,
-          timeoutMs: number = 5000
-        ): Promise<string> => {
-          return new Promise(async (resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error('WALLET_UNLOCK_REQUIRED'));
-            }, timeoutMs);
-
-            try {
-              const signature = await walletClient.signMessage({ message });
-              clearTimeout(timeout);
-              resolve(signature);
-            } catch (error) {
-              clearTimeout(timeout);
-              reject(error);
-            }
-          });
-        };
-
-        try {
-          signedMessage = await signWithTimeout(messageToSign);
-        } catch (error: any) {
-          if (error.message === 'WALLET_UNLOCK_REQUIRED') {
-            setStatusMessage({
-              step: 'Wallet Locked',
-              message: 'Please unlock your wallet to sign the message',
-              error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
-              isError: true,
-            });
-            throw new Error('Wallet unlock required - please unlock your wallet and try again');
-          }
-          throw error;
-        }
+        signedMessage = await walletClient.signMessage({ message: messageToSign });
       }
 
       // Determine Content-Type with fallback for unsupported file types
@@ -776,41 +710,7 @@ export const handleMultiFileUpload = async (
             `❌ File ${fileIndex + 1}: No session token available, falling back to signature (this should not happen)`
           );
 
-          // Helper function to sign with timeout
-          const signWithTimeout = async (
-            message: string,
-            timeoutMs: number = 5000
-          ): Promise<string> => {
-            return new Promise(async (resolve, reject) => {
-              const timeout = setTimeout(() => {
-                reject(new Error('WALLET_UNLOCK_REQUIRED'));
-              }, timeoutMs);
-
-              try {
-                const signature = await walletClient.signMessage({ message });
-                clearTimeout(timeout);
-                resolve(signature);
-              } catch (error) {
-                clearTimeout(timeout);
-                reject(error);
-              }
-            });
-          };
-
-          try {
-            signedMessage = await signWithTimeout(messageToSign);
-          } catch (error: any) {
-            if (error.message === 'WALLET_UNLOCK_REQUIRED') {
-              setStatusMessage({
-                step: 'Wallet Locked',
-                message: 'Please unlock your wallet to sign the message',
-                error: 'Your wallet appears to be locked. Please unlock your wallet and try again.',
-                isError: true,
-              });
-              throw new Error('Wallet unlock required - please unlock your wallet and try again');
-            }
-            throw error;
-          }
+          signedMessage = await walletClient.signMessage({ message: messageToSign });
           baseHeaders['x-upload-signed-message'] = signedMessage;
         }
       }

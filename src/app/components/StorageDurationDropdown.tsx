@@ -24,9 +24,10 @@ const StorageDurationDropdown: React.FC<StorageDurationDropdownProps> = ({
   placeholder = 'Please select duration',
 }) => {
   // Convert time options to dropdown options
+  // Add "~" to indicate approximate duration (depends on BZZ price oracle)
   const dropdownOptions: DropdownOption[] = timeOptions.map(({ days, display }) => ({
     value: days,
-    label: display,
+    label: `~${display}`,
     icon: '⏰',
   }));
 

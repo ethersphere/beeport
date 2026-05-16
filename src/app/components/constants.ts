@@ -11,7 +11,7 @@ export const LIFI_API_KEY =
   '83f85c7b-97d2-4130-95b0-f72af1f0261e.b11f7330-ebb1-4684-af33-f28759ec6853';
 
 export const DEFAULT_NODE_ADDRESS =
-  process.env.NEXT_PUBLIC_DEFAULT_NODE_ADDRESS || '0xb81784e65c84ca25b595ff4f0badb502673e343b';
+  process.env.NEXT_PUBLIC_DEFAULT_NODE_ADDRESS || '0x5cb4839B7d7b0ab6BaAbFEdD6749497ECa65b2Ca';
 
 export const LIFI_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_LIFI_CONTRACT_ADDRESS || '0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D';
@@ -23,7 +23,7 @@ export const GNOSIS_STAMP_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_STAMP_ADDRESS || '0x45a1502382541Cd610CC9068e88727426b696293';
 
 export const DEFAULT_BEE_API_URL =
-  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://swarming.site';
+  process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://beeport.xyz';
 
 // Check if we're running on production domains
 const isProductionDomain =
@@ -31,10 +31,10 @@ const isProductionDomain =
   (window.location.hostname === 'beeport.ethswarm.org' ||
     window.location.hostname === 'beeport.eth.limo');
 
-// BEE Gateway URL - use swarming.site for development, bzz.link for production
+// BEE Gateway URL - use beeport.xyz for development, bzz.link for production
 export const BEE_GATEWAY_URL =
   process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
-  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://swarming.site/bzz/');
+  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://beeport.xyz/bzz/');
 
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
@@ -57,7 +57,10 @@ export const MIN_TOKEN_BALANCE_USD = 0.5;
 // Minimum USD value for bridging to avoid dust amounts
 export const MIN_BRIDGE_USD_VALUE = 0.1;
 
-export const DEFAULT_SLIPPAGE = 0.05; // This is 5% slippage
+/** Default slippage in percent: 5 means 5%. Custom slippage (Settings) can use 0.5 steps. Relay API expects basis points; we convert in RelayQuotes (percent × 100 = bps). */
+export const DEFAULT_SLIPPAGE = 5;
+export const MIN_SLIPPAGE_PERCENT = 0.5;
+export const MAX_SLIPPAGE_PERCENT = 20;
 
 // Gas top-up configuration for cross-chain swaps
 export const GAS_TOPUP_THRESHOLD_XDAI = 1.0; // Minimum xDAI balance to skip gas top-up
@@ -66,7 +69,7 @@ export const GAS_TOPUP_AMOUNT_USD = '1000000'; // $1 in USD decimal format (1000
 // Relay and timing configuration
 export const RELAY_TIMER_BUFFER_SECONDS = 5; // Buffer added to estimated time for timer display
 export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status checks
-export const RELAY_STATUS_MAX_ATTEMPTS = 12; // Maximum status check attempts (1 minute)
+export const RELAY_STATUS_MAX_ATTEMPTS = 24; // Maximum status check attempts for valid statuses (2 minutes)
 export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
 // Swarm upload configuration
@@ -253,9 +256,179 @@ export const V3_POOL_ABI = [
   },
 ] as const;
 
-// Sushiswap V3 Pool address for BZZ/WXDAI on Gnosis
+// Sushiswap V3 Pool address for BZZ/USDC on Gnosis (also used for price display)
 export const BZZ_USDC_POOL_ADDRESS =
   process.env.NEXT_PUBLIC_BZZ_USDC_POOL_ADDRESS || '0x6f30b7cf40cb423c1d23478a9855701ecf43931e';
+
+// USDC token on Gnosis (bridged)
+export const GNOSIS_USDC_ADDRESS =
+  process.env.NEXT_PUBLIC_GNOSIS_USDC_ADDRESS || '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83';
+
+/**
+ * Intermediate token Relay bridges to on Gnosis for cross-chain stamp purchases.
+ * Relay has excellent routes to this token on most chains; the SushiSwapStampsRouter
+ * then swaps it → BZZ and creates the stamp atomically on Gnosis.
+ *
+ * IMPORTANT: This is Circle's native USDC on Gnosis (0x2a22…), NOT the older Ethereum-
+ * bridged USDC (0xDDAf…).  Relay only supports routing to the native address.
+ * The SushiSwapStampsRouter handles the two-hop: native USDC → bridged USDC → BZZ,
+ * using the fee-100 Sushi V3 pool between the two USDC tokens.
+ *
+ * Override with NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS when using a different token
+ * (must have a working Sushi V3 route to BZZ on Gnosis).
+ */
+export const RELAY_BRIDGE_TOKEN_ON_GNOSIS =
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_ON_GNOSIS ||
+  '0x2a22f9c3b484c3629090feed35f17ff8f88f76f0'; // native Circle USDC on Gnosis
+
+/** Decimals of {@link RELAY_BRIDGE_TOKEN_ON_GNOSIS}. Override when changing the bridge token. */
+export const RELAY_BRIDGE_TOKEN_DECIMALS = Number(
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_DECIMALS ?? '6'
+);
+
+/** Symbol of {@link RELAY_BRIDGE_TOKEN_ON_GNOSIS} (used for display/logging). */
+export const RELAY_BRIDGE_TOKEN_SYMBOL =
+  process.env.NEXT_PUBLIC_RELAY_BRIDGE_TOKEN_SYMBOL || 'USDC';
+
+// ─── SushiSwap V3 on Gnosis ────────────────────────────────────────────────
+
+/** SushiSwap V3 Factory on Gnosis – used for pool discovery */
+export const SUSHI_FACTORY_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_FACTORY_ADDRESS || '0xf78031cbca409f2fb6876bdfdbc1b2df24cf9bef';
+
+/** SushiSwap V3 QuoterV2 on Gnosis – used for exact-output price estimation */
+export const SUSHI_QUOTER_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_QUOTER_ADDRESS || '0xb1e835dc2785b52265711e17fccb0fd018226a6e';
+
+/**
+ * SushiSwapStampsRouter – our deployed router that swaps any Gnosis token → BZZ
+ * and atomically creates / tops up a Swarm stamp in a single transaction.
+ * Override with NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS when using another deployment.
+ */
+export const SUSHI_STAMPS_ROUTER_ADDRESS =
+  process.env.NEXT_PUBLIC_SUSHI_STAMPS_ROUTER_ADDRESS ||
+  '0xf244cC25EAD03a99de8B407A3237aaf54D1b779C';
+
+/** Minimal ABI for the SushiSwap V3 Factory – only what we need for pool discovery */
+export const SUSHI_FACTORY_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'tokenA', type: 'address' },
+      { internalType: 'address', name: 'tokenB', type: 'address' },
+      { internalType: 'uint24',  name: 'fee',    type: 'uint24'  },
+    ],
+    name: 'getPool',
+    outputs: [{ internalType: 'address', name: 'pool', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+/** Full ABI for the SushiSwapStampsRouter contract */
+export const SUSHI_STAMPS_ROUTER_ABI = [
+  // ── Quote functions (call via eth_call / simulateContract) ─────────────────
+  {
+    inputs: [
+      { internalType: 'address', name: 'tokenIn',      type: 'address' },
+      { internalType: 'uint24',  name: 'fee',          type: 'uint24'  },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+    ],
+    name: 'quoteSingleHop',
+    outputs: [{ internalType: 'uint256', name: 'amountIn', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+    ],
+    name: 'quoteMultiHop',
+    outputs: [{ internalType: 'uint256', name: 'amountIn', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Create batch (ERC20 input) ─────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',  type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+      {
+        components: [
+          { internalType: 'address', name: 'owner',                  type: 'address' },
+          { internalType: 'address', name: 'nodeAddress',            type: 'address' },
+          { internalType: 'uint256', name: 'initialBalancePerChunk', type: 'uint256' },
+          { internalType: 'uint8',   name: 'depth',                  type: 'uint8'   },
+          { internalType: 'uint8',   name: 'bucketDepth',            type: 'uint8'   },
+          { internalType: 'bytes32', name: 'nonce',                  type: 'bytes32' },
+          { internalType: 'bool',    name: 'immutable_',             type: 'bool'    },
+        ],
+        internalType: 'struct SushiSwapStampsRouter.CreateBatchParams',
+        name: 'p',
+        type: 'tuple',
+      },
+    ],
+    name: 'createBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Create batch (native xDAI input) ──────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',         type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',  type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut', type: 'uint256' },
+      {
+        components: [
+          { internalType: 'address', name: 'owner',                  type: 'address' },
+          { internalType: 'address', name: 'nodeAddress',            type: 'address' },
+          { internalType: 'uint256', name: 'initialBalancePerChunk', type: 'uint256' },
+          { internalType: 'uint8',   name: 'depth',                  type: 'uint8'   },
+          { internalType: 'uint8',   name: 'bucketDepth',            type: 'uint8'   },
+          { internalType: 'bytes32', name: 'nonce',                  type: 'bytes32' },
+          { internalType: 'bool',    name: 'immutable_',             type: 'bool'    },
+        ],
+        internalType: 'struct SushiSwapStampsRouter.CreateBatchParams',
+        name: 'p',
+        type: 'tuple',
+      },
+    ],
+    name: 'createBatchNative',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  // ── Top up (ERC20 input) ───────────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',               type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',         type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut',        type: 'uint256' },
+      { internalType: 'bytes32', name: 'batchId',             type: 'bytes32' },
+      { internalType: 'uint256', name: 'topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'topUp',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // ── Top up (native xDAI input) ─────────────────────────────────────────────
+  {
+    inputs: [
+      { internalType: 'bytes',   name: 'path',               type: 'bytes'   },
+      { internalType: 'uint256', name: 'maxAmountIn',         type: 'uint256' },
+      { internalType: 'uint256', name: 'bzzAmountOut',        type: 'uint256' },
+      { internalType: 'bytes32', name: 'batchId',             type: 'bytes32' },
+      { internalType: 'uint256', name: 'topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'topUpNative',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
 
 /**
  * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.

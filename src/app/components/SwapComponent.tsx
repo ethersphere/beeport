@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { config } from '@/app/wagmi';
+import { config, getPollingInterval } from '@/app/wagmi';
 import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
 import { parseAbi, formatUnits } from 'viem';
@@ -22,7 +22,9 @@ import {
   GNOSIS_DESTINATION_TOKEN,
   TIME_OPTIONS,
   GNOSIS_CUSTOM_REGISTRY_ADDRESS,
+  SUSHI_STAMPS_ROUTER_ADDRESS,
   DEFAULT_BEE_API_URL,
+  DEFAULT_SLIPPAGE,
   MIN_TOKEN_BALANCE_USD,
   LIFI_API_KEY,
   // Note: LiFi execution constants removed - now using Relay API
@@ -54,16 +56,19 @@ import {
   formatExpiryTime,
   isExpiringSoon,
   getStampUsage,
+  updateHistoryAfterTopUp,
 } from './utils';
 import { useTimer } from './TimerUtils';
 
 // Note: LiFi quote functions removed - now using Relay API via RelayQuotes.ts
 import {
   getRelaySwapQuotes,
+  getRelayCrossChainWithSushiQuote,
   executeRelaySteps,
   RelayQuoteResponse,
   parseRelayError,
 } from './RelayQuotes';
+import { getSushiQuote, executeSushiSwap, SushiQuoteResult } from './SushiQuotes';
 import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
@@ -98,9 +103,9 @@ const SwapComponent: React.FC = () => {
   // Log version info on component initialization
   React.useEffect(() => {
     console.log(`
+                               🐝 BEEPORT 🐝    
     ╔════════════════════════════════════════════════════════════════╗
-    ║                           🐝 BEEPORT 🐝                        ║
-    ║                         Version: 1.1.6                         ║
+    ║                         Version: 1.1.10                        ║
     ║                                                                ║
     ║            Multichain Swarm Upload & Stamp Manager             ║
     ║              https://github.com/ethersphere/beeport            ║
@@ -117,6 +122,7 @@ const SwapComponent: React.FC = () => {
 
   // Add state to track if component has mounted to prevent hydration mismatches
   const [hasMounted, setHasMounted] = useState(false);
+  const [badgeLabel, setBadgeLabel] = useState<'LOCAL' | 'TEST' | 'BETA'>('BETA');
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [executionResult, setExecutionResult] = useState<any | null>(null);
@@ -202,6 +208,9 @@ const SwapComponent: React.FC = () => {
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
   const [isCustomNode, setIsCustomNode] = useState(false);
+
+  const [useCustomSlippage, setUseCustomSlippage] = useState(false);
+  const [customSlippagePercent, setCustomSlippagePercent] = useState(DEFAULT_SLIPPAGE);
 
   const [showUploadHistory, setShowUploadHistory] = useState(false);
 
@@ -353,7 +362,7 @@ const SwapComponent: React.FC = () => {
       try {
         const bzzAmount = calculateTotalAmount().toString();
 
-        console.log('🔍 Relay price estimation:', {
+        console.log('🔍 Price estimation:', {
           bzzAmount: formatUnits(BigInt(bzzAmount), 16),
           selectedDays,
           stampSize:
@@ -362,18 +371,80 @@ const SwapComponent: React.FC = () => {
           fromToken,
         });
 
-        // Use the new Relay system for price estimation
-        const relayQuoteResult = await getRelaySwapQuotes({
-          selectedChainId,
-          fromToken,
-          address,
-          bzzAmount,
-          nodeAddress,
-          swarmConfig,
-          topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          setEstimatedTime: () => {}, // Don't override estimated time during price estimation
-          isForEstimation: true,
-        });
+        // ── Gnosis + non-BZZ token: use SushiSwapStampsRouter for quote ──────────
+        const isGnosisNonBzz =
+          selectedChainId === ChainId.DAI &&
+          fromToken &&
+          getAddress(fromToken) !== getAddress(GNOSIS_BZZ_ADDRESS) &&
+          SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+
+        // ── Cross-chain + router deployed: Relay → USDC → Sushi → BZZ → stamp ──
+        const isCrossChainWithSushi =
+          selectedChainId !== ChainId.DAI && SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+
+        let totalAmountUSD: number;
+
+        if (isGnosisNonBzz) {
+          console.log('🍣 Using SushiSwap quote for Gnosis token…');
+
+          const tokenPriceUsd = selectedTokenInfo ? Number(selectedTokenInfo.priceUSD) : 0;
+          const tokenDecimals = selectedTokenInfo?.decimals ?? 18;
+          const tokenSymbol = selectedTokenInfo?.symbol ?? 'Token';
+
+          const sushiQuote = await getSushiQuote({
+            fromToken,
+            bzzAmount,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : DEFAULT_SLIPPAGE,
+            tokenSymbol,
+            tokenDecimals,
+            tokenPriceUsd,
+          });
+
+          if (abortSignal.aborted) return;
+
+          totalAmountUSD = sushiQuote.totalAmountUSD;
+          console.log(`💰 SushiSwap quote: $${totalAmountUSD.toFixed(2)}`);
+        } else if (isCrossChainWithSushi) {
+          // ── Cross-chain: Relay bridges to USDC, SushiRouter swaps → BZZ → stamp
+          console.log('🌉 Using Relay→USDC→Sushi quote for cross-chain…');
+
+          const crossChainResult = await getRelayCrossChainWithSushiQuote({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount,
+            nodeAddress,
+            swarmConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: true,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          if (abortSignal.aborted) return;
+
+          totalAmountUSD = crossChainResult.totalAmountUSD;
+          console.log(`💰 Cross-chain USDC+Sushi estimate: $${totalAmountUSD.toFixed(2)}`);
+        } else {
+          // ── Gnosis + BZZ direct (or fallback): use Relay ───────────────────────
+          const relayQuoteResult = await getRelaySwapQuotes({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount,
+            nodeAddress,
+            swarmConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: true,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          if (abortSignal.aborted) return;
+
+          totalAmountUSD = relayQuoteResult.totalAmountUSD;
+          console.log(`💰 Relay price estimation complete: $${totalAmountUSD.toFixed(2)}`);
+        }
 
         // If operation was aborted, don't continue
         if (abortSignal.aborted) {
@@ -381,10 +452,7 @@ const SwapComponent: React.FC = () => {
           return;
         }
 
-        console.log(
-          `💰 Relay price estimation complete: $${relayQuoteResult.totalAmountUSD.toFixed(2)}`
-        );
-        setTotalUsdAmount(relayQuoteResult.totalAmountUSD.toString());
+        setTotalUsdAmount(totalAmountUSD.toString());
 
         // Check if user has enough funds
         if (selectedTokenInfo) {
@@ -393,10 +461,10 @@ const SwapComponent: React.FC = () => {
             Number(selectedTokenInfo.priceUSD);
 
           console.log('User token balance in USD:', tokenBalanceInUsd);
-          console.log('Required amount in USD:', relayQuoteResult.totalAmountUSD);
+          console.log('Required amount in USD:', totalAmountUSD);
 
           // Set insufficient funds flag if cost exceeds available balance
-          setInsufficientFunds(relayQuoteResult.totalAmountUSD > tokenBalanceInUsd);
+          setInsufficientFunds(totalAmountUSD > tokenBalanceInUsd);
         }
       } catch (error) {
         // Only update error state if not aborted
@@ -603,6 +671,7 @@ const SwapComponent: React.FC = () => {
 
       const approveReceipt = await publicClient.waitForTransactionReceipt({
         hash: approveTxHash,
+        pollingInterval: getPollingInterval(chainId),
       });
 
       if (approveReceipt.status !== 'success') {
@@ -888,6 +957,7 @@ const SwapComponent: React.FC = () => {
       // Wait for batch transaction to be mined
       const batchReceipt = await publicClient.waitForTransactionReceipt({
         hash: batchTxHash,
+        pollingInterval: getPollingInterval(chainId),
       });
 
       if (batchReceipt.status === 'success') {
@@ -909,6 +979,11 @@ const SwapComponent: React.FC = () => {
             message: 'Batch Topped Up Successfully',
             isSuccess: true,
           });
+
+          // Update upload history with new expiry date immediately
+          if (address && topUpBatchId && selectedDays) {
+            updateHistoryAfterTopUp(topUpBatchId as string, selectedDays, address);
+          }
           // Don't set upload step for top-ups
         } else {
           try {
@@ -1041,72 +1116,43 @@ const SwapComponent: React.FC = () => {
         message: 'Calculating amounts...',
       });
 
-      // Deciding if we are buying stamps directly or swaping/bridging
+      // ── Branch 1: Gnosis + BZZ direct → no swap needed ─────────────────────
       if (
         selectedChainId !== null &&
         selectedChainId === ChainId.DAI &&
         getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS)
       ) {
         await handleDirectBzzTransactions(updatedConfig);
-      } else {
-        setStatusMessage({
-          step: 'Quoting',
-          message: 'Getting quote...',
-        });
+      } else if (
+        // ── Branch 2: Gnosis + other token → SushiSwapStampsRouter ────────────
+        selectedChainId !== null &&
+        selectedChainId === ChainId.DAI &&
+        SUSHI_STAMPS_ROUTER_ADDRESS !== ''
+      ) {
+        const tokenPriceUsd = selectedToken ? Number(selectedTokenInfo?.priceUSD ?? 0) : 0;
+        const tokenDecimals = selectedTokenInfo?.decimals ?? 18;
+        const tokenSymbol = selectedTokenInfo?.symbol ?? 'Token';
 
-        // Use the new Relay system for execution (don't set timer yet)
-        const relayQuoteResult = await getRelaySwapQuotes({
-          selectedChainId,
+        await executeSushiSwap({
           fromToken,
-          address,
           bzzAmount: updatedConfig.swarmBatchTotal,
-          nodeAddress,
+          slippagePercent: useCustomSlippage ? customSlippagePercent : DEFAULT_SLIPPAGE,
+          address,
           swarmConfig: updatedConfig,
           topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
-          setEstimatedTime: () => {}, // Don't set timer during quote - will be set after confirmation
-          isForEstimation: false,
-        });
-
-        console.log('✅ Relay execution quotes ready:', {
-          totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
-          steps: relayQuoteResult.steps.length,
-          estimatedTime: relayQuoteResult.estimatedTime,
-        });
-
-        console.log(
-          '⏱️ Timer will be set to:',
-          relayQuoteResult.estimatedTime,
-          'seconds after transaction confirmation'
-        );
-
-        // Set initial status (timer will start after transaction confirmation)
-        setStatusMessage({
-          step: 'Preparing',
-          message: `Preparing cross-chain swap...`,
-        });
-
-        // Execute Relay steps with timer callback
-        await executeRelaySteps(
-          relayQuoteResult.relayQuoteResponse,
+          nodeAddress,
           walletClient,
           publicClient,
+          tokenSymbol,
+          tokenDecimals,
+          tokenPriceUsd,
           setStatusMessage,
-          () => {
-            // Start timer after transaction confirmation
-            console.log(
-              '🚀 Transaction confirmed! Starting timer with duration:',
-              relayQuoteResult.estimatedTime,
-              'seconds'
-            );
-            setEstimatedTime(relayQuoteResult.estimatedTime);
-            setStatusMessage({
-              step: 'Relay',
-              message: `Executing cross-chain swap...`,
-            });
-          }
-        );
+          onTransactionConfirmed: () => {
+            console.log('🍣 SushiSwap stamp transaction confirmed!');
+          },
+        });
 
-        console.log('🎉 Relay swap completed successfully!');
+        console.log('🎉 SushiSwap stamp purchase completed successfully!');
 
         // Reset timer when done
         resetTimer();
@@ -1130,6 +1176,11 @@ const SwapComponent: React.FC = () => {
               message: 'Batch Topped Up Successfully',
               isSuccess: true,
             });
+
+            // Update upload history with new expiry date immediately
+            if (address && selectedDays) {
+              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
+            }
           } else {
             // Calculate the batch ID for new batch creation
             const calculatedBatchId = readBatchId(
@@ -1161,11 +1212,145 @@ const SwapComponent: React.FC = () => {
             isError: true,
           });
         }
+      } else {
+        // ── Branch 3: cross-chain ───────────────────────────────────────────────
+        // Prefer Relay → USDC → SushiRouter → BZZ → stamp (better routing).
+        // Fall back to legacy Relay → BZZ path if router is not deployed.
+        const useSushiBridge = SUSHI_STAMPS_ROUTER_ADDRESS !== '';
+
+        setStatusMessage({
+          step: 'Quoting',
+          message: 'Getting quote...',
+        });
+
+        let crossChainRelayResponse: RelayQuoteResponse;
+        let crossChainEstimatedTime: number;
+
+        if (useSushiBridge) {
+          console.log('🌉 Cross-chain via Relay→USDC→SushiRouter→BZZ→stamp…');
+
+          const result = await getRelayCrossChainWithSushiQuote({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            nodeAddress,
+            swarmConfig: updatedConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: false,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          crossChainRelayResponse = result.relayQuoteResponse;
+          crossChainEstimatedTime = result.estimatedTime;
+
+          console.log('✅ Cross-chain USDC+Sushi quotes ready:', {
+            totalUSD: `$${result.totalAmountUSD.toFixed(2)}`,
+            steps: result.steps.length,
+            estimatedTime: result.estimatedTime,
+          });
+        } else {
+          // Legacy: Relay bridges directly to BZZ
+          const relayQuoteResult = await getRelaySwapQuotes({
+            selectedChainId,
+            fromToken,
+            address,
+            bzzAmount: updatedConfig.swarmBatchTotal,
+            nodeAddress,
+            swarmConfig: updatedConfig,
+            topUpBatchId: isTopUp ? topUpBatchId || undefined : undefined,
+            setEstimatedTime: () => {},
+            isForEstimation: false,
+            slippagePercent: useCustomSlippage ? customSlippagePercent : undefined,
+          });
+
+          crossChainRelayResponse = relayQuoteResult.relayQuoteResponse;
+          crossChainEstimatedTime = relayQuoteResult.estimatedTime;
+
+          console.log('✅ Relay execution quotes ready:', {
+            totalUSD: `$${relayQuoteResult.totalAmountUSD.toFixed(2)}`,
+            steps: relayQuoteResult.steps.length,
+            estimatedTime: relayQuoteResult.estimatedTime,
+          });
+        }
+
+        setStatusMessage({
+          step: 'Preparing',
+          message: 'Preparing cross-chain swap...',
+        });
+
+        await executeRelaySteps(
+          crossChainRelayResponse,
+          walletClient,
+          publicClient,
+          setStatusMessage,
+          () => {
+            console.log(
+              '🚀 Transaction confirmed! Starting timer:',
+              crossChainEstimatedTime,
+              'seconds'
+            );
+            setEstimatedTime(crossChainEstimatedTime);
+            setStatusMessage({
+              step: 'Relay',
+              message: 'Executing cross-chain swap...',
+            });
+          }
+        );
+
+        console.log('🎉 Relay swap completed successfully!');
+        resetTimer();
+
+        try {
+          if (isTopUp && topUpBatchId) {
+            console.log('Successfully topped up batch ID:', topUpBatchId);
+            setPostageBatchId(topUpBatchId);
+            setTopUpCompleted(true);
+            setTopUpInfo({
+              batchId: topUpBatchId,
+              days: selectedDays || 0,
+              cost: totalUsdAmount || '0',
+            });
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Batch Topped Up Successfully',
+              isSuccess: true,
+            });
+            if (address && selectedDays) {
+              updateHistoryAfterTopUp(topUpBatchId, selectedDays, address);
+            }
+          } else {
+            const calculatedBatchId = readBatchId(
+              updatedConfig.swarmBatchNonce,
+              GNOSIS_CUSTOM_REGISTRY_ADDRESS
+            );
+            console.log('Batch created successfully with ID:', calculatedBatchId);
+            setPostageBatchId(calculatedBatchId);
+            setStatusMessage({
+              step: 'Complete',
+              message: 'Storage Bought Successfully',
+              isSuccess: true,
+              warning:
+                'Note: It takes approximately 1-2 minutes for new storage to become accessible on the network. Please wait before uploading.',
+            });
+            setIsNewStampCreated(true);
+            setUploadStep('ready');
+          }
+        } catch (error) {
+          console.error('Failed to process Relay batch completion:', error);
+          setStatusMessage({
+            step: 'Error',
+            message: 'Failed to process batch completion',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            isError: true,
+          });
+        }
       }
     } catch (error) {
       console.error('An error occurred:', error);
 
-      // Parse Relay-specific errors for better user experience
+      // Parse errors for better user experience
       const { userMessage, errorCode } = parseRelayError(error);
 
       // Log detailed error information for debugging
@@ -1589,14 +1774,19 @@ const SwapComponent: React.FC = () => {
     return totalPricePerDuration * BigInt(2 ** originalDepth);
   };
 
-  // Add useEffect to set hasMounted after component mounts
+  // Set hasMounted and badge label by host: LOCAL (localhost), TEST (beeport.xyz), BETA (elsewhere)
   useEffect(() => {
     setHasMounted(true);
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') setBadgeLabel('LOCAL');
+    else if (host === 'beeport.xyz') setBadgeLabel('TEST');
+    else setBadgeLabel('BETA');
   }, []);
 
   return (
     <div className={styles.container}>
-      <div className={styles.betaBadge}>BETA</div>
+      <div className={styles.betaBadge}>{badgeLabel}</div>
       <div className={styles.tabContainer}>
         <button
           className={`${styles.tabButton} ${
@@ -1716,9 +1906,9 @@ const SwapComponent: React.FC = () => {
           <div className={styles.inputGroup}>
             <label
               className={styles.label}
-              data-tooltip="Duration of storage stamps for which you are paying for"
+              data-tooltip="Approximate storage duration - actual duration varies with BZZ price oracle changes"
             >
-              {isTopUp ? 'Additional duration' : 'Storage duration'}
+              {isTopUp ? 'Additional duration' : 'Storage duration'} (approx.)
             </label>
             <StorageDurationDropdown
               timeOptions={TIME_OPTIONS}
@@ -2626,12 +2816,17 @@ const SwapComponent: React.FC = () => {
           setIsCustomRpc={setIsCustomRpc}
           customRpcUrl={customRpcUrl}
           setCustomRpcUrl={setCustomRpcUrl}
+          useCustomSlippage={useCustomSlippage}
+          setUseCustomSlippage={setUseCustomSlippage}
+          customSlippagePercent={customSlippagePercent}
+          setCustomSlippagePercent={setCustomSlippagePercent}
         />
       ) : showStampList ? (
         <StampListSection
           setShowStampList={setShowStampList}
           address={address}
           beeApiUrl={beeApiUrl}
+          nodeAddress={nodeAddress}
           setPostageBatchId={setPostageBatchId}
           setShowOverlay={setShowOverlay}
           setUploadStep={setUploadStep}

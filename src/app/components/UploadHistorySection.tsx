@@ -100,6 +100,116 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   /**
+   * Periodically refreshes stamp expiry dates from the API
+   * Only runs if 24+ hours have passed since last check
+   * Updates all records that share the same stamp ID efficiently
+   */
+  const refreshStampExpiry = async (records: UploadRecord[], userAddress: string) => {
+    // Check if 24 hours have passed since last refresh
+    const lastCheckKey = `stampExpiryLastCheck_${userAddress}`;
+    const lastCheckTimestamp = localStorage.getItem(lastCheckKey);
+    const now = Date.now();
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+
+    if (lastCheckTimestamp) {
+      const lastCheck = parseInt(lastCheckTimestamp);
+      const timeSinceLastCheck = now - lastCheck;
+      
+      if (timeSinceLastCheck < twentyFourHours) {
+        console.log(`⏳ Stamp expiry check skipped - last checked ${Math.round(timeSinceLastCheck / (60 * 60 * 1000))} hours ago`);
+        return;
+      }
+    }
+
+    console.log('🔄 Refreshing stamp expiry dates (24+ hours since last check)...');
+    setIsMigrating(true);
+    setMigrationProgress('Checking stamp expiry dates...');
+
+    // Collect unique stamp IDs
+    const uniqueStamps = Array.from(new Set(records.map(record => record.stampId)));
+    console.log(`📊 Found ${uniqueStamps.length} unique stamps to check`);
+
+    // Map stamp IDs to their record indices for efficient updates
+    const stampToRecords = new Map<string, number[]>();
+    records.forEach((record, index) => {
+      if (!stampToRecords.has(record.stampId)) {
+        stampToRecords.set(record.stampId, []);
+      }
+      stampToRecords.get(record.stampId)!.push(index);
+    });
+
+    let updatedCount = 0;
+    const updatedRecords = [...records];
+
+    // Process each unique stamp
+    for (let i = 0; i < uniqueStamps.length; i++) {
+      const stampId = uniqueStamps[i];
+      const recordIndices = stampToRecords.get(stampId)!;
+
+      try {
+        setMigrationProgress(`Checking stamps (${i + 1}/${uniqueStamps.length})...`);
+
+        // Fetch fresh stamp info from API
+        const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
+
+        if (stampInfo && stampInfo.batchTTL) {
+          // Calculate new expiry date
+          const newExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
+
+          // Update all records using this stamp
+          recordIndices.forEach(index => {
+            const oldExpiryDate = updatedRecords[index].expiryDate;
+            updatedRecords[index] = {
+              ...updatedRecords[index],
+              expiryDate: newExpiryDate,
+            };
+            
+            // Log if expiry changed significantly (more than 1 hour difference)
+            if (Math.abs(newExpiryDate - oldExpiryDate) > 60 * 60 * 1000) {
+              console.log(
+                `✅ Updated ${updatedRecords[index].filename || 'unnamed'}: ${formatStampId(stampId)} expiry changed from ${formatDateEU(oldExpiryDate)} to ${formatDateEU(newExpiryDate)}`
+              );
+            }
+          });
+
+          updatedCount += recordIndices.length;
+        } else {
+          console.log(`⚠️ No API data for stamp ${formatStampId(stampId)} (${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`);
+        }
+      } catch (error) {
+        console.error(`❌ Error refreshing expiry for ${formatStampId(stampId)}:`, error);
+      }
+
+      // Add delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // Update localStorage with refreshed data
+    if (updatedCount > 0) {
+      console.log(`✅ Refreshed expiry dates for ${updatedCount} record(s) across ${uniqueStamps.length} stamp(s)`);
+      
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[userAddress] = updatedRecords;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+
+      // Update component state
+      setHistory(updatedRecords);
+    }
+
+    // Update last check timestamp
+    localStorage.setItem(lastCheckKey, now.toString());
+    
+    setMigrationProgress(`Expiry check complete! (${uniqueStamps.length} stamps checked)`);
+    setTimeout(() => {
+      setIsMigrating(false);
+      setMigrationProgress('');
+    }, 2000);
+  };
+
+  /**
    * Auto-migrates old expiry dates by querying the Bee API
    * This runs on every load and updates localStorage when complete
    */
@@ -258,8 +368,11 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
         }
 
-        // Auto-migrate old expiry dates
-        migrateOldExpiryDates(uniqueHistory, address);
+        // First, refresh stamp expiry dates (runs once every 24 hours)
+        refreshStampExpiry(uniqueHistory, address).then(() => {
+          // Then, auto-migrate any old/invalid expiry dates
+          migrateOldExpiryDates(uniqueHistory, address);
+        });
       }
     }
   }, [address]);
@@ -757,6 +870,41 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
   };
 
+  const clearExpiredHistory = () => {
+    if (!address) return;
+
+    const now = Date.now();
+    const expiredCount = history.filter(record => record.expiryDate < now).length;
+
+    if (expiredCount === 0) {
+      window.alert('No expired items to clear.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your upload history? This action cannot be undone.`
+    );
+    if (confirmed) {
+      // Filter out expired items
+      const nonExpiredHistory = history.filter(record => record.expiryDate >= now);
+      setHistory(nonExpiredHistory);
+
+      // Update localStorage
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const allHistory: UploadHistory = JSON.parse(savedHistory);
+        allHistory[address] = nonExpiredHistory;
+        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+      }
+    }
+  };
+
+  // Count expired items for button visibility
+  const expiredCount = React.useMemo(() => {
+    const now = Date.now();
+    return history.filter(record => record.expiryDate < now).length;
+  }, [history]);
+
   const startEditingFilename = (
     index: number,
     reference: string,
@@ -895,6 +1043,29 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               </svg>
             </label>
           )}
+          {expiredCount > 0 && (
+            <button
+              className={styles.clearExpiredButton}
+              onClick={clearExpiredHistory}
+              title={`Clear ${expiredCount} Expired Item${expiredCount > 1 ? 's' : ''}`}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 22h14" />
+                <path d="M5 2h14" />
+                <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+                <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+              </svg>
+            </button>
+          )}
           {history.length > 0 && (
             <button className={styles.clearButton} onClick={clearHistory} title="Clear History">
               <svg
@@ -913,26 +1084,6 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 <line x1="14" y1="11" x2="14" y2="17" />
               </svg>
             </button>
-          )}
-          {address && (
-            <div className={styles.ensInfo}>
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2L2 7v10c0 5.55 3.84 10 9 10s9-4.45 9-10V7L12 2z" />
-              </svg>
-              <span className={styles.ensTooltip}>
-                Click on ENS button to link reference to your ENS domain
-              </span>
-            </div>
           )}
         </div>
       </div>
@@ -1015,6 +1166,27 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               Other ({getFilterCounts.other})
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ENS Note */}
+      {address && history.length > 0 && (
+        <div className={styles.ensNote}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>Click on ENS button to link reference to your ENS domain</span>
         </div>
       )}
 

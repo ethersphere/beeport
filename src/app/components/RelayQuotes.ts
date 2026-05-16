@@ -9,8 +9,15 @@ import {
   RELAY_STATUS_CHECK_INTERVAL_MS,
   RELAY_STATUS_MAX_ATTEMPTS,
   TRANSACTION_TIMEOUT_MS,
+  RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+  RELAY_BRIDGE_TOKEN_DECIMALS,
+  RELAY_BRIDGE_TOKEN_SYMBOL,
+  SUSHI_STAMPS_ROUTER_ADDRESS,
+  SUSHI_STAMPS_ROUTER_ABI,
 } from './constants';
 import { performWithRetry, getGnosisPublicClient } from './utils';
+import { getSushiQuote } from './SushiQuotes';
+import { getPollingInterval } from '@/app/wagmi';
 
 // Relay API Error Codes and Messages
 // Based on: https://docs.relay.link/references/api/handling-errors
@@ -298,6 +305,8 @@ export interface RelayQuoteParams {
   topUpBatchId?: string;
   setEstimatedTime?: (time: number) => void;
   isForEstimation?: boolean;
+  /** Slippage in percent (e.g. 5 = 5%, 0.5 = 0.5%). When set, overrides DEFAULT_SLIPPAGE. Relay API receives basis points (percent × 100). */
+  slippagePercent?: number;
 }
 
 /**
@@ -313,6 +322,7 @@ export const getRelayQuote = async ({
   topUpBatchId,
   setEstimatedTime,
   isForEstimation = false,
+  slippagePercent,
 }: RelayQuoteParams): Promise<{
   relayQuoteResponse: RelayQuoteResponse;
   totalAmountUSD: number;
@@ -469,7 +479,8 @@ export const getRelayQuote = async ({
     amount: bzzAmount,
     tradeType: 'EXACT_OUTPUT', // We need exact BZZ amount
     txs,
-    slippageTolerance: (DEFAULT_SLIPPAGE * 100).toString(), // Convert to integer percentage (5 for 5%)
+    // Relay API expects basis points (1/100th of a percent): 5% → "500", 0.5% → "50". See https://docs.relay.link/references/api/get-quote
+    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
     refundOnOrigin: true,
     topupGas: shouldTopupGas, // Conditionally enable gas forwarding
     ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }), // Gas top-up amount from constants
@@ -519,7 +530,7 @@ export const getRelayQuote = async ({
 
   // Step 6: Set estimated time if provided
   if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
-    setEstimatedTime(relayQuoteResponse.details.timeEstimate);
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
   }
 
   console.log(
@@ -634,6 +645,7 @@ export const executeRelaySteps = async (
           const receipt = await publicClient.waitForTransactionReceipt({
             hash: txHash,
             timeout: TRANSACTION_TIMEOUT_MS,
+            pollingInterval: getPollingInterval(item.data.chainId),
           });
 
           if (receipt.status === 'success') {
@@ -694,6 +706,11 @@ export const executeRelaySteps = async (
  * Monitors the status of a Relay operation
  * Status types: waiting, pending, success, failure, refund
  * https://docs.relay.link/references/api/step-execution
+ *
+ * Note: 'unknown' status can occur when:
+ * 1. The deposit transaction hasn't been indexed by Relay yet
+ * 2. Gas top-up operations are being processed (takes longer)
+ * We don't count 'unknown' status toward the max attempts to avoid premature timeouts.
  */
 const monitorRelayStatus = async (
   statusEndpoint: string,
@@ -702,6 +719,8 @@ const monitorRelayStatus = async (
 ): Promise<void> => {
   const maxAttempts = RELAY_STATUS_MAX_ATTEMPTS;
   let attempts = 0;
+  let unknownStatusCount = 0;
+  const maxUnknownStatusAttempts = 24; // Allow up to 2 minutes of 'unknown' status (24 * 5 seconds)
 
   console.log(`🔍 Starting status monitoring for step ${stepId}: ${statusEndpoint}`);
 
@@ -740,6 +759,8 @@ const monitorRelayStatus = async (
             step: stepId,
             message: 'Confirming your transaction...',
           });
+          // Reset unknown counter since we got a valid status
+          unknownStatusCount = 0;
           break;
 
         case 'pending':
@@ -748,6 +769,8 @@ const monitorRelayStatus = async (
             step: stepId,
             message: 'Processing cross-chain transfer...',
           });
+          // Reset unknown counter since we got a valid status
+          unknownStatusCount = 0;
           break;
 
         case 'failure':
@@ -758,8 +781,31 @@ const monitorRelayStatus = async (
           console.error(`💸 Funds were refunded due to failure for step ${stepId}`);
           throw new Error(`Swap failed and funds were refunded`);
 
+        case 'unknown':
+          // 'unknown' status means Relay hasn't indexed the transaction yet
+          // This is common for gas top-up operations which take longer to process
+          // Don't count toward max attempts, but track separately to avoid infinite loops
+          unknownStatusCount++;
+          console.log(
+            `⏳ Unknown status for step ${stepId} (${unknownStatusCount}/${maxUnknownStatusAttempts}), waiting for Relay to index...`
+          );
+          setStatusMessage({
+            step: stepId,
+            message: 'Waiting for transaction to be indexed...',
+          });
+
+          if (unknownStatusCount >= maxUnknownStatusAttempts) {
+            throw new Error(
+              `Transaction indexing timed out for step ${stepId}. The transaction may still complete - please check your wallet.`
+            );
+          }
+
+          // Don't increment main attempts counter for unknown status
+          await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
+          continue; // Skip the attempts++ at the end
+
         default:
-          console.log(`🔄 Unknown status '${statusData.status}' for step ${stepId}, continuing...`);
+          console.log(`🔄 Unexpected status '${statusData.status}' for step ${stepId}, continuing...`);
           setStatusMessage({
             step: stepId,
             message: 'Processing your swap...',
@@ -770,7 +816,11 @@ const monitorRelayStatus = async (
       await new Promise(resolve => setTimeout(resolve, RELAY_STATUS_CHECK_INTERVAL_MS));
       attempts++;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Relay operation failed')) {
+      if (
+        error instanceof Error &&
+        (error.message.includes('Relay operation failed') ||
+          error.message.includes('Transaction indexing timed out'))
+      ) {
         // Re-throw Relay-specific errors
         throw error;
       }
@@ -787,6 +837,162 @@ const monitorRelayStatus = async (
   }
 
   throw new Error(`Operation timed out for step ${stepId} after ${maxAttempts} attempts`);
+};
+
+/**
+ * Cross-chain flow: bridge source token → RELAY_BRIDGE_TOKEN (USDC) on Gnosis via Relay,
+ * then atomically swap USDC → BZZ and create/top-up a Swarm stamp via SushiSwapStampsRouter.
+ *
+ * Why: Relay has reliable routes to USDC on every major chain; routing directly to BZZ is
+ * fragile.  The existing SushiSwapStampsRouter already handles USDC → BZZ → stamp on-chain.
+ *
+ * Relay delivers USDC to its Multicaller which executes two destination txs atomically:
+ *   1. USDC.approve(sushiRouter, maxUsdcIn)
+ *   2. sushiRouter.createBatch / topUp(path, maxUsdcIn, bzzOut, params)
+ */
+export const getRelayCrossChainWithSushiQuote = async ({
+  selectedChainId,
+  fromToken,
+  address,
+  bzzAmount,
+  nodeAddress,
+  swarmConfig,
+  topUpBatchId,
+  setEstimatedTime,
+  isForEstimation = false,
+  slippagePercent,
+}: RelayQuoteParams) => {
+  console.log(
+    `🌉 Cross-chain via USDC+Sushi – ${isForEstimation ? 'estimating' : 'executing'}…`
+  );
+
+  // ── Step 1: Sushi quote for bridge token → BZZ ──────────────────────────────
+  const sushiQuote = await getSushiQuote({
+    fromToken: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+    bzzAmount,
+    slippagePercent: slippagePercent ?? DEFAULT_SLIPPAGE,
+    tokenSymbol: RELAY_BRIDGE_TOKEN_SYMBOL,
+    tokenDecimals: RELAY_BRIDGE_TOKEN_DECIMALS,
+    tokenPriceUsd: 1.0, // USDC ≈ $1 – used only for the internal USD display of the Sushi leg
+  });
+
+  const maxBridgeTokenIn = sushiQuote.maxAmountIn; // includes slippage buffer
+
+  console.log(`🍣 Sushi quote: need ${maxBridgeTokenIn.toString()} ${RELAY_BRIDGE_TOKEN_SYMBOL} for ${bzzAmount} BZZ`);
+
+  // ── Step 2: Encode SushiRouter calldata ─────────────────────────────────────
+  let routerCallData: string;
+  if (topUpBatchId) {
+    routerCallData = encodeFunctionData({
+      abi: SUSHI_STAMPS_ROUTER_ABI,
+      functionName: 'topUp',
+      args: [
+        sushiQuote.route.path,
+        maxBridgeTokenIn,
+        BigInt(bzzAmount),
+        topUpBatchId as `0x${string}`,
+        swarmConfig.swarmBatchInitialBalance,
+      ],
+    });
+  } else {
+    routerCallData = encodeFunctionData({
+      abi: SUSHI_STAMPS_ROUTER_ABI,
+      functionName: 'createBatch',
+      args: [
+        sushiQuote.route.path,
+        maxBridgeTokenIn,
+        BigInt(bzzAmount),
+        {
+          owner: address as `0x${string}`,
+          nodeAddress: nodeAddress as `0x${string}`,
+          initialBalancePerChunk: swarmConfig.swarmBatchInitialBalance,
+          depth: swarmConfig.swarmBatchDepth,
+          bucketDepth: swarmConfig.swarmBatchBucketDepth,
+          nonce: swarmConfig.swarmBatchNonce,
+          immutable_: swarmConfig.swarmBatchImmutable,
+        },
+      ],
+    });
+  }
+
+  // ── Step 3: Encode ERC-20 approval (exact amount; Multicaller is the caller) ─
+  const approvalData = encodeFunctionData({
+    abi: parseAbi(['function approve(address spender, uint256 amount) external returns (bool)']),
+    functionName: 'approve',
+    args: [SUSHI_STAMPS_ROUTER_ADDRESS as `0x${string}`, maxBridgeTokenIn],
+  });
+
+  const txs = [
+    { to: RELAY_BRIDGE_TOKEN_ON_GNOSIS, value: '0', data: approvalData },
+    { to: SUSHI_STAMPS_ROUTER_ADDRESS,  value: '0', data: routerCallData },
+  ];
+
+  // ── Step 4: Gas top-up on Gnosis ─────────────────────────────────────────────
+  const hasEnoughGas = await checkGnosisGasBalance(address);
+  const shouldTopupGas = !hasEnoughGas;
+  console.log(`⛽ Gas top-up: ${shouldTopupGas ? 'ENABLED' : 'DISABLED'}`);
+
+  // ── Step 5: Relay quote to bridge source token → USDC on Gnosis ─────────────
+  const relayQuoteRequest: RelayQuoteRequest = {
+    user: address,
+    recipient: address,
+    originChainId: selectedChainId,
+    destinationChainId: ChainId.DAI,
+    originCurrency: fromToken,
+    destinationCurrency: RELAY_BRIDGE_TOKEN_ON_GNOSIS,
+    amount: maxBridgeTokenIn.toString(),
+    tradeType: 'EXACT_OUTPUT', // deliver exactly maxBridgeTokenIn USDC
+    txs,
+    slippageTolerance: Math.round((slippagePercent ?? DEFAULT_SLIPPAGE) * 100).toString(),
+    refundOnOrigin: true,
+    topupGas: shouldTopupGas,
+    ...(shouldTopupGas && { topupGasAmount: GAS_TOPUP_AMOUNT_USD }),
+  };
+
+  const relayQuoteResponse = await performWithRetry(
+    async () => {
+      console.log('🌐 Relay cross-chain USDC quote request:', relayQuoteRequest);
+      const response = await fetch('https://api.relay.link/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(relayQuoteRequest),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        const { userMessage, errorCode } = parseRelayError(errorText);
+        const err = new Error(userMessage);
+        (err as any).relayErrorCode = errorCode;
+        (err as any).originalError = errorText;
+        throw err;
+      }
+      const data = await response.json();
+      console.log('✅ Relay USDC quote response:', data);
+      return data as RelayQuoteResponse;
+    },
+    `getRelayCrossChainWithSushiQuote-${isForEstimation ? 'estimation' : 'execution'}`,
+    undefined,
+    isForEstimation ? 3 : 5,
+    500
+  );
+
+  const totalAmountUSD = Number(relayQuoteResponse.details.currencyIn.amountUsd || 0);
+
+  if (setEstimatedTime && relayQuoteResponse.details.timeEstimate) {
+    setEstimatedTime(Math.ceil(relayQuoteResponse.details.timeEstimate));
+  }
+
+  console.log(
+    `✅ Cross-chain USDC+Sushi quote: $${totalAmountUSD.toFixed(2)}, steps: ${relayQuoteResponse.steps.length}`
+  );
+
+  return {
+    totalAmountUSD,
+    relayQuoteResponse,
+    steps: relayQuoteResponse.steps,
+    estimatedTime: relayQuoteResponse.details.timeEstimate,
+    isGnosisOnly: false,
+    selectedChainId,
+  };
 };
 
 /**
