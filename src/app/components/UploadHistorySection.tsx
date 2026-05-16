@@ -1235,21 +1235,16 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         </button>
                       </div>
                     ) : (
-                      <span
+                      <a
                         className={styles.filename}
-                        onClick={e => {
-                          e.stopPropagation(); // Prevent event bubbling
-                          startEditingFilename(
-                            index,
-                            record.reference,
-                            record.stampId,
-                            record.filename || ''
-                          );
-                        }}
-                        title="Click to rename locally"
+                        href={getReferenceUrl(record)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open file in new tab"
+                        onClick={e => e.stopPropagation()}
                       >
                         {record.filename || 'Unnamed upload'}
-                      </span>
+                      </a>
                     )}
                   </div>
                   <div className={styles.tagContainer}>
@@ -1274,13 +1269,19 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.dateContainer}>
                   <span className={styles.date}>{formatDate(record.timestamp)}</span>
-                  <a
-                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     className={styles.openFileButton}
-                    title="Open file in new tab"
-                    onClick={e => e.stopPropagation()}
+                    title="Rename locally"
+                    onClick={e => {
+                      e.stopPropagation();
+                      startEditingFilename(
+                        index,
+                        record.reference,
+                        record.stampId,
+                        record.filename || ''
+                      );
+                    }}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -1289,12 +1290,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      aria-hidden={true}
                     >
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                     </svg>
-                  </a>
+                  </button>
                 </div>
               </div>
               <div className={styles.itemDetails}>
