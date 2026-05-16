@@ -20,6 +20,7 @@ import {
   formatDateEU,
   fetchStampInfo,
 } from './utils';
+import { useBeeNodeHealth } from './BeeNodeHealth';
 
 // Cache for expired stamps to avoid repeated API calls
 const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
@@ -87,6 +88,20 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshingStamps, setRefreshingStamps] = useState<Set<string>>(new Set());
+
+  const {
+    state: beeHealth,
+    isProbing: isBeeHealthProbing,
+    refresh: refreshBeeHealth,
+  } = useBeeNodeHealth(beeApiUrl, !!address);
+
+  const beeNodeBlocks = beeHealth.status === 'unreachable' || beeHealth.status === 'unhealthy';
+
+  const checkingBeeGateway =
+    !!address &&
+    (beeHealth.status === 'unknown' ||
+      beeHealth.status === 'checking' ||
+      (beeHealth.status === 'ok' && isBeeHealthProbing));
 
   // Utility functions for cache management (can be called from dev tools)
   const clearExpiredStampsCache = () => {
@@ -225,6 +240,28 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   };
 
   useEffect(() => {
+    if (!address) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (beeHealth.status === 'unknown' || beeHealth.status === 'checking') {
+      setIsLoading(true);
+      return;
+    }
+
+    if (beeHealth.status === 'unreachable' || beeHealth.status === 'unhealthy') {
+      setIsLoading(false);
+      setStamps([]);
+      return;
+    }
+
+    // `ok` but a probe is still in flight (e.g. Bee URL just changed) — wait before stamp API calls
+    if (isBeeHealthProbing) {
+      setIsLoading(true);
+      return;
+    }
+
     const isStampKnownExpired = (batchId: string): boolean => {
       const cache = getExpiredStampsCache();
       const cachedEntry = cache[batchId];
@@ -283,11 +320,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     };
 
     const fetchStamps = async () => {
-      if (!address) {
-        setIsLoading(false);
-        return;
-      }
-
+      setIsLoading(true);
       try {
         // Create a client with the registry ABI
         const client = createPublicClient({
@@ -410,12 +443,12 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       }
     };
 
-    fetchStamps();
-  }, [address, beeApiUrl, nodeAddress]); // Re-fetch when address, API URL, or node changes
+    void fetchStamps();
+  }, [address, beeApiUrl, nodeAddress, beeHealth.status, isBeeHealthProbing]);
 
   // Function to refresh a specific stamp
   const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
-    if (!address) return;
+    if (!address || beeNodeBlocks) return;
 
     const batchId = stampToRefresh.batchId;
     setRefreshingStamps(prev => new Set(prev).add(batchId));
@@ -476,10 +509,45 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           <h2>Your Stamps</h2>
         </div>
 
+        {address && beeNodeBlocks && (
+          <div
+            className={
+              beeHealth.status === 'unhealthy'
+                ? `${styles.healthBanner} ${styles.healthBannerError}`
+                : `${styles.healthBanner} ${styles.healthBannerWarn}`
+            }
+            role="alert"
+          >
+            <div className={styles.healthBannerBody}>
+              <strong>Bee Node gateway not working</strong>
+              <p className={styles.healthBannerSub}>
+                Change the Bee API gateway in Settings or try again later
+              </p>
+            </div>
+            <button
+              type="button"
+              className={styles.healthBannerRetry}
+              onClick={() => void refreshBeeHealth()}
+              disabled={isBeeHealthProbing}
+            >
+              {isBeeHealthProbing ? (
+                <>
+                  <span className={styles.smallSpinner} aria-hidden />
+                  Checking…
+                </>
+              ) : (
+                'Retry'
+              )}
+            </button>
+          </div>
+        )}
+
         {!address ? (
           <div className={styles.stampListLoading}>Connect wallet to check stamps</div>
-        ) : isLoading ? (
-          <div className={styles.stampListLoading}>Loading stamps...</div>
+        ) : beeNodeBlocks ? null : isLoading ? (
+          <div className={styles.stampListLoading}>
+            {checkingBeeGateway ? 'Checking Bee gateway…' : 'Loading stamps...'}
+          </div>
         ) : stamps.length === 0 ? (
           <div className={styles.stampListEmpty}>No stamps found</div>
         ) : (

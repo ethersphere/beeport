@@ -79,6 +79,7 @@ import { handleFolderSelection } from './FolderUploadUtils';
 import { processNFTCollection, NFTCollectionResult } from './NFTCollectionProcessor';
 import { generateAndUpdateNonce, fetchNodeWalletAddress } from './utils';
 import { useTokenManagement } from './TokenUtils';
+import { useBeeNodeHealth } from './BeeNodeHealth';
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -202,6 +203,15 @@ const SwapComponent: React.FC = () => {
   } = useTokenManagement(address, isConnected);
 
   const [beeApiUrl, setBeeApiUrl] = useState<string>(DEFAULT_BEE_API_URL);
+
+  const {
+    state: beeNodeHealth,
+    isProbing: isBeeNodeHealthProbing,
+    refresh: refreshBeeNodeHealth,
+  } = useBeeNodeHealth(beeApiUrl, uploadStep === 'ready');
+
+  const beeNodeBlocksUpload =
+    beeNodeHealth.status === 'unreachable' || beeNodeHealth.status === 'unhealthy';
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -2117,6 +2127,38 @@ const SwapComponent: React.FC = () => {
                           }...${postageBatchId.slice(-4)}`
                         : 'Upload File'}
                     </h3>
+                    {beeNodeBlocksUpload && (
+                      <div
+                        className={
+                          beeNodeHealth.status === 'unhealthy'
+                            ? `${styles.healthBanner} ${styles.healthBannerError}`
+                            : `${styles.healthBanner} ${styles.healthBannerWarn}`
+                        }
+                        role="alert"
+                      >
+                        <div className={styles.healthBannerBody}>
+                          <strong>Bee Node gateway not working</strong>
+                          <p className={styles.healthBannerSub}>
+                            Change the Bee API gateway URL in Settings
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className={styles.healthBannerRetry}
+                          onClick={() => void refreshBeeNodeHealth()}
+                          disabled={isBeeNodeHealthProbing}
+                        >
+                          {isBeeNodeHealthProbing ? (
+                            <>
+                              <span className={styles.smallSpinner} aria-hidden />
+                              Checking…
+                            </>
+                          ) : (
+                            'Retry'
+                          )}
+                        </button>
+                      </div>
+                    )}
                     <div className={styles.uploadWarning}>
                       Warning! Uploaded data cannot be deleted - it will be removed once the stamp
                       has expired. Uploaded data exists publicly in the network - anyone who knows
@@ -2337,7 +2379,8 @@ const SwapComponent: React.FC = () => {
                           disabled={
                             (isMultipleFiles ? selectedFiles.length === 0 : !selectedFile) ||
                             uploadStep === 'uploading' ||
-                            exceedsMaximumUploadSize()
+                            exceedsMaximumUploadSize() ||
+                            beeNodeBlocksUpload
                           }
                           className={styles.uploadButton}
                         >
