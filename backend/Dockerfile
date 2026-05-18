@@ -6,7 +6,7 @@ RUN apk add --no-cache tini # Install tini
 WORKDIR /app
 COPY . .
 
-RUN npm install express http-proxy-middleware viem cors dotenv
+RUN npm install express http-proxy-middleware viem cors dotenv agentkeepalive
 USER nobody
 EXPOSE ${PORT}
 

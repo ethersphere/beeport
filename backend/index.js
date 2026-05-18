@@ -5,10 +5,26 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const { createPublicClient, http } = require('viem');
 const { gnosis } = require('viem/chains');
 const crypto = require('crypto');
+const HttpAgent = require('agentkeepalive');
+const { HttpsAgent } = require('agentkeepalive');
 
 // Add this near the top with other environment variables
 const PORT = process.env.PORT || 3333;
 const PROXY_TARGET = process.env.PROXY_TARGET || 'http://localhost:1633';
+
+// Bounded keep-alive agent for the upstream bee node. Without an explicit
+// agent, http-proxy-middleware v4 (via httpxy) uses a singleton keep-alive
+// pool whose sockets survive an upstream restart and serve dead connections
+// until the proxy process is restarted. socketActiveTTL caps socket lifetime
+// so the pool drains on its own after a bee restart.
+const AgentCtor = PROXY_TARGET.startsWith('https:') ? HttpsAgent : HttpAgent;
+const upstreamAgent = new AgentCtor({
+  keepAlive: true,
+  maxSockets: 256,
+  maxFreeSockets: 64,
+  freeSocketTimeout: 30_000,
+  socketActiveTTL: 60_000,
+});
 const REGISTRY_ADDRESS =
   process.env.REGISTRY_ADDRESS || '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
 
@@ -233,6 +249,7 @@ app.use((req, res, next) => {
 
 const proxy = createProxyMiddleware({
   target: PROXY_TARGET,
+  agent: upstreamAgent,
   changeOrigin: true,
   pathRewrite: null,
   secure: false,
