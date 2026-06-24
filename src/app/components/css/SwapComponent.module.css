@@ -246,6 +246,9 @@
   border-radius: 8px;
   color: #ff5a52;
   font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .warningMessage {
@@ -1513,6 +1516,64 @@
 
 .nftReferenceGroup .referenceBox p strong {
   color: #ff7a00;
+}
+
+.nftPathHint {
+  margin-top: 16px;
+  padding: 14px;
+  background-color: rgba(110, 118, 129, 0.12);
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+.nftPathHintTitle {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.nftPathHint p {
+  margin: 0 0 10px 0;
+}
+
+.nftPathHint p:last-child {
+  margin-bottom: 0;
+}
+
+.nftPathHintCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #79c0ff;
+  word-break: break-all;
+}
+
+.nftPathHintGatewayLead {
+  margin: 0 0 10px 0 !important;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.nftPathHintGatewayLinks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nftPathHintLink {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #79c0ff;
+  word-break: break-all;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.nftPathHintLink:hover {
+  color: #a5d6ff;
 }
 
 /* Responsive adjustments for mobile */

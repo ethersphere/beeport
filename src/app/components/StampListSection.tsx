@@ -25,6 +25,37 @@ import { useBeeNodeHealth } from './BeeNodeHealth';
 // Cache for expired stamps to avoid repeated API calls
 const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
 
+// User-defined names for postage batches (local only), keyed by normalized batch id (no 0x, lowercase)
+const STORAGE_LABELS_KEY = 'beeport_storage_labels';
+
+function normalizeBatchId(batchId: string): string {
+  const s = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+  return s.toLowerCase();
+}
+
+function loadStorageLabels(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_LABELS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function persistStorageLabels(labels: Record<string, string>) {
+  try {
+    localStorage.setItem(STORAGE_LABELS_KEY, JSON.stringify(labels));
+  } catch (e) {
+    console.warn('Failed to save storage label', e);
+  }
+}
+
 // Minimum age before considering a stamp for permanent expiry caching (24 hours)
 const MIN_STAMP_AGE_FOR_EXPIRY_CACHE = 24 * 60 * 60 * 1000;
 
@@ -88,6 +119,38 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshingStamps, setRefreshingStamps] = useState<Set<string>>(new Set());
+  const [storageLabels, setStorageLabels] = useState<Record<string, string>>({});
+  const [editingLabelFor, setEditingLabelFor] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState('');
+
+  useEffect(() => {
+    setStorageLabels(loadStorageLabels());
+  }, []);
+
+  const saveLabelDraft = (batchId: string) => {
+    const key = normalizeBatchId(batchId);
+    const trimmed = labelDraft.trim();
+    setStorageLabels(prev => {
+      const next = { ...prev };
+      if (!trimmed) delete next[key];
+      else next[key] = trimmed;
+      persistStorageLabels(next);
+      return next;
+    });
+    setEditingLabelFor(null);
+    setLabelDraft('');
+  };
+
+  const cancelLabelEdit = () => {
+    setEditingLabelFor(null);
+    setLabelDraft('');
+  };
+
+  const startLabelEdit = (batchId: string) => {
+    const key = normalizeBatchId(batchId);
+    setEditingLabelFor(key);
+    setLabelDraft(storageLabels[key] ?? '');
+  };
 
   const {
     state: beeHealth,
@@ -506,7 +569,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
         <div className={styles.stampListHeader}>
-          <h2>Your Stamps</h2>
+          <h2>Your Storage</h2>
         </div>
 
         {address && beeNodeBlocks && (
@@ -543,17 +606,90 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         )}
 
         {!address ? (
-          <div className={styles.stampListLoading}>Connect wallet to check stamps</div>
+          <div className={styles.stampListLoading}>Connect wallet to view your storage</div>
         ) : beeNodeBlocks ? null : isLoading ? (
           <div className={styles.stampListLoading}>
-            {checkingBeeGateway ? 'Checking Bee gateway…' : 'Loading stamps...'}
+            {checkingBeeGateway ? 'Checking Bee gateway…' : 'Loading your storage...'}
           </div>
         ) : stamps.length === 0 ? (
-          <div className={styles.stampListEmpty}>No stamps found</div>
+          <div className={styles.stampListEmpty}>No storage batches found</div>
         ) : (
           <>
-            {stamps.map((stamp, index) => (
-              <div key={index} className={styles.stampListItem}>
+            {stamps.map(stamp => {
+              const idKey = normalizeBatchId(stamp.batchId);
+              const labelText = storageLabels[idKey];
+              return (
+                <div key={stamp.batchId} className={styles.stampListItem}>
+                <div className={styles.storageLabelRow}>
+                  <span className={styles.storageLabelHeading}>Label</span>
+                  {editingLabelFor === idKey ? (
+                    <div className={styles.labelEditWrap}>
+                      <input
+                        type="text"
+                        className={styles.labelInput}
+                        value={labelDraft}
+                        onChange={e => setLabelDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveLabelDraft(stamp.batchId);
+                          if (e.key === 'Escape') cancelLabelEdit();
+                        }}
+                        onBlur={() => saveLabelDraft(stamp.batchId)}
+                        placeholder="Name this storage (local only)"
+                        autoFocus
+                        aria-label="Storage label"
+                      />
+                      <button
+                        type="button"
+                        className={styles.labelSaveButton}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => saveLabelDraft(stamp.batchId)}
+                        title="Save label"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.labelCancelButton}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => cancelLabelEdit()}
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={styles.labelDisplay}>
+                      <span
+                        className={
+                          labelText ? styles.storageLabelValue : styles.storageLabelPlaceholder
+                        }
+                        title={labelText || 'No label yet'}
+                      >
+                        {labelText || 'Unlabeled'}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.labelEditButton}
+                        onClick={() => startLabelEdit(stamp.batchId)}
+                        title="Edit label (saved in this browser only)"
+                        aria-label="Edit storage label"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden={true}
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div
                   className={styles.stampListId}
                   onClick={() => {
@@ -572,7 +708,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   }}
                   data-stamp-id={stamp.batchId}
                   data-copied="false"
-                  title="Click to copy stamp ID"
+                  title="Click to copy batch ID"
                 >
                   ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
                 </div>
@@ -583,7 +719,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   {stamp.isPropagating ? (
                     <div className={styles.propagatingMessage}>
                       <span className={styles.propagatingText}>
-                        🕐 Stamp is propagating on network - will be ready in up to 2 minutes
+                        🕐 Storage is propagating on the network — ready in up to 2 minutes
                       </span>
                     </div>
                   ) : (
@@ -626,8 +762,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       disabled={refreshingStamps.has(stamp.batchId)}
                       title={
                         refreshingStamps.has(stamp.batchId)
-                          ? 'Checking stamp status...'
-                          : 'Refresh to check if stamp is ready'
+                          ? 'Checking status...'
+                          : 'Refresh to check if ready'
                       }
                     >
                       {refreshingStamps.has(stamp.batchId) ? '⏳ Checking...' : 'Refresh'}
@@ -638,9 +774,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       onClick={() => {
                         handleStampSelect(stamp);
                       }}
-                      title="Upload with these stamps"
+                      title="Upload to this storage"
                     >
-                      Upload with these stamps
+                      Upload to this storage
                     </button>
                   )}
 
@@ -648,8 +784,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                     className={styles.topUpButton}
                     title={
                       stamp.isPropagating
-                        ? 'Please wait for stamp to finish propagating'
-                        : 'Top up this stamp'
+                        ? 'Please wait for propagation to finish'
+                        : 'Top up this storage'
                     }
                     disabled={stamp.isPropagating}
                     onClick={() => {
@@ -671,7 +807,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                         } catch (error) {
                           console.error('Error during top-up navigation:', error);
                           // Emergency fallback if all else fails
-                          alert('Navigation failed. Please copy the stamp ID and use it manually.');
+                          alert('Navigation failed. Please copy the ID and try again manually.');
                         }
                       }
                     }}
@@ -695,7 +831,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </>
         )}
 

@@ -107,7 +107,7 @@ const SwapComponent: React.FC = () => {
     ╔════════════════════════════════════════════════════════════════╗
     ║                         Version: 1.1.10                        ║
     ║                                                                ║
-    ║            Multichain Swarm Upload & Stamp Manager             ║
+    ║            Multichain Swarm Upload & Storage                   ║
     ║              https://github.com/ethersphere/beeport            ║
     ╚════════════════════════════════════════════════════════════════╝
     `);
@@ -1897,9 +1897,9 @@ const SwapComponent: React.FC = () => {
             <div className={styles.inputGroup}>
               <label
                 className={styles.label}
-                data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
+                data-tooltip="Reserved capacity pays to store and host data on Swarm"
               >
-                Storage stamps
+                Storage
               </label>
               <StorageStampsDropdown
                 storageOptions={STORAGE_OPTIONS}
@@ -2160,7 +2160,7 @@ const SwapComponent: React.FC = () => {
                       </div>
                     )}
                     <div className={styles.uploadWarning}>
-                      Warning! Uploaded data cannot be deleted - it will be removed once the stamp
+                      Warning! Uploaded data cannot be deleted - it will be removed once storage
                       has expired. Uploaded data exists publicly in the network - anyone who knows
                       the reference can access it.
                     </div>
@@ -2366,7 +2366,7 @@ const SwapComponent: React.FC = () => {
                               Upload NFT collection
                               <span
                                 className={styles.tooltip}
-                                title="Upload a ZIP file containing 'images' and 'json' folders. Images will be uploaded separately, and JSON metadata will be updated with bzz.link URLs pointing to the uploaded images."
+                                title="ZIP must include images/ and json/ folders (any parent path is OK, e.g. build/images and build/json). Files are uploaded as flat collections; metadata image fields are rewritten to point at the images manifest."
                               >
                                 ?
                               </span>
@@ -2610,6 +2610,34 @@ const SwapComponent: React.FC = () => {
                             </div>
                           </div>
                         </div>
+
+                        <div className={styles.nftPathHint}>
+                          <p className={styles.nftPathHintTitle}>How to load each token file</p>
+                          <p className={styles.nftPathHintGatewayLead}>
+                            Example URLs (swap <code className={styles.nftPathHintCode}>1.json</code> /{' '}
+                            <code className={styles.nftPathHintCode}>1.png</code> for your filenames):
+                          </p>
+                          <div className={styles.nftPathHintGatewayLinks}>
+                            <a
+                              href={`${BEE_GATEWAY_URL}${nftCollectionResult.metadataReference}/1.json`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.nftPathHintLink}
+                            >
+                              {BEE_GATEWAY_URL}
+                              {nftCollectionResult.metadataReference}/1.json
+                            </a>
+                            <a
+                              href={`${BEE_GATEWAY_URL}${nftCollectionResult.imagesReference}/1.png`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.nftPathHintLink}
+                            >
+                              {BEE_GATEWAY_URL}
+                              {nftCollectionResult.imagesReference}/1.png
+                            </a>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       // Single file upload success
@@ -2675,7 +2703,7 @@ const SwapComponent: React.FC = () => {
 
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
-                        <h4>Storage Stamps Details</h4>
+                        <h4>Storage details</h4>
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>

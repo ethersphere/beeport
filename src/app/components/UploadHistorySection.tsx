@@ -74,7 +74,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
   const formatStampId = (stampId: string) => {
     if (!stampId || typeof stampId !== 'string' || stampId.length < 10) {
-      return stampId || 'Invalid Stamp ID';
+      return stampId || 'Invalid ID';
     }
     return `${stampId.slice(0, 6)}...${stampId.slice(-4)}`;
   };
@@ -123,7 +123,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
 
     console.log('🔄 Refreshing stamp expiry dates (24+ hours since last check)...');
     setIsMigrating(true);
-    setMigrationProgress('Checking stamp expiry dates...');
+    setMigrationProgress('Checking expiry dates...');
 
     // Collect unique stamp IDs
     const uniqueStamps = Array.from(new Set(records.map(record => record.stampId)));
@@ -147,7 +147,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       const recordIndices = stampToRecords.get(stampId)!;
 
       try {
-        setMigrationProgress(`Checking stamps (${i + 1}/${uniqueStamps.length})...`);
+        setMigrationProgress(`Checking (${i + 1}/${uniqueStamps.length})...`);
 
         // Fetch fresh stamp info from API
         const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
@@ -202,7 +202,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // Update last check timestamp
     localStorage.setItem(lastCheckKey, now.toString());
     
-    setMigrationProgress(`Expiry check complete! (${uniqueStamps.length} stamps checked)`);
+    setMigrationProgress(`Expiry check complete! (${uniqueStamps.length} checked)`);
     setTimeout(() => {
       setIsMigrating(false);
       setMigrationProgress('');
@@ -587,7 +587,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     // CSV headers - added File Type column
     const headers = [
       'Reference',
-      'Stamp ID',
+      'ID',
       'Date Created',
       'Expiry Date',
       'Filename',
@@ -749,7 +749,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             `🔄 Querying API for ${stampToRecordIndices.size} unique stamps with invalid expiry dates...`
           );
           setIsMigrating(true);
-          setMigrationProgress(`Fetching expiry dates for ${stampToRecordIndices.size} stamps...`);
+          setMigrationProgress(`Fetching expiry dates (${stampToRecordIndices.size})...`);
 
           let queriedCount = 0;
           const uniqueStamps = Array.from(stampToRecordIndices.keys());
@@ -809,7 +809,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             }
           }
 
-          setMigrationProgress(`Successfully fetched ${queriedCount} stamp expiry dates!`);
+          setMigrationProgress(`Successfully fetched ${queriedCount} expiry dates!`);
           setTimeout(() => {
             setIsMigrating(false);
             setMigrationProgress('');
@@ -827,7 +827,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
 
         alert(
-          `Successfully imported ${newRecords.length} new records. ${stampToRecordIndices.size > 0 ? `Fetched expiry dates for ${stampToRecordIndices.size} unique stamps.` : ''}`
+          `Successfully imported ${newRecords.length} new records. ${stampToRecordIndices.size > 0 ? `Fetched expiry for ${stampToRecordIndices.size} entries.` : ''}`
         );
 
         // Auto-migrate any remaining records with invalid expiry dates (e.g., if API failed)
@@ -1235,21 +1235,16 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                         </button>
                       </div>
                     ) : (
-                      <span
+                      <a
                         className={styles.filename}
-                        onClick={e => {
-                          e.stopPropagation(); // Prevent event bubbling
-                          startEditingFilename(
-                            index,
-                            record.reference,
-                            record.stampId,
-                            record.filename || ''
-                          );
-                        }}
-                        title="Click to rename locally"
+                        href={getReferenceUrl(record)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open file in new tab"
+                        onClick={e => e.stopPropagation()}
                       >
                         {record.filename || 'Unnamed upload'}
-                      </span>
+                      </a>
                     )}
                   </div>
                   <div className={styles.tagContainer}>
@@ -1274,13 +1269,19 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                 </div>
                 <div className={styles.dateContainer}>
                   <span className={styles.date}>{formatDate(record.timestamp)}</span>
-                  <a
-                    href={`${BEE_GATEWAY_URL}${record.reference}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     className={styles.openFileButton}
-                    title="Open file in new tab"
-                    onClick={e => e.stopPropagation()}
+                    title="Rename locally"
+                    onClick={e => {
+                      e.stopPropagation();
+                      startEditingFilename(
+                        index,
+                        record.reference,
+                        record.stampId,
+                        record.filename || ''
+                      );
+                    }}
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -1289,12 +1290,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      aria-hidden={true}
                     >
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                     </svg>
-                  </a>
+                  </button>
                 </div>
               </div>
               <div className={styles.itemDetails}>
@@ -1322,7 +1323,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   </span>
                 </div>
                 <div className={styles.stampRow}>
-                  <span className={styles.label}>Stamps ID:</span>
+                  <span className={styles.label}>ID:</span>
                   <span
                     className={styles.stampId}
                     title={record.stampId}

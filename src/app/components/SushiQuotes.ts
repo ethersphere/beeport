@@ -443,7 +443,7 @@ export const getSushiQuote = async (params: SushiQuoteParams): Promise<SushiQuot
   if (route === undefined || amountInBeforeSlippage === undefined) {
     throw new Error(
       `Could not get a SushiSwap quote from ${tokenSymbol} to BZZ (tried ${routes.length} on-chain route(s)). ` +
-        'Try another token or a smaller stamp size.'
+        'Try another token or a smaller capacity.'
     );
   }
 
@@ -591,7 +591,7 @@ export const executeSushiSwap = async (params: SushiExecuteParams): Promise<void
 
   setStatusMessage({
     step: 'Swapping',
-    message: isTopUp ? 'Topping up stamp via SushiSwap…' : 'Buying stamp via SushiSwap…',
+    message: isTopUp ? 'Topping up storage via SushiSwap…' : 'Buying storage via SushiSwap…',
   });
 
   // ── 4. Build and send the router transaction ───────────────────────────────
@@ -668,7 +668,7 @@ export const executeSushiSwap = async (params: SushiExecuteParams): Promise<void
   });
 
   if (receipt.status !== 'success') {
-    throw new Error('SushiSwap stamp transaction failed on-chain');
+    throw new Error('SushiSwap transaction failed on-chain');
   }
 
   console.log('✅ SushiSwap stamp transaction confirmed:', txHash);
