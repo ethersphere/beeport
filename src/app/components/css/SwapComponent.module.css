@@ -458,29 +458,6 @@
   color: #ffffff;
 }
 
-.tooltip {
-  cursor: help;
-  font-size: 12px;
-  font-weight: bold;
-  color: #8b949e;
-  background: none;
-  border: 1px solid #8b949e;
-  border-radius: 50%;
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  line-height: 1;
-}
-
-.tooltip:hover {
-  color: #ff7a00;
-  border-color: #ff7a00;
-  background-color: rgba(255, 122, 0, 0.1);
-}
-
 .checkboxLabel {
   font-size: 14px;
   color: #8b949e;
@@ -497,11 +474,18 @@
   height: 16px;
   background-color: #ff7a00;
   color: #ffffff;
+  border: none;
   border-radius: 50%;
   font-size: 12px;
   font-weight: bold;
   cursor: help;
   flex-shrink: 0;
+  line-height: 1;
+  transition: background-color 0.2s ease;
+}
+
+.tooltip:hover {
+  background-color: #e56e00;
 }
 
 .uploadButton {
