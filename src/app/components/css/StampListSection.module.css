@@ -368,6 +368,9 @@
 }
 
 .resetButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 1px solid #30363d;
   color: #8b949e;

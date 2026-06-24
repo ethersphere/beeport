@@ -509,6 +509,20 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     void fetchStamps();
   }, [address, beeApiUrl, nodeAddress, beeHealth.status, isBeeHealthProbing]);
 
+  const handleHardReset = () => {
+    const confirmed = window.confirm(
+      'Refresh storage list? This clears the local expired-stamps cache and reloads the page. Only use this if your storage list looks incorrect.'
+    );
+    if (!confirmed) return;
+
+    try {
+      localStorage.removeItem(EXPIRED_STAMPS_CACHE_KEY);
+      window.location.reload();
+    } catch (error) {
+      console.error('Error clearing expired stamps cache:', error);
+    }
+  };
+
   // Function to refresh a specific stamp
   const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
     if (!address || beeNodeBlocks) return;
@@ -839,19 +853,28 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         {/* Hard reset button - discrete at bottom */}
         <div className={styles.resetButtonContainer}>
           <button
+            type="button"
             className={styles.resetButton}
-            onClick={() => {
-              try {
-                localStorage.removeItem(EXPIRED_STAMPS_CACHE_KEY);
-                // Trigger a refresh of the stamp list
-                window.location.reload();
-              } catch (error) {
-                console.error('Error clearing expired stamps cache:', error);
-              }
-            }}
-            title="Hard reset data"
+            onClick={handleHardReset}
+            title="Refresh storage list (clears cache and reloads)"
+            aria-label="Refresh storage list"
           >
-            ⚙️
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
           </button>
         </div>
       </div>
