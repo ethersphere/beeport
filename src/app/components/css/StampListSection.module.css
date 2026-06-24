@@ -53,6 +53,126 @@
   border: 1px solid #30363d;
 }
 
+.storageLabelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #30363d;
+}
+
+.storageLabelHeading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6e7681;
+}
+
+.labelDisplay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.storageLabelValue {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f0f6fc;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.storageLabelPlaceholder {
+  font-size: 16px;
+  font-weight: 500;
+  color: #6e7681;
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+}
+
+.labelEditButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.labelEditButton:hover {
+  border-color: #ff7a00;
+  color: #ff7a00;
+  background-color: rgba(255, 122, 0, 0.08);
+}
+
+.labelEditButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.labelEditWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.labelInput {
+  flex: 1;
+  min-width: 0;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.labelInput:focus {
+  border-color: #58a6ff;
+}
+
+.labelSaveButton,
+.labelCancelButton {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  transition: all 0.2s ease;
+}
+
+.labelSaveButton:hover {
+  border-color: #3fb950;
+  color: #3fb950;
+}
+
+.labelCancelButton:hover {
+  border-color: #f85149;
+  color: #f85149;
+}
+
 .stampListId {
   font-family: monospace;
   font-size: 14px;

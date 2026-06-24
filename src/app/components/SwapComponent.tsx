@@ -106,7 +106,7 @@ const SwapComponent: React.FC = () => {
     ╔════════════════════════════════════════════════════════════════╗
     ║                         Version: 1.1.10                        ║
     ║                                                                ║
-    ║            Multichain Swarm Upload & Stamp Manager             ║
+    ║            Multichain Swarm Upload & Storage                   ║
     ║              https://github.com/ethersphere/beeport            ║
     ╚════════════════════════════════════════════════════════════════╝
     `);
@@ -1887,9 +1887,9 @@ const SwapComponent: React.FC = () => {
             <div className={styles.inputGroup}>
               <label
                 className={styles.label}
-                data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
+                data-tooltip="Reserved capacity pays to store and host data on Swarm"
               >
-                Storage stamps
+                Storage
               </label>
               <StorageStampsDropdown
                 storageOptions={STORAGE_OPTIONS}
@@ -2118,7 +2118,7 @@ const SwapComponent: React.FC = () => {
                         : 'Upload File'}
                     </h3>
                     <div className={styles.uploadWarning}>
-                      Warning! Uploaded data cannot be deleted - it will be removed once the stamp
+                      Warning! Uploaded data cannot be deleted - it will be removed once storage
                       has expired. Uploaded data exists publicly in the network - anyone who knows
                       the reference can access it.
                     </div>
@@ -2632,7 +2632,7 @@ const SwapComponent: React.FC = () => {
 
                     {uploadStampInfo && (
                       <div className={styles.stampInfoBox}>
-                        <h4>Storage Stamps Details</h4>
+                        <h4>Storage details</h4>
                         <div className={styles.stampDetails}>
                           <div className={styles.stampDetail}>
                             <span>Utilization:</span>
