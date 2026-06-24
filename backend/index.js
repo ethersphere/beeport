@@ -268,10 +268,16 @@ const proxy = createProxyMiddleware({
     res.end('Proxy error: ' + err.message);
   },
   onProxyReq: (proxyReq, req, res) => {
+    const redundancyLevel = req.headers['swarm-redundancy-level'];
+    if (redundancyLevel) {
+      proxyReq.setHeader('swarm-redundancy-level', redundancyLevel);
+    }
+
     console.log('Proxy request:', {
       path: req.path,
       method: req.method,
       contentLength: req.headers['content-length'],
+      redundancyLevel: redundancyLevel || 'not set',
     });
   },
   onProxyRes: (proxyRes, req, res) => {
