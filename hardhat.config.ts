@@ -32,28 +32,11 @@ const config: HardhatUserConfig = {
       url: GNOSIS_RPC_URL,
       accounts: [PRIVATE_KEY],
       chainId: 100,
-      verify: {
-        etherscan: {
-          apiUrl: "https://api.gnosisscan.io",
-          apiKey: GNOSIS_API_KEY,
-        },
-      },
     },
   },
+  // Etherscan API v2: one key from https://etherscan.io/myapikey works for Gnosis (chainId 100).
   etherscan: {
-    apiKey: {
-      gnosis: GNOSIS_API_KEY,
-    },
-    customChains: [
-      {
-        network: "gnosis",
-        chainId: 100,
-        urls: {
-          apiURL: "https://api.gnosisscan.io/api",
-          browserURL: "https://gnosisscan.io",
-        },
-      },
-    ],
+    apiKey: GNOSIS_API_KEY,
   },
 
   // Sourcify verification (v2 - supported by GnosisScan / Blockscout natively)

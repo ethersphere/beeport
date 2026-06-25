@@ -83,7 +83,7 @@ Both deploy scripts automatically attempt verification after deployment using tw
 
 | Method | Tool | API key needed |
 |--------|------|---------------|
-| **GnosisScan** (Etherscan-compatible) | `verify:verify` task | Yes (`MAINNET_ETHERSCAN_KEY`) |
+| **GnosisScan** (Etherscan-compatible) | `verify:verify` task | Yes (`MAINNET_ETHERSCAN_KEY` from [etherscan.io](https://etherscan.io/myapikey)) |
 | **Sourcify** (v2, Blockscout native) | `sourcify` task | No |
 
 #### Standalone verification scripts (run any time after deployment)
@@ -110,7 +110,7 @@ npx hardhat verify --network gnosis <ADDRESS> <CONSTRUCTOR_ARG>
 npx hardhat sourcify --network gnosis --address <ADDRESS>
 ```
 
-Sourcify mirrors are picked up by GnosisScan/Blockscout automatically, so verifying on Sourcify alone is sufficient if you don't have a GnosisScan API key.
+Sourcify mirrors are picked up by GnosisScan/Blockscout automatically, so verifying on Sourcify alone is sufficient if you don't have an Etherscan.io API key. For GnosisScan verification, use an API key from [etherscan.io/myapikey](https://etherscan.io/myapikey) (not a GnosisScan-only key).
 
 ---
 

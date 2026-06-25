@@ -20,7 +20,7 @@
  * ────────────
  *   WALLET_SECRET           – deployer private key (for reading deployments)
  *   GNOSIS_RPC_URL          – Gnosis RPC endpoint
- *   MAINNET_ETHERSCAN_KEY   – GnosisScan API key (for Etherscan-style verification)
+ *   MAINNET_ETHERSCAN_KEY   – Etherscan.io API key (v2; works for Gnosis chainId 100)
  *   GNOSIS_STAMPS_REGISTRY  – StampsRegistry address (constructor arg; default shown below)
  */
 

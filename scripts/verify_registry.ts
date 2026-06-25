@@ -11,6 +11,10 @@
  *
  *   # Pass the address explicitly:
  *   REGISTRY_ADDRESS=0xYourAddress npm run verify:registry
+ *
+ * Requirements
+ * ────────────
+ *   MAINNET_ETHERSCAN_KEY   – Etherscan.io API key (v2; works for Gnosis chainId 100)
  */
 
 import { run, deployments } from 'hardhat';
