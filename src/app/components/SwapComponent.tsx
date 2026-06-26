@@ -4,18 +4,16 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { watchChainId, getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { config, getPollingInterval } from '@/app/wagmi';
+import { config } from '@/app/wagmi';
 import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
-import { parseAbi, formatUnits } from 'viem';
-import { getAddress } from 'viem';
+import { formatUnits } from 'viem';
 
 import { ExecutionStatus, UploadStep } from './types';
 import {
   GNOSIS_PRICE_ORACLE_ADDRESS,
   GNOSIS_PRICE_ORACLE_ABI,
   DEFAULT_NODE_ADDRESS,
-  GNOSIS_BZZ_ADDRESS,
   DEFAULT_SWARM_CONFIG,
   STORAGE_OPTIONS,
   BEE_GATEWAY_URL,
@@ -154,33 +152,6 @@ const SwapComponent: React.FC = () => {
   const [multiFileResults, setMultiFileResults] = useState<MultiFileResult[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
-
-  // Approval options state
-  const [approvalType, setApprovalType] = useState<'exact' | 'infinite'>('exact');
-  const [showApprovalDropdown, setShowApprovalDropdown] = useState(false);
-  const [needsApproval, setNeedsApproval] = useState(false);
-  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
-  const approvalDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close approval dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        approvalDropdownRef.current &&
-        !approvalDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowApprovalDropdown(false);
-      }
-    };
-
-    if (showApprovalDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showApprovalDropdown]);
 
   const [isWalletLoading, setIsWalletLoading] = useState(true);
   const [postageBatchId, setPostageBatchId] = useState<string>('');
@@ -540,160 +511,7 @@ const SwapComponent: React.FC = () => {
     setNodeAddress(address);
   }, [beeApiUrl]);
 
-  // Check if BZZ approval is needed
-  const checkBzzApproval = useCallback(
-    async (amount: bigint): Promise<boolean> => {
-      if (!address || !publicClient) return true;
-
-      try {
-        const allowance = await publicClient.readContract({
-          address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-          abi: parseAbi([
-            'function allowance(address owner, address spender) external view returns (uint256)',
-          ]),
-          functionName: 'allowance',
-          args: [address as `0x${string}`, GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`],
-        });
-
-        return BigInt(allowance.toString()) < amount;
-      } catch (error) {
-        console.error('Failed to check BZZ allowance:', error);
-        return true; // Default to needing approval if check fails
-      }
-    },
-    [address, publicClient]
-  );
-
-  // Handle BZZ approval
-  const handleBzzApproval = async () => {
-    if (!address || !publicClient || !walletClient || !currentPrice || !selectedDays) {
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setShowOverlay(true);
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Approving BZZ tokens...',
-      });
-
-      // Calculate amount based on whether this is a top-up or new batch
-      let totalAmount: bigint;
-      if (isTopUp && originalStampInfo) {
-        totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-      } else {
-        const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-        const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-        totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
-      }
-
-      const MAX_UINT256 =
-        '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-      const approvalAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
-
-      const approveCallData = {
-        address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-        abi: [
-          {
-            constant: false,
-            inputs: [
-              { name: '_spender', type: 'address' },
-              { name: '_value', type: 'uint256' },
-            ],
-            name: 'approve',
-            outputs: [{ name: 'success', type: 'bool' }],
-            type: 'function',
-          },
-        ],
-        functionName: 'approve',
-        args: [GNOSIS_CUSTOM_REGISTRY_ADDRESS, approvalAmount],
-        account: address,
-      };
-
-      const approveTxHash = await walletClient.writeContract(approveCallData);
-
-      setStatusMessage({
-        step: 'Approval',
-        message: 'Waiting for approval confirmation...',
-      });
-
-      const approveReceipt = await publicClient.waitForTransactionReceipt({
-        hash: approveTxHash,
-        pollingInterval: getPollingInterval(chainId),
-      });
-
-      if (approveReceipt.status !== 'success') {
-        throw new Error('Approval failed');
-      }
-
-      console.log(
-        `✅ ${approvalType === 'infinite' ? 'Infinite' : 'Exact'} BZZ approval completed successfully`
-      );
-
-      // Update approval status
-      setNeedsApproval(false);
-      setIsLoading(false);
-      setShowOverlay(false);
-    } catch (error) {
-      console.error('Approval failed:', error);
-      setStatusMessage({
-        step: 'Error',
-        message: 'Approval failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        isError: true,
-      });
-      setIsLoading(false);
-      setShowOverlay(false);
-    }
-  };
-
-  // Check approval status when relevant parameters change
-  useEffect(() => {
-    const checkApprovalStatus = async () => {
-      if (
-        selectedChainId === ChainId.DAI &&
-        fromToken &&
-        getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-        currentPrice &&
-        selectedDays &&
-        address &&
-        publicClient
-      ) {
-        setIsCheckingApproval(true);
-
-        // Calculate total amount
-        let totalAmount: bigint;
-        if (isTopUp && originalStampInfo) {
-          totalAmount = calculateTopUpAmount(originalStampInfo.depth);
-        } else {
-          const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-          const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-          totalAmount = totalPricePerDuration * BigInt(2 ** selectedDepth);
-        }
-
-        const needsApprovalResult = await checkBzzApproval(totalAmount);
-        setNeedsApproval(needsApprovalResult);
-        setIsCheckingApproval(false);
-      } else {
-        setNeedsApproval(false);
-        setIsCheckingApproval(false);
-      }
-    };
-
-    checkApprovalStatus();
-  }, [
-    selectedChainId,
-    fromToken,
-    currentPrice,
-    selectedDays,
-    address,
-    publicClient,
-    isTopUp,
-    originalStampInfo,
-    selectedDepth,
-    checkBzzApproval,
-  ]);
+  // BZZ approval is handled automatically by Relay as part of the swap steps.
 
   useEffect(() => {
     const fetchAndSetNode = async () => {
@@ -1426,18 +1244,6 @@ const SwapComponent: React.FC = () => {
     }
   }, [topUpBatchId, isTopUp, fetchStampInfoForComponent]);
 
-  // Calculate amount for topping up an existing batch
-  const calculateTopUpAmount = (originalDepth: number) => {
-    if (currentPrice === null || !selectedDays) return 0n;
-
-    // We use the original depth from the stamp, not the currently selected depth
-    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
-    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
-
-    // Calculate for the original batch depth
-    return totalPricePerDuration * BigInt(2 ** originalDepth);
-  };
-
   // Set hasMounted and badge label by host: LOCAL (localhost), TEST (beeport.xyz), BETA (elsewhere)
   useEffect(() => {
     setHasMounted(true);
@@ -1617,16 +1423,7 @@ const SwapComponent: React.FC = () => {
                   insufficientFunds ||
                   isPriceEstimating)
               }
-              onClick={
-                !hasMounted || !isConnected
-                  ? handleGetStarted
-                  : selectedChainId === ChainId.DAI &&
-                      fromToken &&
-                      getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-                      needsApproval
-                    ? handleBzzApproval
-                    : handleSwap
-              }
+              onClick={!hasMounted || !isConnected ? handleGetStarted : handleSwap}
             >
               {isLoading ? (
                 <div>Loading...</div>
@@ -1646,58 +1443,10 @@ const SwapComponent: React.FC = () => {
                 'Insufficient Balance'
               ) : isTopUp ? (
                 'Top Up Batch'
-              ) : selectedChainId === ChainId.DAI &&
-                fromToken &&
-                getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-                needsApproval ? (
-                <div className={styles.approvalButtonContent}>
-                  <span>{approvalType === 'exact' ? 'Approve' : 'Approve Infinite'}</span>
-                  <span
-                    className={`${styles.approvalArrow} ${showApprovalDropdown ? styles.approvalArrowUp : ''}`}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setShowApprovalDropdown(!showApprovalDropdown);
-                    }}
-                  >
-                    ▼
-                  </span>
-                </div>
               ) : (
                 'Buy Storage'
               )}
             </button>
-
-            {/* Approval dropdown positioned relative to the main button */}
-            {selectedChainId === ChainId.DAI &&
-              fromToken &&
-              getAddress(fromToken) === getAddress(GNOSIS_BZZ_ADDRESS) &&
-              needsApproval &&
-              showApprovalDropdown && (
-                <div className={styles.approvalOptionsOutside} ref={approvalDropdownRef}>
-                  <button
-                    className={`${styles.approvalOption} ${approvalType === 'exact' ? styles.approvalOptionActive : ''}`}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setApprovalType('exact');
-                      setShowApprovalDropdown(false);
-                    }}
-                  >
-                    <span>Approve</span>
-                    <span className={styles.approvalDescription}>Exact amount needed</span>
-                  </button>
-                  <button
-                    className={`${styles.approvalOption} ${approvalType === 'infinite' ? styles.approvalOptionActive : ''}`}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setApprovalType('infinite');
-                      setShowApprovalDropdown(false);
-                    }}
-                  >
-                    <span>Approve Infinite</span>
-                    <span className={styles.approvalDescription}>No future approvals needed</span>
-                  </button>
-                </div>
-              )}
           </div>
 
           {executionResult && (
