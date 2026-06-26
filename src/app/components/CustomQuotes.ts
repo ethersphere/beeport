@@ -10,5 +10,4 @@ export { ChainId } from '@lifi/sdk';
 // by the Relay API implementation in RelayQuotes.ts
 //
 // Current architecture:
-// 1. Direct BZZ purchases → handleDirectBzzTransactions in SwapComponent.tsx
-// 2. Cross-chain swaps → Relay API via RelayQuotes.ts
+// All stamp purchases (same-chain and cross-chain) → Relay API via RelayQuotes.ts
