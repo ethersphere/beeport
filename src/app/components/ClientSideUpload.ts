@@ -27,7 +27,6 @@ import {
   MerkleTree,
   Stamper,
   type EnvelopeWithBatchId,
-  type PrivateKey,
   Reference,
 } from '@ethersphere/bee-js';
 import { AsyncQueue, type Chunk } from 'cafe-utility';
@@ -44,7 +43,6 @@ import {
 } from './ClientStamping';
 import {
   buildStampEnvelope,
-  tryCreateStampSignerPool,
   uploadChunkPresignedFetch,
   type StampSignerPool,
 } from './FastPresignedStamp';
@@ -369,7 +367,7 @@ export async function uploadFileClientSide(
 
   if (!file) throw new Error('No file provided');
   if (!batchId) throw new Error('No batchId provided');
-  if (!hotKey?.signer) throw new Error('No hot key provided');
+  if (!hotKey) throw new Error('No hot key provided');
   if (depth < 17) throw new Error(`Postage batch depth ${depth} is too small`);
 
   const cleanBatchId = stripHex(batchId);
@@ -377,9 +375,11 @@ export async function uploadFileClientSide(
     throw new Error(`Invalid batch id: ${batchId}`);
   }
 
+  hotKey.touch();
+
   const bee = new Bee(beeApiUrl);
-  const signer: PrivateKey = hotKey.signer;
-  const issuerAddrBytes = signer.publicKey().address().toUint8Array();
+  const signer = hotKey.stamperSigner();
+  const issuerAddrBytes = hotKey.issuerAddrBytes;
 
   // ── Stamper: load persisted issuer state or start fresh ────────────────────
   // Bee will reject (bucket conflict) if we re-use a (bucket,cnt) pair, so the
@@ -594,7 +594,7 @@ export async function uploadFileClientSide(
             stamper,
             chunk,
             issuerAddrBytes,
-            hotKey.privateKey,
+            null,
             stampPool
           );
         }
@@ -694,7 +694,7 @@ export async function uploadFileClientSide(
   };
 
   try {
-    stampPool = tryCreateStampSignerPool(hotKey.privateKey);
+    stampPool = hotKey.stampPool;
 
     // ── Pre-flight: prove the gateway will accept stamps from us ────────────
     // For a freshly-created batch the gateway's batchstore may not yet have
@@ -715,8 +715,8 @@ export async function uploadFileClientSide(
         stamper,
         beeApiUrl,
         issuerAddrBytes,
-        hotKey.privateKey,
         stampPool,
+        null,
         abortSignal,
         onStatus
       );
@@ -787,8 +787,8 @@ export async function uploadFileClientSide(
           progressOut?.(chunksUploaded, totalChunksApprox);
         },
         issuerAddrBytes,
-        hotKey.privateKey,
-        stampPool
+        stampPool,
+        null
       );
     });
 
@@ -1061,8 +1061,8 @@ async function saveManifestPresigned(
  * chunk pipeline for the encrypted state blob.
  *
  * @param issuer 20-byte Ethereum address bytes of the hot key (`signer.publicKey().address()`).
- * @param privKeyBytes Raw 32-byte hot private key (same material as {@link DerivedHotKey.privateKey}).
- * @param stampPool Optional worker pool for ECDSA; `null` signs on the main thread.
+ * @param stampPool Worker pool holding the hot private key (preferred).
+ * @param privKeyBytes Fallback main-thread signing when no pool (tests only).
  */
 export async function uploadDataPresigned(
   data: Uint8Array,
@@ -1071,8 +1071,8 @@ export async function uploadDataPresigned(
   abortSignal: AbortSignal | undefined,
   onUploaded: () => void,
   issuer: Uint8Array,
-  privKeyBytes: Uint8Array,
-  stampPool: StampSignerPool | null
+  stampPool: StampSignerPool | null,
+  privKeyBytes: Uint8Array | null = null
 ): Promise<Reference> {
   // Single-chunk fast path: most marshalled mantaray nodes are < 4 KB.
   if (data.length <= 4096) {
@@ -1102,7 +1102,7 @@ async function uploadOneChunk(
   stamper: Stamper,
   beeApiUrl: string,
   issuer: Uint8Array,
-  privKeyBytes: Uint8Array,
+  privKeyBytes: Uint8Array | null,
   stampPool: StampSignerPool | null,
   abortSignal: AbortSignal | undefined
 ): Promise<void> {
@@ -1171,8 +1171,8 @@ async function waitForStampReady(
   stamper: Stamper,
   beeApiUrl: string,
   issuer: Uint8Array,
-  privKeyBytes: Uint8Array,
   stampPool: StampSignerPool | null,
+  privKeyBytes: Uint8Array | null,
   abortSignal: AbortSignal | undefined,
   onStatus?: (msg: string) => void
 ): Promise<{ probeAddrHex: string }> {
@@ -1502,8 +1502,8 @@ interface UploadCtx {
   beeApiUrl: string;
   stamper: Stamper;
   issuerAddrBytes: Uint8Array;
-  privKeyBytes: Uint8Array;
-  stampPool: StampSignerPool | null;
+  stampPool: StampSignerPool;
+  hotKey: DerivedHotKey;
   addrBatcher: StampedAddrWriteBatcher;
   cleanBatchId: string;
   queue: AsyncQueue;
@@ -1542,7 +1542,7 @@ async function createUploadContext(opts: {
   const progressOut = throttleUploadProgress(onProgress);
 
   if (!batchId) throw new Error('No batchId provided');
-  if (!hotKey?.signer) throw new Error('No hot key provided');
+  if (!hotKey) throw new Error('No hot key provided');
   if (depth < 17) throw new Error(`Postage batch depth ${depth} is too small`);
 
   const cleanBatchId = stripHex(batchId);
@@ -1550,8 +1550,10 @@ async function createUploadContext(opts: {
     throw new Error(`Invalid batch id: ${batchId}`);
   }
 
+  hotKey.touch();
+
   const bee = new Bee(beeApiUrl);
-  const signer: PrivateKey = hotKey.signer;
+  const signer = hotKey.stamperSigner();
 
   const persisted = await loadStamperState(cleanBatchId);
   const stamper = persisted
@@ -1575,9 +1577,9 @@ async function createUploadContext(opts: {
     bee,
     beeApiUrl,
     stamper,
-    issuerAddrBytes: hotKey.signer.publicKey().address().toUint8Array(),
-    privKeyBytes: hotKey.privateKey,
-    stampPool: tryCreateStampSignerPool(hotKey.privateKey),
+    issuerAddrBytes: hotKey.issuerAddrBytes,
+    stampPool: hotKey.stampPool,
+    hotKey,
     addrBatcher: new StampedAddrWriteBatcher(cleanBatchId),
     cleanBatchId,
     queue,
@@ -1628,8 +1630,8 @@ async function createUploadContext(opts: {
         ctx.stamper,
         ctx.beeApiUrl,
         ctx.issuerAddrBytes,
-        ctx.privKeyBytes,
         ctx.stampPool,
+        null,
         ctx.abortSignal,
         onStatus
       );
@@ -1671,7 +1673,7 @@ async function createUploadContext(opts: {
             ctx.stamper,
             chunk,
             ctx.issuerAddrBytes,
-            ctx.privKeyBytes,
+            null,
             ctx.stampPool
           );
         }
@@ -1781,8 +1783,8 @@ async function uploadManifestThroughCtx(
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
       },
       ctx.issuerAddrBytes,
-      ctx.privKeyBytes,
-      ctx.stampPool
+      ctx.stampPool,
+      null
     );
   });
   ctx.persistState(true);

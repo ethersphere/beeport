@@ -75,8 +75,10 @@ the self-custody flow.
 
 | Data | Where | Notes |
 |---|---|---|
-| Hot-key **private key** | RAM only | Lives in `hotKeyCache: Map<string, DerivedHotKey>` for the lifetime of the tab. Garbage-collected on close. |
+| Hot-key **private scalar** | Stamp **workers only** (RAM) | Main thread never holds the 32-byte key after derivation; see [Wallet security](./wallet-security.md). |
 | Hot-key **address** | `localStorage["beeport.hotKeyAddress.<wallet>"]` | Public info. UI display only. |
+| Hot-key **session** | In-memory `HotKeySession` | Cleared after **15 min idle** (re-sign canonical message), tab close, or wallet change. |
+| SOC **AES key** | Main-thread `CryptoKey` per session | Derived from hot scalar once at unlock; used only for issuer-state blob encrypt/decrypt. |
 | Self-custody batch metadata | `localStorage["beeport.selfCustodyBatches.v1"]` | `{ batchId, walletAddress, hotKeyAddress, depth, totalAmount, … }`. Used by the stamp list when Bee can't tell us about foreign-owned batches. |
 | Stamper **issuer state** (bucket counters) | `IndexedDB["beeport"].stamperState[batchId]` | One `Uint32Array(65 536)` per batch, stored via structured clone (no JSON round-trip). Critical: re-use of `(bucket, cnt)` is rejected by Bee, so this MUST persist across sessions. Migrated automatically on first load from the legacy `localStorage["beeport.stamper.<batchId>"]` key. |
 | Per-batch chunk-address dedup set | `IndexedDB["beeport"].stampedAddrs` (composite key `[batchId, addrHex]`, `byBatch` index) | One record per chunk address ever stamped+accepted under the batch. Written incrementally — one tiny `put` per chunk — so re-uploading the same file is cheap and there's no quota pressure. Migrated automatically on first load from the legacy `localStorage["beeport.stamped.<batchId>"]` key. |
@@ -259,9 +261,9 @@ This is the bit people get wrong, so spelling it out exhaustively:
   produces the same stamp, and Bee sees an idempotent retry.
 - **Uploading a *new* file that maps any chunk into a bucket the
   previous session had consumed will be rejected mid-upload by Bee.**
-  Concretely: bee-js's `bee.uploadChunk()` throws on the first chunk
-  whose `(bucket, cnt)` collides with a slot already burned for a
-  different chunk hash, and our `uploadFileClientSide` aborts there.
+  Concretely: the first chunk whose `(bucket, cnt)` collides with a slot
+  already burned for a different chunk hash is rejected by Bee, and
+  `uploadFileClientSide` aborts there.
   The user sees a "stamp invalid: bucket counter mismatch" style error.
 
 So "slot burn" really means: **you cannot reliably upload new content

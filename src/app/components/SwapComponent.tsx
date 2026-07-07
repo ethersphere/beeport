@@ -58,6 +58,7 @@ import {
 } from './RelayQuotes';
 import {
   deriveHotKey,
+  clearHotKey,
   getCachedHotKeyAddress,
   loadStampUsage,
   type DerivedHotKey,
@@ -280,6 +281,7 @@ const SwapComponent: React.FC = () => {
   // We only persist the public address — the private key never leaves memory.
   useEffect(() => {
     if (!address) {
+      if (hotKey) clearHotKey(hotKey.address);
       setCachedHotKeyAddress(null);
       setHotKey(null);
       return;
@@ -287,7 +289,7 @@ const SwapComponent: React.FC = () => {
     const cached = getCachedHotKeyAddress(address);
     setCachedHotKeyAddress(cached);
     if (hotKey && hotKey.address.toLowerCase() !== address.toLowerCase()) {
-      // Wallet changed — invalidate the in-memory hot key so we re-derive.
+      clearHotKey(hotKey.address);
       setHotKey(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -299,17 +301,20 @@ const SwapComponent: React.FC = () => {
    * `hotKey` is cached in component state for the rest of the session.
    */
   const ensureHotKey = useCallback(async (): Promise<DerivedHotKey> => {
-    if (hotKey && address && hotKey.address.toLowerCase() === address.toLowerCase()) {
-      return hotKey;
-    }
     if (!walletClient || !address) {
       throw new Error('Wallet not connected — cannot derive hot key');
     }
-    setStatusMessage({
-      step: 'HotKey',
-      message:
-        'Please sign the message in your wallet to derive your self-custody stamping key…',
-    });
+    const hadValidSession =
+      hotKey !== null && hotKey.address.toLowerCase() === address.toLowerCase();
+    if (!hadValidSession) {
+      setStatusMessage({
+        step: 'HotKey',
+        message:
+          'Please sign the message in your wallet to derive your self-custody stamping key…',
+      });
+    }
+    // Always route through deriveHotKey so idle-timeout expiry is respected
+    // (React state may still hold a session whose workers were terminated).
     const derived = await deriveHotKey(walletClient, address as `0x${string}`);
     setHotKey(derived);
     setCachedHotKeyAddress(derived.address);

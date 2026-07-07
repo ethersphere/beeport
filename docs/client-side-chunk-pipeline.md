@@ -9,12 +9,15 @@ Technical reference for how Beeport stamps and uploads chunks from the browser w
 | `ClientSideUpload.ts` | BMT chunking, `AsyncQueue` parallelism, manifest, optional SOC backup trigger |
 | `FastPresignedStamp.ts` | EIP-191 stamp digest, `@noble/secp256k1` signing, optional worker pool, `fetch` to `/chunks` (CAC) or `/soc/...` (issuer-state SOC) |
 | `src/workers/stampSignerWorker.ts` | Off-main-thread signing (optional); pool falls back to main thread if workers fail |
+| `HotKeySession.ts` | Derive hot key, worker-only scalar, 15 min idle re-sign |
 | `ClientStamping.ts` | Stamper persistence (IndexedDB), chunk-address dedup batching |
 | `IssuerStateSOC.ts` | Encrypted issuer-state backup to Swarm (content blob on `/chunks`, SOC on `/soc`) |
 
 ## Stamp signer web worker
 
-Webpack 5 (used by `next dev`) only detects worker entries when **`new URL('…/worker.ts', import.meta.url)` is nested directly inside `new Worker(..., { type: 'module' })`**. If the URL is assigned to a variable first, the dev middleware can serve the raw `*.ts` asset with MIME **`video/mp2t`** (MPEG transport), the browser refuses the module worker, and you see six identical console errors — **`StampSignerPool`** then falls back to main-thread signing, so uploads still succeed. `StampSignerWorker.ts` is constructed inline in `FastPresignedStamp.ts` to avoid that.
+Webpack 5 (used by `next dev`) only detects worker entries when **`new URL('…/worker.ts', import.meta.url)` is nested directly inside `new Worker(..., { type: 'module' })`**. If the URL is assigned to a variable first, the dev middleware can serve the raw `*.ts` asset with MIME **`video/mp2t`**, the browser refuses the module worker, and **`StampSignerPool`** falls back to main-thread signing.
+
+The hot-key **private scalar lives only in these workers** after derivation. Main thread holds the public address, SOC AES `CryptoKey`, and routes signing through the pool. After **15 minutes without user activity**, the session clears and the wallet must sign the canonical derivation message again — see [Wallet security](./wallet-security.md).
 
 ## Postage stamps
 

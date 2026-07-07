@@ -38,8 +38,10 @@
 
 import {
   Bee,
+  EthAddress,
   Identifier,
   Reference,
+  Signature,
   Stamper,
 } from '@ethersphere/bee-js';
 import { Binary, type Chunk } from 'cafe-utility';
@@ -51,9 +53,6 @@ import { buildStampEnvelope, uploadSocPresignedFetch } from './FastPresignedStam
 
 /** Stable namespace baked into the SOC identifier. Bumping this orphans every existing issuer-state SOC. */
 const PURPOSE = 'beeport.issuerState';
-
-/** Stable namespace baked into the AES-256 key derivation. Bumping this orphans every existing ciphertext. */
-const AES_KEY_PURPOSE = 'beeport.issuerState.aes-key.v1';
 
 /** Current SOC payload format version. */
 const SOC_PAYLOAD_VERSION = 2;
@@ -120,14 +119,14 @@ export async function saveIssuerStateToSOC(params: {
 
   // ── Compress + encrypt the snapshot.
   const compressed = await gzip(plaintext);
-  const aesKey = await deriveAesKey(hotKey.privateKey);
+  const aesKey = hotKey.socAesKey;
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, compressed)
   );
   const blob = concatBytes(iv, ciphertext);
 
-  const issuerAddrBytes = hotKey.signer.publicKey().address().toUint8Array();
+  const issuerAddrBytes = hotKey.issuerAddrBytes;
 
   // ── Push the encrypted blob through the same presigned-chunks pipeline
   //    we use for files. Each chunk consumes a slot in the batch and mutates
@@ -142,7 +141,7 @@ export async function saveIssuerStateToSOC(params: {
       blobChunks++;
     },
     issuerAddrBytes,
-    hotKey.privateKey,
+    hotKey.stampPool,
     null
   );
   const afterBlobBuckets = stamper.getState();
@@ -163,7 +162,7 @@ export async function saveIssuerStateToSOC(params: {
   // and is constant for a given (batchId, hotKey) — no fixed-point search
   // is needed (and the previous Picard/exhaustive loop blocked the main
   // thread for seconds on heavily-used stamps).
-  const ownerAddress = hotKey.signer.publicKey().address();
+  const ownerAddress = new EthAddress(hotKey.address);
   const socAddressRef = bee.calculateSingleOwnerChunkAddress(
     new Identifier(socIdentifier),
     ownerAddress
@@ -196,7 +195,27 @@ export async function saveIssuerStateToSOC(params: {
     delta: finalDelta,
   });
   const inner = bee.makeContentAddressedChunk(socPayload);
-  const soc = inner.toSingleOwnerChunk(new Identifier(socIdentifier), hotKey.signer);
+  const socIdentifierObj = new Identifier(socIdentifier);
+  const ownerDigest = Binary.concatBytes(
+    socIdentifierObj.toUint8Array(),
+    inner.address.toUint8Array()
+  );
+  const ownerSigBytes = await hotKey.signOwnerPayload(ownerDigest);
+  const signature = new Signature(ownerSigBytes);
+  const soc = {
+    data: Binary.concatBytes(
+      socIdentifierObj.toUint8Array(),
+      signature.toUint8Array(),
+      inner.span.toUint8Array(),
+      inner.payload.toUint8Array()
+    ),
+    identifier: socIdentifierObj,
+    signature,
+    span: inner.span,
+    payload: inner.payload,
+    address: socAddressRef,
+    owner: ownerAddress,
+  };
   const socAddrBytes = soc.address.toUint8Array();
   if (!Binary.equals(socAddrBytes, socAddressRef.toUint8Array())) {
     throw new Error(
@@ -220,8 +239,8 @@ export async function saveIssuerStateToSOC(params: {
     stamper,
     fakeChunk,
     issuerAddrBytes,
-    hotKey.privateKey,
-    null
+    null,
+    hotKey.stampPool
   );
 
   // Bee's `/chunks` endpoint is for Content-Addressed Chunks: it BMT-hashes
@@ -286,7 +305,7 @@ export async function loadIssuerStateFromSOC(params: {
 
   // Compute the SOC's address client-side so we know exactly what we're
   // looking at if it 404s (helps debugging in the console).
-  const ownerAddress = hotKey.signer.publicKey().address();
+  const ownerAddress = new EthAddress(hotKey.address);
   const identifierBytes = computeIssuerStateIdentifier(cleanBatchId);
   const expectedSocAddress = bee.calculateSingleOwnerChunkAddress(
     new Identifier(identifierBytes),
@@ -353,7 +372,7 @@ export async function loadIssuerStateFromSOC(params: {
   const iv = blobBytes.slice(0, 12);
   const ciphertext = blobBytes.slice(12);
 
-  const aesKey = await deriveAesKey(hotKey.privateKey);
+  const aesKey = hotKey.socAesKey;
   let compressed: Uint8Array;
   try {
     compressed = new Uint8Array(
@@ -452,23 +471,6 @@ export function computeIssuerStateIdentifier(batchId: string): Uint8Array {
   buf.set(idBytes, purpose.length);
   return keccak_256(buf);
 }
-
-async function deriveAesKey(privateKey: Uint8Array): Promise<CryptoKey> {
-  const purpose = utf8.encode(AES_KEY_PURPOSE);
-  const buf = new Uint8Array(purpose.length + privateKey.length);
-  buf.set(purpose, 0);
-  buf.set(privateKey, purpose.length);
-  // SHA-256 over (purpose || privateKey) gives us a 32-byte AES-256 key. We
-  // already trust `privateKey` to be high-entropy (derived from a wallet
-  // signature), so a single hash is sufficient — no HKDF needed.
-  const raw = await crypto.subtle.digest('SHA-256', buf);
-  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, [
-    'encrypt',
-    'decrypt',
-  ]);
-}
-
-// ─── Compression + low-level utils ───────────────────────────────────────────
 
 async function gzip(data: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'));

@@ -64,6 +64,12 @@ export function ethSignedHashForStampPayload(
   return hexToBytes(keccak256(personal));
 }
 
+/** Digest bee-js uses for SOC owner signatures (`PrivateKey.sign` over raw data). */
+export function ethSignedDigestForOwnerPayload(data: Uint8Array): Uint8Array {
+  const innerHash = hexToBytes(keccak256(data));
+  return concat2(ETH_SIGNED_CHUNK_PREFIX, innerHash);
+}
+
 /**
  * Produce the 65-byte (r‖s‖v) signature for {@link ethSignedHashForStampPayload}.
  */
@@ -109,13 +115,20 @@ export async function buildStampEnvelope(
   stamper: Stamper,
   chunk: Chunk,
   issuer: Uint8Array,
-  privKeyBytes: Uint8Array,
+  privKeyBytes: Uint8Array | null,
   pool: StampSignerPool | null
 ): Promise<EnvelopeWithBatchId> {
   const { address, index, timestamp } = allocateStampSlot(stamper, chunk);
   const batchIdBytes = stamper.batchId.toUint8Array();
   const msgHash = ethSignedHashForStampPayload(address, batchIdBytes, index, timestamp);
-  const signature = pool ? await pool.signMsgHash(msgHash) : await signStampMsgHash(privKeyBytes, msgHash);
+  let signature: Uint8Array;
+  if (pool) {
+    signature = await pool.signMsgHash(msgHash);
+  } else if (privKeyBytes) {
+    signature = await signStampMsgHash(privKeyBytes, msgHash);
+  } else {
+    throw new Error('buildStampEnvelope requires stampPool or privKeyBytes');
+  }
   return {
     batchId: stamper.batchId,
     index,
@@ -324,6 +337,10 @@ export class StampSignerPool {
     this.ready = this.startWorkers(n, privateKey);
   }
 
+  whenReady(): Promise<void> {
+    return this.ready;
+  }
+
   private async startWorkers(n: number, privateKey: Uint8Array): Promise<void> {
     const readyWaits: Promise<void>[] = [];
     try {
@@ -383,7 +400,8 @@ export class StampSignerPool {
       rec.reject(new Error(msg.message ?? 'stamp worker error'));
       return;
     }
-    if (msg?.type !== 'sign' || msg.id === undefined || !msg.signature) return;
+    if (msg?.type !== 'sign' && msg?.type !== 'signOwner') return;
+    if (msg.id === undefined || !msg.signature) return;
     const rec = this.pending.get(msg.id);
     if (!rec) return;
     this.pending.delete(msg.id);
@@ -400,13 +418,27 @@ export class StampSignerPool {
     if (this.useMainThread || this.workers.length === 0) {
       return signStampMsgHash(this.privKeyBytes, msgHash);
     }
+    return this.postSign('sign', msgHash);
+  }
+
+  /** SOC owner attestation — same digest path as bee-js `PrivateKey.sign`. */
+  async signOwnerPayload(data: Uint8Array): Promise<Uint8Array> {
+    const digest = ethSignedDigestForOwnerPayload(data);
+    await this.ready;
+    if (this.useMainThread || this.workers.length === 0) {
+      return signStampMsgHash(this.privKeyBytes, digest);
+    }
+    return this.postSign('signOwner', digest);
+  }
+
+  private async postSign(type: 'sign' | 'signOwner', payload: Uint8Array): Promise<Uint8Array> {
     const id = this.nextId++;
     const w = this.workers[this.rr++ % this.workers.length];
-    const copy = msgHash.slice();
+    const copy = payload.slice();
     const p = new Promise<Uint8Array>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
     });
-    w.postMessage({ type: 'sign', id, msgHash: copy.buffer }, [copy.buffer]);
+    w.postMessage({ type, id, msgHash: copy.buffer }, [copy.buffer]);
     return p;
   }
 
