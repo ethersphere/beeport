@@ -97,16 +97,23 @@ The application shows:
 
 ## Technical Details
 
-### Depth and Capacity
+### Depth and capacity
 
-Stamp capacity is determined by depth:
+Approximate **guaranteed** capacity labels in the Beeport UI (from `STORAGE_OPTIONS` in `src/app/components/constants.ts`):
 
-- **Depth 16**: ~65KB capacity
-- **Depth 17**: ~131KB capacity
-- **Depth 18**: ~262KB capacity
-- **Depth 20**: ~1MB capacity
-- **Depth 24**: ~16MB capacity
-- **Depth 28**: ~268MB capacity
+| Depth | Label (approx.) |
+| ----- | --------------- |
+| 19 | 110 MB |
+| 20 | 680 MB |
+| 21 | 2.6 GB |
+| 22 | 7.7 GB |
+| 23 | 20 GB |
+| 24 | 47 GB |
+| 25 | 105 GB |
+| 26 | 227 GB |
+| 27 | 476 GB |
+
+Each +1 depth doubles slot space but affects batch TTL (dilution). Self-custody uploads track bucket fill locally — see [Self-custody hot key](./self-custody-hot-key.md).
 
 ### Amount and Duration
 

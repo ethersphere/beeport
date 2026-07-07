@@ -1,315 +1,73 @@
-# Webpage Upload Guide
+# Webpage upload guide
 
-## Overview
+Deploy a **static website** on Swarm with proper index and error document headers.
 
-The webpage upload feature allows you to deploy static websites to the Swarm network. By uploading TAR or ZIP files containing your website files and enabling "Upload as webpage", your site becomes accessible through any Swarm gateway with proper web server configuration.
+## How Beeport serves websites
 
-## How to Create a Website on Swarm
+Website mode sets Swarm collection headers so gateways serve:
 
-### Step 1: Prepare Your Website Files
+- **`index.html`** at the collection root
+- **`error.html`** for missing paths (when present in the archive)
 
-#### Required Files
+You get this automatically when:
 
-- **index.html**: Main page (required)
-- **error.html**: Error page (optional but recommended)
-- **CSS files**: Stylesheets for your site
-- **JavaScript files**: Interactive functionality
-- **Images/Assets**: Any media files your site needs
+- Using **folder upload** (always), or
+- Uploading a single archive with **Serve uncompressed** checked.
 
-#### File Structure Example
+There is no standalone “Upload as webpage” checkbox in the current UI.
 
-```
+## Prepare your site
+
+```text
 my-website/
-├── index.html          (required - main page)
-├── error.html          (optional - 404 error page)
+├── index.html          ← required for root URL
+├── error.html          ← recommended
 ├── css/
-│   ├── style.css
-│   └── responsive.css
 ├── js/
-│   ├── main.js
-│   └── utils.js
-├── images/
-│   ├── logo.png
-│   └── background.jpg
-└── assets/
-    ├── fonts/
-    └── icons/
-```
-
-### Step 2: Create Archive File
-
-#### Option A: Create TAR File
-
-```bash
-# Using command line (Linux/Mac)
-tar -czf my-website.tar.gz index.html error.html css/ js/ images/ assets/
-
-# Or create .tar file
-tar -cf my-website.tar index.html error.html css/ js/ images/ assets/
-```
-
-#### Option B: Create ZIP File
-
-1. Select all your website files and folders
-2. Right-click and choose "Compress" or "Add to ZIP"
-3. Name it `my-website.zip`
-
-### Step 3: Upload as Webpage
-
-1. **Connect your wallet** and navigate to Upload tab
-2. **Ensure "Upload multiple files" is unchecked** (single file mode)
-3. **Select your TAR or ZIP file**
-4. **Check "Serve uncompressed"** (extracts the archive)
-5. **Check "Upload as webpage"** ✓ (enables web server features)
-6. **Select postage stamp** with sufficient capacity
-7. **Click "Upload"**
-
-### Step 4: Access Your Website
-
-After successful upload, your website will be available at:
-
-```
-https://bzz.link/bzz/YOUR_REFERENCE_HASH/
-```
-
-The trailing slash is important for proper website loading.
-
-## Web Server Configuration
-
-### Index Document
-
-When "Upload as webpage" is checked, the system configures:
-
-- **Index Document**: `index.html`
-- **Error Document**: `error.html`
-
-This means:
-
-- Visiting the root URL loads `index.html` automatically
-- 404 errors show `error.html` instead of default error page
-- Directory browsing is disabled for security
-
-### URL Structure
-
-```
-https://bzz.link/bzz/REFERENCE/           → index.html
-https://bzz.link/bzz/REFERENCE/about.html → about.html
-https://bzz.link/bzz/REFERENCE/css/       → directory listing (if no index.html in css/)
-https://bzz.link/bzz/REFERENCE/404        → error.html
-```
-
-## Best Practices
-
-### File Organization
-
-- **Use relative paths** in your HTML/CSS (no absolute URLs)
-- **Organize assets** in logical folders (css/, js/, images/)
-- **Include error.html** for better user experience
-- **Test locally first** before uploading
-
-### HTML Considerations
-
-```html
-<!-- Good: Relative paths -->
-<link rel="stylesheet" href="css/style.css" />
-<script src="js/main.js"></script>
-<img src="images/logo.png" alt="Logo" />
-
-<!-- Avoid: Absolute paths -->
-<link rel="stylesheet" href="/css/style.css" />
-<script src="http://example.com/js/main.js"></script>
-```
-
-### Performance Optimization
-
-- **Compress images** before including in archive
-- **Minify CSS/JS** for faster loading
-- **Use efficient file formats** (WebP for images, etc.)
-- **Keep total size reasonable** for faster uploads
-
-### SEO and Accessibility
-
-- **Include proper meta tags** in your HTML
-- **Use semantic HTML** structure
-- **Add alt text** to images
-- **Ensure responsive design** for mobile users
-
-## Example Website Structure
-
-### Simple Portfolio Site
-
-```
-portfolio.tar
-├── index.html
-├── error.html
-├── about.html
-├── contact.html
-├── css/
-│   ├── main.css
-│   └── responsive.css
-├── js/
-│   └── contact-form.js
 └── images/
-    ├── profile.jpg
-    ├── project1.png
-    └── project2.png
 ```
 
-### Blog or Documentation Site
+Use **relative** paths in HTML/CSS/JS (`href="css/style.css"`, not `/css/...`).
 
-```
-blog.tar
-├── index.html
-├── error.html
-├── posts/
-│   ├── post1.html
-│   ├── post2.html
-│   └── post3.html
-├── css/
-│   ├── blog.css
-│   └── syntax.css
-├── js/
-│   ├── search.js
-│   └── navigation.js
-└── assets/
-    ├── images/
-    └── fonts/
-```
+## Option A — Folder (recommended for local projects)
 
-## Advanced Features
+1. Check **Multiple files in a folder (one hash, served as a website)**.
+2. Select the site folder → upload.
 
-### Custom Error Pages
+## Option B — ZIP or TAR archive
 
-Create `error.html` for custom 404 pages:
+1. Pack the site (include `index.html` at archive root).
+2. Choose the archive as a **single file**.
+3. Check **Serve uncompressed**.
+4. Upload.
 
-```html
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Page Not Found</title>
-    <link rel="stylesheet" href="css/style.css" />
-  </head>
-  <body>
-    <h1>Oops! Page Not Found</h1>
-    <p>The page you're looking for doesn't exist.</p>
-    <a href="/">Return to Home</a>
-  </body>
-</html>
+## After upload
+
+```text
+https://bzz.link/bzz/<reference>/           → index.html
+https://bzz.link/bzz/<reference>/about.html
 ```
 
-### Single Page Applications (SPAs)
-
-For React, Vue, or Angular apps:
-
-1. Build your app for production
-2. Include all built files in archive
-3. Ensure routing works with static files
-4. Consider using hash routing for better compatibility
-
-### Progressive Web Apps (PWAs)
-
-- Include `manifest.json` for PWA features
-- Add service worker files
-- Include all required icons and assets
-- Test offline functionality
+Trailing slash on the root URL helps gateways pick the index document.
 
 ## Limitations
 
-### What Webpage Upload Can't Do
+Static hosting only — no server-side PHP/Node, databases, or form backends. SPAs (React/Vue builds) work if routing is hash-based or all routes are real files.
 
-- **Server-side processing**: No PHP, Python, Node.js, etc.
-- **Database connections**: No dynamic data storage
-- **Form submissions**: No server-side form processing
-- **Real-time features**: No WebSocket servers
-- **Authentication**: No server-side user management
+## ENS
 
-### Static Site Only
-
-Webpage upload is designed for static sites:
-
-- ✅ HTML, CSS, JavaScript
-- ✅ Images, fonts, assets
-- ✅ Client-side frameworks (React, Vue, etc.)
-- ❌ Server-side languages
-- ❌ Database integration
-- ❌ Server-side APIs
+Link a domain from **History** → **ENS** on website uploads. See [ENS integration](./ens-integration.md).
 
 ## Troubleshooting
 
-### Website Not Loading
+| Issue | Check |
+| ----- | ----- |
+| Blank root | `index.html` at archive/folder root; try URL with trailing `/` |
+| Broken assets | Relative paths; exact filename case |
+| 404 page wrong | Add `error.html` at root |
 
-- **Check reference hash** is correct
-- **Ensure trailing slash** in URL: `/bzz/HASH/`
-- **Verify index.html exists** in root of archive
-- **Wait a few minutes** for network propagation
-
-### Broken Links/Assets
-
-- **Use relative paths** in HTML/CSS
-- **Check file names** match exactly (case-sensitive)
-- **Verify file structure** in uploaded archive
-- **Test locally** before uploading
-
-### Styling Issues
-
-- **Check CSS file paths** are relative
-- **Verify CSS files** are included in archive
-- **Test responsive design** on different devices
-- **Check for missing fonts** or assets
-
-### JavaScript Not Working
-
-- **Check JS file paths** are relative
-- **Verify no server-side dependencies**
-- **Test in browser console** for errors
-- **Ensure all JS files** are included
-
-## Use Cases
-
-### Personal Websites
-
-- Portfolio sites
-- Personal blogs
-- Resume/CV sites
-- Photography galleries
-
-### Business Sites
-
-- Company landing pages
-- Product showcases
-- Documentation sites
-- Marketing campaigns
-
-### Development Projects
-
-- Project demos
-- API documentation
-- Open source project sites
-- Technical blogs
-
-### Educational Content
-
-- Course materials
-- Tutorial sites
-- Interactive learning tools
-- Research presentations
-
-## Migration from Traditional Hosting
-
-### From WordPress/CMS
-
-1. Export your content to static HTML
-2. Use static site generators (Jekyll, Hugo, etc.)
-3. Organize files according to best practices
-4. Upload as webpage to Swarm
-
-### From Traditional Web Hosting
-
-1. Download all website files
-2. Remove server-side code (PHP, etc.)
-3. Convert dynamic features to client-side
-4. Create archive and upload
+More: [Troubleshooting](./troubleshooting.md) · [Archive processing](./archive-processing.md)
 
 ---
 
-_Next: Learn about [NFT Collection Upload](./nft-collection-upload.md) for specialized NFT processing._
+_Next: [NFT collection upload](./nft-collection-upload.md) for structured NFT ZIPs._

@@ -4,7 +4,7 @@
 
 This Swarm upload application is a Next.js-based decentralized file storage platform that integrates multiple blockchain networks and services to provide seamless file uploads to the Swarm network. The architecture combines Web3 wallet connectivity, cross-chain bridging, and decentralized storage in a user-friendly interface.
 
-**Self-custody uploads** (per-chunk stamping in the browser, gateway sees only pre-stamped chunks) are documented in [Self-custody hot key](./self-custody-hot-key.md) and [Client-side chunk pipeline](./client-side-chunk-pipeline.md). Some subsections below predate that flow; treat them as general component layout until [TODO §3.2](./TODO.md) is fully refreshed.
+**Self-custody uploads** (per-chunk stamping in the browser, gateway sees only pre-stamped chunks) are documented in [Self-custody hot key](./self-custody-hot-key.md) and [Client-side chunk pipeline](./client-side-chunk-pipeline.md).
 
 ## High-level architecture
 
@@ -82,15 +82,15 @@ graph TB
 src/app/
 ├── components/
 │   ├── SwapComponent.tsx              # Main upload UI / orchestration
-│   ├── ClientSideUpload.ts            # SWIP client-side BMT + stamp + POST /chunks (CAC)
-│   ├── ClientStamping.ts              # Hot-key derivation + persisted issuer state
-│   ├── SelfCustodyBatch.ts            # On-chain createBatch (direct + StampsRegistryV2)
-│   ├── PostageContract.ts             # Read-only Postage Stamp contract helpers
-│   ├── IssuerStateSOC.ts              # Issuer-state backup: blob on /chunks, SOC via /soc + presigned stamp
-│   ├── BeeNodeHealth.ts               # Pre-upload Bee gateway health probe + hook
+│   ├── ClientSideUpload.ts            # BMT chunking, manifest, upload orchestration
+│   ├── ClientStamping.ts              # Stamper state, IndexedDB persistence
+│   ├── HotKeySession.ts               # Session unlock, idle lock, worker key handoff
+│   ├── FastPresignedStamp.ts          # Stamp envelope + fetch to /chunks and /soc
+│   ├── SelfCustodyBatch.ts            # On-chain createBatch (StampsRegistryV2)
+│   ├── IssuerStateSOC.ts              # Encrypted issuer-state backup SOC
+│   ├── BeeNodeHealth.ts               # Pre-upload gateway health probe
 │   ├── NFTCollectionClientSide.ts     # NFT collection metadata processing
 │   ├── FolderArchiveExtract.ts        # ZIP/TAR extraction + auto-index generation
-│   ├── ArchiveProcessor.ts            # ZIP/TAR file handling
 │   └── css/                           # Component styles
 ├── page.tsx                           # Main application page
 └── layout.tsx                         # Root layout
@@ -141,32 +141,27 @@ const routes = await lifi.getRoutes({
 
 ### 4. Swarm Network Integration
 
-**Bee API Integration:**
+**Self-custody upload path (primary):**
 
-- **Upload Endpoint**: Direct integration with Bee node APIs
-- **Postage Stamps**: Management of storage credits
-- **File References**: Handling of Swarm content addresses
+- Chunks are BMT-hashed and postage-stamped in the browser (hot key owns the batch).
+- Leaf chunks: `POST /chunks` with `Swarm-Postage-Stamp` header (`FastPresignedStamp.ts`).
+- Issuer-state backup SOC: `POST /soc/{owner}/{identifier}?sig=…` — not `/chunks`.
+- Manifest assembly and Mantaray trees: `ClientSideUpload.ts`.
+- bee-js is used for helpers (chunk construction, reads); hot-path uploads use `fetch`, not axios.
 
-**Upload Flow:**
+**Other Bee API usage:**
+
+- `GET /bzz/{reference}` — retrieval via gateway
+- `GET /stamps`, `GET /stamps/{id}` — stamp metadata
+- `GET /health`, `GET /chainstate` — gateway probes
+
+**Configuration:**
 
 ```typescript
-// File upload to Swarm
-const uploadToSwarm = async (file: File, stamp: string) => {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`${beeApiUrl}/bzz`, {
-    method: 'POST',
-    headers: {
-      'swarm-postage-batch-id': stamp,
-      'swarm-deferred-upload': 'false',
-    },
-    body: formData,
-  });
-
-  return response.json(); // Returns { reference: "hash..." }
-};
+const beeApiUrl = process.env.NEXT_PUBLIC_BEE_API_URL || 'https://api.gateway.ethswarm.org';
 ```
+
+See [Client-side chunk pipeline](./client-side-chunk-pipeline.md) and [Self-hosting a Bee gateway](./self-hosting-bee-gateway.md).
 
 ## Data Flow Architecture
 
@@ -186,24 +181,20 @@ Postage Stamp Management
 Ready for File Upload
 ```
 
-### 2. File Upload Flow
+### 2. File Upload Flow (self-custody)
 
 ```
 File Selection
         ↓
-File Type Detection & Validation
+ensureHotKey() — one wallet signature per session
         ↓
-Processing Options Selection
+Optional archive / folder processing
         ↓
-Postage Stamp Selection
+BMT chunking + per-chunk stamp (workers) + POST /chunks
         ↓
-File Processing (if needed)
+Manifest reference + optional issuer-state SOC backup
         ↓
-Upload to Swarm Network
-        ↓
-Reference Generation & Storage
-        ↓
-Success Confirmation
+Success confirmation
 ```
 
 ### 3. Cross-Chain Bridge Flow
@@ -263,12 +254,12 @@ GET / v1 / transactions / { txHash } / status;
 
 **Integration Details:**
 
-- **API**: Direct HTTP API calls to Bee nodes
-- **Endpoints Used**:
-  - `POST /bzz` - Upload files
-  - `GET /bzz/{reference}` - Retrieve files (via gateway)
-  - `GET /stamps/{id}` - Get stamp information
-  - `GET /stamps` - List stamps
+- **API**: HTTP to Bee gateways (browser-direct; no app backend)
+- **Primary upload endpoints**:
+  - `POST /chunks` — pre-stamped CAC chunks (self-custody)
+  - `POST /soc/{owner}/{id}` — issuer-state and other SOCs
+  - `GET /bzz/{reference}` — retrieve via gateway
+  - `GET /stamps/{id}`, `GET /stamps` — stamp information
 
 **Configuration:**
 

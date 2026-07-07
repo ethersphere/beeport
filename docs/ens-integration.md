@@ -213,8 +213,8 @@ Access: docs.yourproject.eth.limo → Read docs
 ### Content Organization
 
 - For websites, ensure you have an `index.html` file
-- Use the **"Upload as webpage"** option for web content
-- Test your content accessibility before setting ENS
+- Use **folder upload** or **Serve uncompressed** on an archive — see [Webpage upload](./webpage-upload.md)
+- Test your content on `bzz.link` before setting ENS
 
 ## Troubleshooting
 
@@ -323,7 +323,7 @@ To update your content:
 
 - **[ENS Technical Reference](./ens-technical-reference.md)** - Detailed implementation overview
 - **[ENS Official Documentation](https://docs.ens.domains/)** - Complete ENS protocol documentation
-- **[Upload History Guide](./single-file-upload.md#upload-history)** - Managing your uploaded content
+- **[Single file upload](./single-file-upload.md)** - Upload basics and history export
 
 ---
 

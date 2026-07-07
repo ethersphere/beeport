@@ -130,10 +130,10 @@ This is "the right thing" but probably 2 days of careful work; defer until a use
 
 **Follow-up (optional, separate project):** redeploy or adapt `SushiSwapStampsRouter` if same-chain swaps should call V2 — requires a new router contract.
 
-### 3.2 Update `docs/architecture.md` end-to-end — `[~]` partial
+### 3.2 Update `docs/architecture.md` end-to-end — `[x]` shipped (core paths)
 **Files:** `docs/architecture.md`
 
-The top of the doc now points readers at self-custody-specific guides. A full diagram + component walkthrough rewrite (replacing any remaining custodial-era narrative) is still open — see the note in the Overview.
+Self-custody upload flow, component list, and Bee API sections now describe `POST /chunks` / `/soc` rather than custodial `POST /bzz`. Deeper diagram refresh (e.g. worker pool, IndexedDB) is optional polish only.
 
 ### 3.3 Decide what to do with `misc/` test scripts
 **Files:** `misc/testCC.js`, `misc/testFromBZZ.js`, `misc/testFromUSD.js`, `misc/testTo.js`, `misc/export_registry_data.js`, `misc/import_registry_data.js`

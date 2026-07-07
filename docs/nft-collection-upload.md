@@ -117,7 +117,7 @@ The processor automatically updates these common NFT metadata image fields:
 ### Step 2: Upload Process
 
 1. **Connect your wallet** and navigate to Upload tab
-2. **Ensure "Upload multiple files" is unchecked** (single file mode)
+2. **Ensure "Multiple files separately" and folder upload are unchecked** (single file mode)
 3. **Select your ZIP file**
 4. **Check "Upload NFT collection"** ✓ (this checkbox only appears for ZIP files)
 5. **Select postage stamp** with sufficient capacity
