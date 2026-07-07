@@ -9,7 +9,7 @@
 
 import { keccak256 } from 'viem';
 import type { WalletClient } from 'viem';
-import { EthAddress, type PrivateKey } from '@ethersphere/bee-js';
+import { EthAddress } from '@ethersphere/bee-js';
 
 import { StampSignerPool } from './FastPresignedStamp';
 
@@ -40,8 +40,6 @@ export interface DerivedHotKey {
   readonly socAesKey: CryptoKey;
   touch(): void;
   signOwnerPayload(data: Uint8Array): Promise<Uint8Array>;
-  /** bee-js {@link Stamper} needs a signer object; we only use the public address. */
-  stamperSigner(): PrivateKey;
 }
 
 class HotKeySession implements DerivedHotKey {
@@ -73,15 +71,6 @@ class HotKeySession implements DerivedHotKey {
 
   isExpired(): boolean {
     return Date.now() - this.lastActivityAt > HOT_KEY_IDLE_MS;
-  }
-
-  stamperSigner(): PrivateKey {
-    const addr = this.ownerAddress;
-    return {
-      publicKey: () => ({
-        address: () => addr,
-      }),
-    } as unknown as PrivateKey;
   }
 
   signOwnerPayload(data: Uint8Array): Promise<Uint8Array> {

@@ -7,7 +7,7 @@
  * Stamper semantics — we only swap the cryptography and HTTP transport.
  */
 
-import type { EnvelopeWithBatchId, Stamper } from '@ethersphere/bee-js';
+import { BatchId, type EnvelopeWithBatchId, type Stamper } from '@ethersphere/bee-js';
 import type { Chunk } from 'cafe-utility';
 import { Binary } from 'cafe-utility';
 import * as secp from '@noble/secp256k1';
@@ -88,6 +88,33 @@ export async function signStampMsgHash(privKey: Uint8Array, msgHash: Uint8Array)
 }
 
 type StamperInternals = Stamper & { buckets: Uint32Array; maxSlot: number };
+
+/**
+ * Issuer-state tracker compatible with {@link allocateStampSlot} without
+ * holding a {@link PrivateKey} on the main thread. bee-js {@link Stamper}
+ * always wraps `new PrivateKey(signer)` — we never call `stamper.stamp()`.
+ */
+export function createPresignedStamper(
+  batchId: string,
+  depth: number,
+  buckets?: Uint32Array
+): Stamper {
+  const clean = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+  const bucketArr = buckets ?? new Uint32Array(65536);
+  const stamper = {
+    batchId: new BatchId(clean),
+    buckets: bucketArr,
+    depth,
+    maxSlot: 2 ** (depth - 16),
+    getState() {
+      return this.buckets;
+    },
+    stamp() {
+      throw new Error('Presigned uploads must use buildStampEnvelope(), not stamper.stamp()');
+    },
+  };
+  return stamper as unknown as Stamper;
+}
 
 /**
  * Advance the Stamper bucket counter and produce `index` + `timestamp` like

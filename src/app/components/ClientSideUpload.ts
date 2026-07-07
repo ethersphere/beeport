@@ -43,6 +43,7 @@ import {
 } from './ClientStamping';
 import {
   buildStampEnvelope,
+  createPresignedStamper,
   uploadChunkPresignedFetch,
   type StampSignerPool,
 } from './FastPresignedStamp';
@@ -378,7 +379,6 @@ export async function uploadFileClientSide(
   hotKey.touch();
 
   const bee = new Bee(beeApiUrl);
-  const signer = hotKey.stamperSigner();
   const issuerAddrBytes = hotKey.issuerAddrBytes;
 
   // ── Stamper: load persisted issuer state or start fresh ────────────────────
@@ -404,11 +404,11 @@ export async function uploadFileClientSide(
     );
     await clearStamperState(cleanBatchId);
     await clearStampedAddresses(cleanBatchId);
-    stamper = Stamper.fromBlank(signer, cleanBatchId, depth);
+    stamper = createPresignedStamper(cleanBatchId, depth);
   } else if (persisted) {
-    stamper = Stamper.fromState(signer, cleanBatchId, persisted.buckets, persisted.depth);
+    stamper = createPresignedStamper(cleanBatchId, persisted.depth, persisted.buckets);
   } else {
-    stamper = Stamper.fromBlank(signer, cleanBatchId, depth);
+    stamper = createPresignedStamper(cleanBatchId, depth);
   }
 
   // ── Pre-flight: refuse if projected utilization would exceed the cap ──────
@@ -1553,12 +1553,11 @@ async function createUploadContext(opts: {
   hotKey.touch();
 
   const bee = new Bee(beeApiUrl);
-  const signer = hotKey.stamperSigner();
 
   const persisted = await loadStamperState(cleanBatchId);
   const stamper = persisted
-    ? Stamper.fromState(signer, cleanBatchId, persisted.buckets, persisted.depth)
-    : Stamper.fromBlank(signer, cleanBatchId, depth);
+    ? createPresignedStamper(cleanBatchId, persisted.depth, persisted.buckets)
+    : createPresignedStamper(cleanBatchId, depth);
 
   if (persisted && persisted.depth !== depth) {
     console.warn(
