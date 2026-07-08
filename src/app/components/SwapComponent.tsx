@@ -1115,6 +1115,7 @@ const SwapComponent: React.FC = () => {
         beeApiUrl,
         serveUncompressed,
         isWebpageUpload,
+        redundancyLevel,
         setUploadProgress,
         setStatusMessage,
         setIsDistributing,
@@ -1796,7 +1797,8 @@ const SwapComponent: React.FC = () => {
                           </div>
                         )}
 
-                        {!isMultipleFiles && selectedFile && (
+                        {((!isMultipleFiles && selectedFile) ||
+                          (isMultipleFiles && selectedFiles.length > 0)) && (
                           <div className={styles.dropdownWrapper}>
                             <label className={styles.dropdownLabel}>
                               Erasure Coding

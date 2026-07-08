@@ -90,6 +90,7 @@ export interface MultiFileUploadParams {
   beeApiUrl: string;
   serveUncompressed: boolean;
   isWebpageUpload: boolean;
+  redundancyLevel?: number;
   setUploadProgress: (progress: number) => void;
   setStatusMessage: (status: ExecutionStatus) => void;
   setIsDistributing: (isDistributing: boolean) => void;
@@ -584,6 +585,7 @@ export const handleMultiFileUpload = async (
     beeApiUrl,
     serveUncompressed,
     isWebpageUpload,
+    redundancyLevel = 0,
     setUploadProgress,
     setStatusMessage,
     setIsDistributing,
@@ -684,8 +686,9 @@ export const handleMultiFileUpload = async (
         baseHeaders['Swarm-Error-Document'] = 'error.html';
       }
 
-      // Add erasure coding redundancy level if specified (for multi-file uploads, use level 0 by default)
-      // Note: Multi-file uploads don't currently support redundancy level selection
+      if (redundancyLevel > 0) {
+        baseHeaders['swarm-redundancy-level'] = redundancyLevel.toString();
+      }
 
       if (!isLocalhost) {
         // For multi-file uploads, add session-related headers
