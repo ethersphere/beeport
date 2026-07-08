@@ -1596,6 +1596,7 @@ const SwapComponent: React.FC = () => {
                               setSelectedFile(null);
                               setSelectedFiles([]);
                               setIsFolderUpload(false);
+                              setIsWebpageUpload(false);
                             }}
                             className={styles.checkbox}
                             disabled={uploadStep === 'uploading'}
@@ -1669,16 +1670,19 @@ const SwapComponent: React.FC = () => {
                                 const files = Array.from(e.target.files || []);
                                 setSelectedFiles(files);
                                 setSelectedFile(null);
+                                setIsWebpageUpload(false);
                               } else {
                                 const file = e.target.files?.[0] || null;
                                 setSelectedFile(file);
                                 setSelectedFiles([]);
-                                setIsTarFile(
-                                  (file?.name.toLowerCase().endsWith('.tar') ||
-                                    file?.name.toLowerCase().endsWith('.zip') ||
-                                    file?.name.toLowerCase().endsWith('.gz')) ??
-                                    false
-                                );
+                                const isArchiveFile =
+                                  file?.name.toLowerCase().endsWith('.tar') ||
+                                  file?.name.toLowerCase().endsWith('.zip') ||
+                                  file?.name.toLowerCase().endsWith('.gz');
+                                setIsTarFile(isArchiveFile ?? false);
+                                if (!isArchiveFile) {
+                                  setIsWebpageUpload(false);
+                                }
                               }
                             }}
                             className={styles.fileInput}

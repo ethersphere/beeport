@@ -341,8 +341,9 @@ export const handleFileUpload = async (params: FileUploadParams): Promise<string
     const isTarArchive =
       selectedFile.type === 'application/x-tar' || selectedFile.name.toLowerCase().endsWith('.tar');
 
-    // Process TAR files - always upload as website with index.html check
-    let shouldUploadAsWebsite = isWebpageUpload;
+    // Only apply webpage upload to archive files; ignore stale checkbox state for regular files
+    const isEligibleForWebpageOption = isTarArchive || isArchive;
+    let shouldUploadAsWebsite = isEligibleForWebpageOption ? isWebpageUpload : false;
     let hasIndexFile = false;
 
     if (isTarArchive) {
@@ -617,7 +618,7 @@ export const handleMultiFileUpload = async (
     const maxRetries = UPLOAD_RETRY_CONFIG.maxRetries;
 
     // Initialize website flags outside try block so they're available in catch
-    let shouldUploadAsWebsite = isWebpageUpload;
+    let shouldUploadAsWebsite = false;
     let hasIndexFile = false;
 
     try {
@@ -631,6 +632,9 @@ export const handleMultiFileUpload = async (
 
       const isTarArchive =
         file.type === 'application/x-tar' || file.name.toLowerCase().endsWith('.tar');
+
+      const isEligibleForWebpageOption = isTarArchive || isArchive;
+      shouldUploadAsWebsite = isEligibleForWebpageOption ? isWebpageUpload : false;
 
       if (isTarArchive) {
         const tarResult = await processTarFile({
