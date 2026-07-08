@@ -5,6 +5,31 @@ All notable changes to Beeport are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.11] - 2026-07-08
+
+### Added
+
+- **Erasure coding** option for single-file and multi-file uploads, with
+  dropdown control and tooltip (#53, #144).
+- **Bee gateway health check** before upload; stamp API is gated on Bee health
+  (#134).
+- **Multi-file upload success UI** with direct links to uploaded content (#146).
+- **NFT uploads**: nested ZIP layout and clearer upload UX (#135).
+- Storage labels and improved refresh control with tooltip styling (#141).
+
+### Changed
+
+- **Stamp purchases** now route exclusively through Relay; manual BZZ approval
+  and unused Gnosis token constants removed (#142).
+- Upload history opens content from the filename; rename uses a pencil icon
+  (#138).
+- Forward `swarm-redundancy-level` header to the upstream Bee node.
+
+### Fixed
+
+- Stale `isWebpageUpload` flag on non-archive uploads (#145).
+- Proxy serving dead sockets after upstream Bee restart (#140).
+
 ## [1.1.10] - 2026-05-03
 
 ### Changed
@@ -38,5 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolve `ERR_UNKNOWN_FILE_EXTENSION` for Hardhat scripts on Node 22.
 - Tighten swap timer buffers.
 
+[1.1.11]: https://github.com/ethersphere/beeport/compare/1.1.10...1.1.11
 [1.1.10]: https://github.com/ethersphere/beeport/compare/1.1.9...1.1.10
 [1.1.9]: https://github.com/ethersphere/beeport/compare/1.1.8...1.1.9
