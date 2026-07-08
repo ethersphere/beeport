@@ -577,7 +577,7 @@
   font-family: monospace;
   font-size: 14px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, color 0.2s;
   position: relative;
 }
 
@@ -613,6 +613,11 @@
   font-size: 12px;
   white-space: nowrap;
   z-index: 10;
+}
+
+.referenceCode[data-copied="true"] {
+  color: #3fb950;
+  background-color: rgba(63, 185, 80, 0.15);
 }
 
 .referenceLink {
@@ -1423,6 +1428,24 @@
   margin: 20px 0;
   max-height: 300px;
   overflow-y: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #30363d #161b22;
+}
+
+.multiFileResults::-webkit-scrollbar {
+  width: 8px;
+}
+
+.multiFileResults::-webkit-scrollbar-track {
+  background: #161b22;
+  border-radius: 4px;
+}
+
+.multiFileResults::-webkit-scrollbar-thumb {
+  background-color: #30363d;
+  border-radius: 4px;
+  border: 2px solid #161b22;
 }
 
 .fileResult {
@@ -1469,21 +1492,45 @@
   background-color: #ff5a52;
 }
 
-.fileResultReference {
-  font-family: monospace;
+.fileResultReferenceCode {
   font-size: 12px;
-  color: #8b949e;
-  word-break: break-all;
-  cursor: pointer;
   padding: 4px;
-  background-color: #0d1117;
-  border-radius: 4px;
-  margin-top: 5px;
-  transition: background-color 0.2s;
+  margin: 5px 0 0;
 }
 
-.fileResultReference:hover {
-  background-color: #1f2937;
+.fileResultReferenceCode[data-copied="true"]::after {
+  top: auto;
+  bottom: -26px;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.fileResultLinkButtons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.fileResultLink {
+  flex: 1;
+  text-align: center;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  color: #ff7a00;
+  text-decoration: none;
+  border: 1px solid #ff7a00;
+  transition: all 0.2s;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.fileResultLink:hover {
+  background-color: #ff7a00;
+  color: #ffffff;
+  text-decoration: none;
 }
 
 .fileResultError {

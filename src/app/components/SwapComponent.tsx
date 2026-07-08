@@ -67,6 +67,7 @@ import {
   handleFileUpload as uploadFile,
   handleMultiFileUpload,
   isArchiveFile,
+  getFileReferenceUrl,
   MultiFileResult,
   getUserFriendlyErrorMessage,
 } from './FileUploadUtils';
@@ -1915,15 +1916,52 @@ const SwapComponent: React.FC = () => {
                               </span>
                             </div>
                             {result.success && result.reference && (
-                              <div
-                                className={styles.fileResultReference}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(result.reference);
-                                }}
-                                title="Click to copy reference"
-                              >
-                                {result.reference}
-                              </div>
+                              <>
+                                <div className={styles.referenceCopyWrapper}>
+                                  <code
+                                    className={`${styles.referenceCode} ${styles.fileResultReferenceCode}`}
+                                    onClick={e => {
+                                      navigator.clipboard.writeText(result.reference);
+                                      const el = e.currentTarget;
+                                      el.setAttribute('data-copied', 'true');
+                                      setTimeout(() => {
+                                        el.setAttribute('data-copied', 'false');
+                                      }, 2000);
+                                    }}
+                                    title="Click to copy reference"
+                                    data-copied="false"
+                                  >
+                                    {result.reference}
+                                  </code>
+                                </div>
+                                <div className={styles.fileResultLinkButtons}>
+                                  <button
+                                    type="button"
+                                    className={styles.fileResultLink}
+                                    onClick={e => {
+                                      navigator.clipboard.writeText(
+                                        getFileReferenceUrl(result.reference, result.filename)
+                                      );
+                                      const button = e.currentTarget;
+                                      const originalText = button.textContent;
+                                      button.textContent = 'Copied!';
+                                      setTimeout(() => {
+                                        button.textContent = originalText;
+                                      }, 2000);
+                                    }}
+                                  >
+                                    Copy link
+                                  </button>
+                                  <a
+                                    href={getFileReferenceUrl(result.reference, result.filename)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={styles.fileResultLink}
+                                  >
+                                    Open link
+                                  </a>
+                                </div>
+                              </>
                             )}
                             {!result.success && result.error && (
                               <div className={styles.fileResultError}>{result.error}</div>

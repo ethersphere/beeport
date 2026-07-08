@@ -8,6 +8,7 @@ import {
   FILE_SIZE_CONFIG,
   UPLOAD_TIMEOUT_CONFIG,
   SWARM_DEFERRED_UPLOAD,
+  BEE_GATEWAY_URL,
 } from './constants';
 import { processTarFile, TarProcessingResult } from './FolderUploadUtils';
 import { getStampUsage, formatDateEU } from './utils';
@@ -129,6 +130,13 @@ export const isArchiveFile = (filename?: string): boolean => {
   if (!filename) return false;
   const archiveExtensions = ['.zip', '.tar', '.gz', '.rar', '.7z', '.bz2'];
   return archiveExtensions.some(ext => filename.toLowerCase().endsWith(ext));
+};
+
+export const getFileReferenceUrl = (reference: string, filename?: string): string => {
+  if (filename && !isArchiveFile(filename)) {
+    return `${BEE_GATEWAY_URL}${reference}/${filename}`;
+  }
+  return `${BEE_GATEWAY_URL}${reference}/`;
 };
 
 /**
