@@ -18,6 +18,10 @@
     position: fixed;
     right: 16px;
     bottom: 16px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
 }
 
 @media (max-width: 1024px) {
