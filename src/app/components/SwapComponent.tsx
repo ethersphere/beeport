@@ -1622,6 +1622,18 @@ const SwapComponent: React.FC = () => {
       };
     }
 
+    // Fresh self-custody batches: Bee often says `invalid batch id` while the
+    // gateway batchstore is still indexing createBatch — same transient as
+    // StampNotReadyError (classifier normally catches this before we get here).
+    if (lower.includes('invalid batch')) {
+      return {
+        message: 'Stamp not ready yet',
+        warning:
+          'The Bee gateway has not indexed this batch yet. Wait a few seconds and click Upload again — your file selection is preserved.',
+        detail: raw,
+        transient: true,
+      };
+    }
     if (lower.includes('batch') && (lower.includes('not found') || lower.includes('unknown'))) {
       return {
         message:

@@ -1345,12 +1345,12 @@ export class StampNotReadyError extends Error {
 
 /**
  * Decide whether a chunk-upload error is best surfaced as a
- * `StampNotReadyError`. We duck-type `BeeResponseError` so we don't have
- * to import its class symbol (keeps the helper usable for any
- * fetch/axios-shaped wrapper).
+ * `StampNotReadyError`. We duck-type `BeeResponseError` /
+ * `ChunkUploadHttpError` so we don't have to import class symbols.
  *
- *   - 4xx with body text mentioning "batch ... not yet usable", "batch
- *     not found", "unknown batch", "stamp not allowed" → stamp-not-ready
+ *   - 4xx with body/message mentioning "batch ... not yet usable",
+ *     "invalid batch id", "batch not found", "unknown batch",
+ *     "stamp not allowed" → stamp-not-ready
  *   - 4xx with body wording "duplicate" / "bucket counter" → NOT stamp-
  *     not-ready; that's a bucket-collision (issuer state problem), kept
  *     as the original error so the UI's specific bucket branch handles it
@@ -1359,6 +1359,13 @@ export class StampNotReadyError extends Error {
  *     reject when the batch is missing; bare 400 with `Request failed
  *     with status code 400` and no `responseBody.message` is the typical
  *     fingerprint of "gateway hasn't seen the batch yet")
+ *
+ * Note on Bee wording: for self-custody batches the gateway often replies
+ * `invalid batch id` (not `batch not yet usable`) while the batchstore is
+ * still catching up to `createBatch`. That is transient — treat it the
+ * same as "not ready", not as a permanently bad id. Legacy
+ * `GET /stamps/{id}.usable` does not apply here (404 for foreign-owned
+ * batches); the readiness probe POSTs a real chunk instead.
  *
  * Everything else returns `null` (i.e. surface the original error).
  */
@@ -1372,7 +1379,7 @@ function classifyAsStampNotReady(err: unknown): StampNotReadyError | null {
     message?: unknown;
   };
 
-  const status =
+  let status: number | undefined =
     typeof e.status === 'number'
       ? e.status
       : typeof e.statusCode === 'number'
@@ -1381,46 +1388,76 @@ function classifyAsStampNotReady(err: unknown): StampNotReadyError | null {
           ? e.response.status
           : undefined;
 
-  // Only consider 4xx; 5xx and network errors stay retryable / generic.
-  if (status === undefined || status < 400 || status >= 500) return null;
+  const errMessage = typeof e.message === 'string' ? e.message : '';
+  // WebSocket /chunks/stream errors sometimes omit `status` but keep it in
+  // the message ("Request failed with status code 400: …").
+  if (status === undefined) {
+    const fromMsg = /status code (\d{3})/i.exec(errMessage);
+    if (fromMsg) status = Number(fromMsg[1]);
+  }
 
-  const body = e.responseBody ?? e.response?.data ?? null;
+  let body: unknown = e.responseBody ?? e.response?.data ?? null;
+  // Stream acks may pass the JSON body as a raw string.
+  if (typeof body === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === 'object') body = parsed;
+    } catch {
+      // keep string body
+    }
+  }
+
   const gatewayMessage =
     body && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string'
       ? ((body as { message: string }).message)
       : typeof body === 'string'
         ? body
         : undefined;
-  const lower = (gatewayMessage ?? '').toLowerCase();
+
+  // Search both the gateway field and the Error.message — ChunkUploadHttpError
+  // puts the detail in the message as `…: invalid batch id`.
+  const lower = `${gatewayMessage ?? ''} ${errMessage}`.toLowerCase();
+
+  // Explicit not-ready phrases can classify even without a status (WS path).
+  const phraseLooksNotReady =
+    lower.includes('not yet usable') ||
+    lower.includes('not yet') ||
+    lower.includes('invalid batch') ||
+    (lower.includes('batch') &&
+      (lower.includes('not found') ||
+        lower.includes('unknown') ||
+        lower.includes('does not exist'))) ||
+    lower.includes('stamp not allowed');
+
+  // Only consider 4xx (or phrase-matched unknowns); 5xx/network stay generic.
+  if (status !== undefined && (status < 400 || status >= 500)) return null;
+  if (status === undefined && !phraseLooksNotReady) return null;
 
   // Bucket / duplicate / immutability errors are NOT "not ready" — let the
   // caller's existing bucket-branch handling produce the right diagnostic.
   if (
     lower.includes('duplicate') ||
-    lower.includes('already') ||
+    lower.includes('already used') ||
     lower.includes('bucket counter') ||
+    lower.includes('bucket is full') ||
     lower.includes('immutable')
   ) {
     return null;
   }
 
   const looksLikeNotReady =
-    lower.includes('not yet usable') ||
-    lower.includes('not yet') ||
-    (lower.includes('batch') &&
-      (lower.includes('not found') ||
-        lower.includes('unknown') ||
-        lower.includes('does not exist'))) ||
-    lower.includes('stamp not allowed') ||
+    phraseLooksNotReady ||
     // Bare 400 with no detail body is the de-facto fingerprint of a fresh-
     // batch race on most public gateways.
-    (status === 400 && !gatewayMessage);
+    (status === 400 && !gatewayMessage && !/:\s*\S/.test(errMessage));
 
   if (!looksLikeNotReady) return null;
 
   const detail = gatewayMessage
-    ? `${gatewayMessage} (HTTP ${status})`
-    : `Bee gateway returned HTTP ${status} for the chunk POST.`;
+    ? `${gatewayMessage}${status !== undefined ? ` (HTTP ${status})` : ''}`
+    : status !== undefined
+      ? `Bee gateway returned HTTP ${status} for the chunk POST.`
+      : errMessage || 'Bee gateway rejected the stamp (batch not indexed yet).';
   return new StampNotReadyError({
     message: `Stamp not ready yet: ${detail}`,
     cause: err,
