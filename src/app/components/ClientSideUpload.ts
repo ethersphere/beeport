@@ -1950,6 +1950,7 @@ export interface MultiFileUploadResult {
   results: MultiFileResult[];
   totalChunks: number;
   issuerStateSoc?: IssuerStateSocResult;
+  uploadTransport?: 'http' | 'websocket';
 }
 
 /**
@@ -2076,6 +2077,7 @@ export async function uploadMultipleFilesClientSide(
       results,
       totalChunks: ctx.chunksUploaded,
       issuerStateSoc,
+      uploadTransport: ctx.uploadSession?.transport ?? 'http',
     };
   } finally {
     ctx.closeUploadSession();
@@ -2126,6 +2128,7 @@ export interface CollectionUploadResult {
   fileChunkCount: number;
   manifestChunkCount: number;
   issuerStateSoc?: IssuerStateSocResult;
+  uploadTransport?: 'http' | 'websocket';
 }
 
 /**
@@ -2236,6 +2239,7 @@ export async function uploadFilesAsCollectionClientSide(
       fileChunkCount,
       manifestChunkCount,
       issuerStateSoc,
+      uploadTransport: ctx.uploadSession?.transport ?? 'http',
     };
   } finally {
     ctx.closeUploadSession();

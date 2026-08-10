@@ -48,7 +48,7 @@ import {
   getStampUsage,
   updateHistoryAfterTopUp,
 } from './utils';
-import { fetchChainState, stampUtilizationPercent } from './BeeApi';
+import { fetchChainState, stampUtilizationPercent, beeSupportsChunkStream } from './BeeApi';
 import { useTimer } from './TimerUtils';
 
 import {
@@ -62,8 +62,10 @@ import {
   clearHotKey,
   getCachedHotKeyAddress,
   loadStampUsage,
+  loadStamperState,
   type DerivedHotKey,
 } from './ClientStamping';
+import { createPresignedStamper } from './FastPresignedStamp';
 import {
   computeBatchId,
   createSelfCustodyBatchViaRegistry,
@@ -79,7 +81,9 @@ import {
   uploadMultipleFilesClientSide,
   uploadFilesAsCollectionClientSide,
   StampNotReadyError,
+  checkProjectedStampCapacity,
   type MultiFileResult,
+  type ProjectedStampCapacity,
 } from './ClientSideUpload';
 import {
   extractArchiveToEntries,
@@ -175,6 +179,10 @@ const SwapComponent: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  /** Pre-flight stamp capacity from {@link checkProjectedStampCapacity} at file-select time. */
+  const [stampCapacityCheck, setStampCapacityCheck] = useState<ProjectedStampCapacity | null>(
+    null
+  );
   const [showStampList, setShowStampList] = useState(false);
 
   // Upload-mode toggles brought back from 1.1.x but reimplemented over the
@@ -1264,7 +1272,7 @@ const SwapComponent: React.FC = () => {
    * `selectedFile.size` (which would be 0 for multi-file mode).
    */
   const getTotalFileSize = (): number => {
-    if (isMultipleFiles && selectedFiles.length > 0) {
+    if ((isMultipleFiles || isFolderUpload) && selectedFiles.length > 0) {
       return selectedFiles.reduce((total, file) => total + file.size, 0);
     }
     return selectedFile?.size || 0;
@@ -1272,7 +1280,7 @@ const SwapComponent: React.FC = () => {
 
   const hasVeryLargeFiles = (): boolean => {
     const threshold = FILE_SIZE_CONFIG.largeFileThresholdGB * 1024 * 1024 * 1024;
-    if (isMultipleFiles && selectedFiles.length > 0) {
+    if ((isMultipleFiles || isFolderUpload) && selectedFiles.length > 0) {
       return selectedFiles.some(file => file.size > threshold);
     }
     return (selectedFile?.size || 0) > threshold;
@@ -1282,6 +1290,52 @@ const SwapComponent: React.FC = () => {
     const maxSizeBytes = FILE_SIZE_CONFIG.maximumFileGB * 1024 * 1024 * 1024;
     return getTotalFileSize() > maxSizeBytes;
   };
+
+  const depthForUpload =
+    isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const totalBytes = getTotalFileSize();
+      if (!postageBatchId || totalBytes <= 0) {
+        if (!cancelled) setStampCapacityCheck(null);
+        return;
+      }
+
+      const batchIdHex = postageBatchId.startsWith('0x')
+        ? postageBatchId.slice(2)
+        : postageBatchId;
+
+      try {
+        const persisted = await loadStamperState(batchIdHex);
+        const stamper = persisted
+          ? createPresignedStamper(batchIdHex, persisted.depth, persisted.buckets)
+          : createPresignedStamper(batchIdHex, depthForUpload);
+
+        const result = checkProjectedStampCapacity(stamper, totalBytes, depthForUpload);
+        if (!cancelled) {
+          setStampCapacityCheck(result.level === 'ok' ? null : result);
+        }
+      } catch (err) {
+        console.warn('[Stamp capacity pre-check] skipped:', err);
+        if (!cancelled) setStampCapacityCheck(null);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    postageBatchId,
+    selectedFile,
+    selectedFiles,
+    depthForUpload,
+    isMultipleFiles,
+    isFolderUpload,
+  ]);
 
   /**
    * Self-custody upload path (SWIP §Client-side stamping, mode α).
@@ -1398,6 +1452,7 @@ const SwapComponent: React.FC = () => {
         retries: result.retryCount,
         protocol: result.detectedHttpProtocol ?? 'unknown',
         concurrency: result.effectiveConcurrency,
+        transport: result.uploadTransport ?? 'http',
       });
 
       // SOC issuer-state backup runs in the background now (deferred off the
@@ -1691,6 +1746,7 @@ const SwapComponent: React.FC = () => {
 
       setMultiFileResults(result.results);
       setUploadProgress(100);
+      console.log('[ClientSideUpload] chunk transport:', result.uploadTransport ?? 'http');
 
       // Persist successes to upload history with their own references.
       try {
@@ -1817,6 +1873,7 @@ const SwapComponent: React.FC = () => {
       const refHex = result.reference.startsWith('0x')
         ? result.reference.slice(2)
         : result.reference;
+      console.log('[ClientSideUpload] chunk transport:', result.uploadTransport ?? 'http');
 
       try {
         const stampStatus = await fetchStampInfo(batchIdHex, beeApiUrl);
@@ -2597,15 +2654,34 @@ const SwapComponent: React.FC = () => {
 
             {['ready', 'uploading'].includes(uploadStep) && (
               <div className={styles.uploadBox}>
-                <h3 className={styles.uploadTitle}>
-                  {postageBatchId
-                    ? `Upload to ${
-                        postageBatchId.startsWith('0x')
-                          ? postageBatchId.slice(2, 8)
-                          : postageBatchId.slice(0, 6)
-                      }...${postageBatchId.slice(-4)}`
-                    : 'Upload File'}
-                </h3>
+                <div className={styles.uploadTitleRow}>
+                  <h3 className={styles.uploadTitle}>
+                    {postageBatchId
+                      ? `Upload to ${
+                          postageBatchId.startsWith('0x')
+                            ? postageBatchId.slice(2, 8)
+                            : postageBatchId.slice(0, 6)
+                        }...${postageBatchId.slice(-4)}`
+                      : 'Upload File'}
+                  </h3>
+                  {beeNodeHealth.state.status === 'ok' && beeNodeHealth.state.version && (
+                    <span
+                      className={`${styles.gatewayVersionBadge} ${
+                        beeSupportsChunkStream(beeNodeHealth.state.version)
+                          ? ''
+                          : styles.gatewayVersionLegacy
+                      }`}
+                      title={
+                        beeSupportsChunkStream(beeNodeHealth.state.version)
+                          ? 'Gateway supports Bee 2.8.1+ features (WebSocket chunk stream, /batches API).'
+                          : 'Upgrade the Bee gateway to 2.8.1+ for WebSocket uploads and newer API endpoints.'
+                      }
+                    >
+                      Bee {beeNodeHealth.state.version}
+                      {beeSupportsChunkStream(beeNodeHealth.state.version) ? ' ✓' : ' — upgrade'}
+                    </span>
+                  )}
+                </div>
 
                 {/* Bee gateway health banner. Shown only when the node is
                     not OK so a healthy gateway adds zero visual noise. We
@@ -2640,6 +2716,24 @@ const SwapComponent: React.FC = () => {
                         {beeNodeHealth.state.message}. Uploads will fail until the gateway
                         recovers.
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {stampCapacityCheck?.level === 'warn' && (
+                  <div className={`${styles.healthBanner} ${styles.healthBannerWarn}`}>
+                    <span className={styles.healthBannerTitle}>⚠️ Stamp nearly full</span>
+                    {stampCapacityCheck.message && (
+                      <div className={styles.healthBannerDetail}>{stampCapacityCheck.message}</div>
+                    )}
+                  </div>
+                )}
+
+                {stampCapacityCheck?.level === 'fail' && (
+                  <div className={`${styles.healthBanner} ${styles.healthBannerError}`}>
+                    <span className={styles.healthBannerTitle}>⛔ Upload too large for this stamp</span>
+                    {stampCapacityCheck.message && (
+                      <div className={styles.healthBannerDetail}>{stampCapacityCheck.message}</div>
                     )}
                   </div>
                 )}
@@ -2894,6 +2988,7 @@ const SwapComponent: React.FC = () => {
                           : !selectedFile) ||
                         uploadStep === 'uploading' ||
                         exceedsMaximumUploadSize() ||
+                        stampCapacityCheck?.level === 'fail' ||
                         // Block uploads when we KNOW the gateway is broken.
                         // 'unknown' (no probe yet) and 'checking' do NOT
                         // block — we'd rather let an early upload through

@@ -4,7 +4,20 @@
 
 Web3 will transform how the world operates, but today it still needs practical bridges for people to access it. Swarm is a leading decentralized storage solution, yet difficult for everyday users to reach. Beeport solves this by making Swarm accessible through familiar Web2 entry points—bringing the power of decentralized storage to anyone, right now.
 
-This is a [Next.js](https://nextjs.org) project that enables users to purchase BZZ tokens from any supported blockchain and upload files to the Swarm network with automatic postage stamp creation.
+This is a [Next.js](https://nextjs.org) static app that lets users buy BZZ from many chains and **upload files to Swarm with self-custody postage stamping** — chunking, BMT hashing, and stamp signing happen entirely in the browser; the Bee gateway only validates pre-stamped chunks.
+
+## Self-custody uploads (how it works)
+
+Beeport does **not** hand your files or stamp keys to a server:
+
+1. Your wallet buys a postage batch via `StampsRegistryV2` on Gnosis. The on-chain batch **owner** is a derived **hot key** (not the gateway).
+2. You sign one wallet message to derive that hot key for the session ([details](./docs/self-custody-hot-key.md)).
+3. The browser chunks the file, signs every postage stamp locally (optionally in Web Workers), and uploads to a Bee gateway over HTTP or WebSocket (`/chunks/stream` on Bee 2.8.1+).
+4. The gateway never sees the hot private key — it only checks each stamp against the on-chain owner.
+
+There is **no backend app to run** for uploads: set a Bee API URL the browser can reach (default [beeport.xyz](https://beeport.xyz/)) and the static frontend does the rest.
+
+Further reading: [Self-custody hot key](./docs/self-custody-hot-key.md) · [Client-side chunk pipeline](./docs/client-side-chunk-pipeline.md) · [Self-hosting a Bee gateway](./docs/self-hosting-bee-gateway.md)
 
 ## Getting Started
 
@@ -35,8 +48,9 @@ npx serve out
 
 - **🔗 Cross-Chain Swaps**: Buy BZZ tokens from any supported blockchain (Ethereum, Polygon, Arbitrum, etc.) using [Relay API](https://docs.relay.link/)
 - **⛽ Smart Gas Management**: Automatically checks destination chain balance and only tops up gas when needed (< 1 xDAI)
-- **📁 File Upload**: Upload single files, multiple files, or entire NFT collections to Swarm
-- **🏷️ Automatic Stamps**: Creates postage stamps automatically with optimal batch sizes
+- **📁 File Upload**: Upload single files, folders, multiple files, or NFT collections — stamped and chunked in the browser
+- **🔐 Self-custody stamps**: Hot key owns the batch on-chain; gateway validates, never holds your stamp key
+- **🏷️ Postage batches**: Buy or top up storage via wallet + `StampsRegistryV2`
 - **🌐 ENS Integration**: Link your ENS domains to Swarm content for human-readable access
 - **📊 Upload History**: Track all your uploads with file sizes and timestamps
 - **💰 Cost Optimization**: Infinite approvals and smart gas top-ups minimize transaction costs

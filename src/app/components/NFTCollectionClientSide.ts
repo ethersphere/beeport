@@ -151,7 +151,9 @@ export async function processNFTCollectionClientSide(
   });
 
   const imagesReference = imagesUpload.reference;
-  console.log('🖼️ Images uploaded:', imagesReference);
+  console.log('🖼️ Images uploaded:', imagesReference, {
+    transport: imagesUpload.uploadTransport ?? 'http',
+  });
 
   // ── Rewrite metadata JSON: image / image_url → bzz.link URLs ──────────────
   onStatus?.('Rewriting metadata to point at uploaded images…');
@@ -215,7 +217,9 @@ export async function processNFTCollectionClientSide(
   });
 
   const metadataReference = metadataUpload.reference;
-  console.log('📜 Metadata uploaded:', metadataReference);
+  console.log('📜 Metadata uploaded:', metadataReference, {
+    transport: metadataUpload.uploadTransport ?? 'http',
+  });
 
   onProgress?.(100, 'complete');
   onStatus?.('NFT collection upload complete!');
