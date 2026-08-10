@@ -34,11 +34,22 @@ const config = {
     ignoreBuildErrors: true,
   },
 
-  webpack: (config, { dev }) => {
+  webpack: (config, { isServer, dev }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
       encoding: fileURLToPath(new URL('encoding', import.meta.url)),
     };
+
+    // Static export uses `assetPrefix: './'` so HTML can load assets from a
+    // relative base. Webpack workers resolve that relative to the worker
+    // script under `/_next/static/chunks/`, which doubles the path
+    // (`…/chunks/_next/static/chunks/…`), returns the SPA HTML shell
+    // (MIME text/html), and `importScripts` blows up. Absolute worker
+    // public path keeps BMT / stamp-signer workers loading correctly when
+    // the app is served from the site root (v2.beeport.xyz).
+    if (!isServer && !dev) {
+      config.output.workerPublicPath = '/_next/';
+    }
 
     // Development-specific optimizations
     if (dev) {
