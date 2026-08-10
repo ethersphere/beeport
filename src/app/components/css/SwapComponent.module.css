@@ -305,21 +305,39 @@
 .uploadTitleRow {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
   margin-bottom: 20px;
+  text-align: left;
 }
 
 .uploadTitleRow .uploadTitle {
   margin-bottom: 0;
+  flex: 1 1 auto;
+  min-width: min(100%, 12rem);
+  text-align: left;
 }
 
-.gatewayVersionBadge {
+.uploadMetaBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+}
+
+.uploadMetaBadge {
   font-size: 12px;
   font-weight: 500;
   padding: 4px 10px;
   border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
+.gatewayVersionBadge {
   background-color: rgba(76, 175, 80, 0.12);
   border: 1px solid rgba(76, 175, 80, 0.35);
   color: #9be7a0;
@@ -329,6 +347,24 @@
   background-color: rgba(255, 200, 0, 0.08);
   border-color: rgba(255, 200, 0, 0.35);
   color: #ffd166;
+}
+
+.uploadTransportHttp {
+  background-color: rgba(120, 160, 220, 0.12);
+  border: 1px solid rgba(120, 160, 220, 0.35);
+  color: #a8c4f0;
+}
+
+.uploadTransportWs {
+  background-color: rgba(64, 196, 180, 0.12);
+  border: 1px solid rgba(64, 196, 180, 0.4);
+  color: #7ee8dc;
+}
+
+.uploadTransportPending {
+  background-color: rgba(120, 130, 145, 0.12);
+  border: 1px solid rgba(120, 130, 145, 0.3);
+  color: #b9c2cf;
 }
 
 .uploadWarning {

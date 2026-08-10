@@ -95,12 +95,10 @@ Per-batch chunk-address dedup so repeated uploads of the same file are cheap:
 
 ## 2. Real refactors (1–3 days, medium risk, large gains)
 
-### 2.1 Move BMT (+ remaining hot path) into Web Workers — `[~]` partial
-**Files:** `src/workers/stampSignerWorker.ts`, `src/app/components/FastPresignedStamp.ts`, future `upload.worker.ts`
+### 2.1 Move BMT (+ remaining hot path) into Web Workers — `[x]` shipped
+**Files:** `src/workers/bmtWorker.ts`, `src/app/components/BmtWorkerClient.ts`, `src/app/components/ClientSideUpload.ts`, `src/workers/stampSignerWorker.ts`, `src/app/components/FastPresignedStamp.ts`
 
-**Done:** Per-chunk **stamp signing** can run in a small pool of workers (`StampSignerPool`); main thread falls back automatically if workers fail to load.
-
-**Open:** **BMT hashing** and **MerkleTree** still run on the main thread during `streamFileThroughMerkleTree`. Moving that into one or more workers (or colocating with signing in a single upload worker) would further reduce UI jank on multi-GB files. Original scope note in SWIP §C still applies.
+**Done:** Per-chunk **stamp signing** runs in a small pool of workers (`StampSignerPool`); main thread falls back automatically if workers fail to load. **BMT hashing** (`MerkleTree.append` / `finalize`) runs in `bmtWorker.ts` via `BmtWorkerClient`; file reads stay on the main thread. Disable with `NEXT_PUBLIC_BMT_WORKER=false`.
 
 ### 2.2 Replace bee-js's axios with `fetch` for `/chunks` — `[x]` shipped
 **Files:** `src/app/components/FastPresignedStamp.ts` (`uploadChunkPresignedFetch`), `src/app/components/ClientSideUpload.ts`

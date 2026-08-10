@@ -3,12 +3,11 @@
  *
  *   1. localStorage   — what THIS browser created or imported (fast, offline).
  *   2. PostageStamp   — direct on-chain reads for fresh `batchTTL` etc.
- *   3. Issuer-state   — encrypted Single Owner Chunk on Swarm; used to restore
+ *   3. Bee `/batches/{id}` — gateway chain index (Bee v2.8.1+); fills gaps when
+ *      the RPC read misses or lags, and works for self-custody hot-key batches
+ *      that never appear under `/stamps/{id}` (issuer is the browser, not Bee).
+ *   4. Issuer-state   — encrypted Single Owner Chunk on Swarm; used to restore
  *      SOCs            the bucket-counter state when local data is missing.
- *
- * The Bee `/stamps` endpoint is intentionally not consulted: for self-custody
- * batches the issuer is our hot key, not the Bee node, so `/stamps/<id>`
- * always returns 404 — chain reads are simpler and authoritative.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -32,6 +31,7 @@ import {
   parseHumanStorageSize,
 } from './utils';
 import { refreshBatchesFromContract } from './PostageContract';
+import { fetchGlobalBatch, type BeeGlobalBatch } from './BeeApi';
 import { deriveHotKey } from './ClientStamping';
 import {
   loadStamperState,
@@ -78,6 +78,8 @@ interface BatchEvent {
   bucketDepth?: number;
   /** Live remaining seconds, computed from on-chain pricing. */
   batchTTL?: number;
+  /** Where {@link batchTTL} came from when shown in the UI. */
+  ttlSource?: 'chain' | 'gateway';
   /**
    * Set when the chain didn't return a row for this batchId. Either the batch
    * never made it on-chain (failed tx) or it was reaped after expiry.
@@ -190,33 +192,37 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     if (stored.length === 0) return [];
 
     const { client: publicClient } = getGnosisPublicClient();
-    const onChainMap = await refreshBatchesFromContract(
-      publicClient,
-      stored.map(b => b.batchId)
-    );
+    const [onChainMap, gatewayEntries, localStateEntries] = await Promise.all([
+      refreshBatchesFromContract(
+        publicClient,
+        stored.map(b => b.batchId)
+      ),
+      Promise.all(
+        stored.map(async s => {
+          const gateway = await fetchGlobalBatch(s.batchId, beeApiUrl);
+          return [s.batchId, gateway] as const;
+        })
+      ),
+      Promise.all(
+        stored.map(async s => [s.batchId, await loadStamperState(s.batchId)] as const)
+      ),
+    ]);
 
-    // Pre-fetch every batch's local Stamper state in parallel. Previously
-    // this was a sync `localStorage.getItem` inside the `.map`, but the
-    // backend is now IndexedDB (async) so we resolve them all up-front and
-    // hand the resulting map into the synchronous render-shape construction.
-    const localStates = new Map<string, Awaited<ReturnType<typeof loadStamperState>>>();
-    await Promise.all(
-      stored.map(async s => {
-        localStates.set(s.batchId, await loadStamperState(s.batchId));
-      })
-    );
+    const gatewayMap = new Map<string, BeeGlobalBatch>();
+    for (const [batchId, gateway] of gatewayEntries) {
+      if (gateway) gatewayMap.set(batchId.toLowerCase(), gateway);
+    }
+
+    const localStates = new Map(localStateEntries);
 
     return stored.map(s => {
       const id = s.batchId.toLowerCase().startsWith('0x')
         ? s.batchId.toLowerCase()
         : `0x${s.batchId.toLowerCase()}`;
       const onChain: ChainBatchInfo | undefined = onChainMap.get(id);
+      const gateway = gatewayMap.get(s.batchId.toLowerCase());
       const localState = localStates.get(s.batchId) ?? null;
       const hasLocalIssuerState = !!localState;
-      // Compute usage against the BATCH's depth (s.depth), not the persisted
-      // Stamper's depth — if they disagree we want the user to see a number
-      // grounded in the real on-chain stamp size, plus the depthMismatch
-      // banner that explains why the local state is unreliable.
       const usage = localState ? computeStampUsage(localState, s.depth) : undefined;
       const base: BatchEvent = {
         batchId: s.batchId,
@@ -230,13 +236,28 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         hasLocalIssuerState,
         usage,
       };
-      if (!onChain) {
+
+      if (!onChain && !gateway) {
         return { ...base, missingOnChain: true };
       }
+
+      const batchTTL =
+        onChain?.batchTTL !== undefined && onChain.batchTTL > 0
+          ? onChain.batchTTL
+          : gateway?.batchTTL;
+      const ttlSource: BatchEvent['ttlSource'] =
+        onChain?.batchTTL !== undefined && onChain.batchTTL > 0
+          ? 'chain'
+          : gateway?.batchTTL !== undefined && gateway.batchTTL > 0
+            ? 'gateway'
+            : undefined;
+
       return {
         ...base,
-        batchTTL: onChain.batchTTL,
-        bucketDepth: onChain.bucketDepth,
+        depth: onChain?.depth ?? gateway?.depth ?? s.depth,
+        bucketDepth: onChain?.bucketDepth ?? gateway?.bucketDepth ?? s.bucketDepth,
+        batchTTL,
+        ttlSource,
       };
     });
   };
@@ -481,8 +502,14 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                               ? styles.expiryKhaki
                               : ''
                         }
+                        title={
+                          stamp.ttlSource === 'gateway'
+                            ? 'Expiry from Bee gateway chain index (on-chain RPC read unavailable)'
+                            : undefined
+                        }
                       >
                         Expires: {formatExpiryTime(stamp.batchTTL)}
+                        {stamp.ttlSource === 'gateway' ? ' (gateway)' : ''}
                         {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
                       </span>
                     )

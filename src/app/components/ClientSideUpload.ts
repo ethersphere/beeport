@@ -47,9 +47,11 @@ import {
   PresignedChunkUploadSession,
   uploadChunkPresignedFetch,
   type StampSignerPool,
+  type ChunkUploadTransport,
 } from './FastPresignedStamp';
 import { DEFAULT_BEE_API_URL } from './constants';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
+import { BmtWorkerClient } from './BmtWorkerClient';
 
 /**
  * Maximum number of concurrent in-flight POST /chunks requests.
@@ -96,23 +98,6 @@ function throttleUploadProgress<T extends (processed: number, total: number) => 
  * file and end-of-manifest.
  */
 const STATE_PERSIST_MIN_INTERVAL_MS = 2_000;
-
-/**
- * File-read slab size. The MerkleTree splits anything we feed it into 4 KB
- * chunks internally, so reading large slabs (instead of one 4 KB FileReader
- * round-trip per chunk) eliminates ~99% of the event-loop hops for big files.
- * 1 MB is a sweet spot: small enough that we don't hold the whole file in
- * memory for huge uploads, large enough that the per-slab overhead is
- * negligible.
- */
-const FILE_READ_SLAB_BYTES = 1 << 20; // 1 MiB
-
-/**
- * Files at or below this size are read in a single `arrayBuffer()` call. The
- * 2.3 MB photo-uploads typical of self-custody fall here; we trade a little
- * peak memory for the simplest, fastest pipeline.
- */
-const SINGLE_SHOT_READ_THRESHOLD_BYTES = 64 * 1024 * 1024; // 64 MiB
 
 /** Per-chunk upload retries on transient errors. */
 const MAX_CHUNK_RETRIES = 3;
@@ -246,6 +231,8 @@ const STAMP_HARD_FAIL_UTILIZATION = 0.95;
  */
 const STAMP_WARN_UTILIZATION = 0.8;
 
+export type { ChunkUploadTransport };
+
 export interface ClientSideUploadParams {
   file: File;
   /** 32-byte hex (with or without 0x) batch id, on-chain owner = hot key. */
@@ -262,6 +249,8 @@ export interface ClientSideUploadParams {
   onProgress?: (processed: number, total: number) => void;
   /** Optional status string callback for the UI. */
   onStatus?: (message: string) => void;
+  /** Fired once chunk transport is chosen (WebSocket stream or HTTP POST). */
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
   /** Optional concurrency override. */
   concurrency?: number;
   /** Optional abort signal. */
@@ -363,6 +352,7 @@ export async function uploadFileClientSide(
     isWebsite,
     onProgress,
     onStatus,
+    onUploadTransport,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -412,21 +402,6 @@ export async function uploadFileClientSide(
     stamper = createPresignedStamper(cleanBatchId, persisted.depth, persisted.buckets);
   } else {
     stamper = createPresignedStamper(cleanBatchId, depth);
-  }
-
-  // ── Pre-flight: refuse if projected utilization would exceed the cap ──────
-  // Cheap synchronous check on the local stamper state; doesn't need the
-  // gateway. Avoids burning slots on an upload that's mathematically
-  // guaranteed to hit "Bucket is full". Also asserts that the local
-  // Stamper's depth matches the on-chain batch depth — after the
-  // `clearStamperState` branch above this should always hold, but the check
-  // is a cheap belt-and-braces against future regressions.
-  const capacity = checkProjectedStampCapacity(stamper, file.size, depth);
-  if (capacity.level === 'fail') {
-    throw new Error(capacity.message ?? 'Stamp would be over-capacity for this upload');
-  }
-  if (capacity.level === 'warn') {
-    console.warn(`[ClientSideUpload] ${capacity.message}`);
   }
 
   // ── Diagnostics ──────────────────────────────────────────────────────────
@@ -554,7 +529,9 @@ export async function uploadFileClientSide(
 
   let stampPool: StampSignerPool | null = null;
   let uploadSession: PresignedChunkUploadSession | null = null;
+  let bmtClient: BmtWorkerClient | null = null;
   let uploadTransport: 'http' | 'websocket' = 'http';
+  let issuerStateSocPromise: Promise<IssuerStateSocResult | undefined> | undefined;
 
   // Errors thrown inside a queue task become unhandled promise rejections
   // because cafe-utility's AsyncQueue only `.finally()`s the task — it does
@@ -734,13 +711,23 @@ export async function uploadFileClientSide(
 
     uploadSession = await PresignedChunkUploadSession.open(beeApiUrl, { abortSignal });
     uploadTransport = uploadSession.transport;
+    onUploadTransport?.(uploadTransport);
     if (uploadTransport === 'websocket') {
       mark('using WebSocket /chunks/stream');
     }
 
+    bmtClient = await BmtWorkerClient.open();
+    if (bmtClient.runsInWorker) {
+      mark('BMT worker active');
+    }
+
     // ── Chunk file → BMT MerkleTree → onChunk → upload ──────────────────────
     onStatus?.('Chunking and stamping file…');
-    const fileRootChunk = await streamFileThroughMerkleTree(file, onChunk, abortSignal);
+    const fileRootChunk = await bmtClient.streamFileThroughMerkleTree(
+      file,
+      onChunk,
+      abortSignal
+    );
     mark('BMT producer done (all chunks enqueued)', { uploaded: chunksUploaded });
     await queue.drain();
 
@@ -830,7 +817,7 @@ export async function uploadFileClientSide(
     // this point, we kick off the SOC write as a background promise and
     // return immediately. Caller can observe via `result.issuerStateSocPromise`.
     const socStartedAt = performance.now();
-    const issuerStateSocPromise = (async (): Promise<IssuerStateSocResult | undefined> => {
+    issuerStateSocPromise = (async (): Promise<IssuerStateSocResult | undefined> => {
       try {
         onStatus?.('Saving issuer state to Swarm (SOC)…');
         const soc = await saveIssuerStateToSOC({
@@ -907,8 +894,15 @@ export async function uploadFileClientSide(
     await addrBatcher.flush().catch(() => {});
     throw err;
   } finally {
+    bmtClient?.terminate();
     uploadSession?.close();
-    stampPool?.terminate();
+    if (issuerStateSocPromise) {
+      void issuerStateSocPromise.finally(() => {
+        stampPool?.terminate();
+      });
+    } else {
+      stampPool?.terminate();
+    }
   }
 }
 
@@ -990,56 +984,6 @@ export function checkProjectedStampCapacity(
     };
   }
   return { level: 'ok', utilizationPercent, projectedUtilizationPercent };
-}
-
-// ─── BMT streaming over a File ────────────────────────────────────────────────
-
-/**
- * Pump the file's bytes through a `MerkleTree` so each filled 4 KB chunk is
- * stamped + uploaded via `onChunk`.
- *
- * Why slab reads (not 4 KB FileReader pings):
- *   `MerkleTree.append` is happy with arbitrary-sized inputs — it splits into
- *   4 KB chunks internally and fires `onChunk` whenever one fills. Reading
- *   the file 4 KB at a time forced ~one FileReader async hop per chunk,
- *   which dominated end-to-end latency for small files. We now read either
- *   the whole file (≤ {@link SINGLE_SHOT_READ_THRESHOLD_BYTES}) or 1 MiB
- *   slabs (above that), which collapses the read pipeline to one or a
- *   handful of awaits while still applying queue back-pressure via the
- *   `onChunk` await chain.
- */
-async function streamFileThroughMerkleTree(
-  file: File,
-  onChunk: (chunk: Chunk) => Promise<void>,
-  abortSignal?: AbortSignal
-): Promise<Chunk> {
-  const tree = new MerkleTree(onChunk);
-
-  if (file.size <= SINGLE_SHOT_READ_THRESHOLD_BYTES) {
-    if (abortSignal?.aborted) throw new Error('Upload aborted');
-    const buffer = await file.arrayBuffer();
-    if (abortSignal?.aborted) throw new Error('Upload aborted');
-    await tree.append(new Uint8Array(buffer));
-  } else {
-    let offset = 0;
-    let pendingRead: Promise<ArrayBuffer> | null = null;
-    const readSlab = (off: number) => {
-      const end = Math.min(off + FILE_READ_SLAB_BYTES, file.size);
-      return file.slice(off, end).arrayBuffer();
-    };
-    pendingRead = readSlab(0);
-    while (offset < file.size) {
-      if (abortSignal?.aborted) throw new Error('Upload aborted');
-      const slabBuf = await pendingRead!;
-      const end = Math.min(offset + FILE_READ_SLAB_BYTES, file.size);
-      offset = end;
-      pendingRead = offset < file.size ? readSlab(offset) : null;
-      if (abortSignal?.aborted) throw new Error('Upload aborted');
-      await tree.append(new Uint8Array(slabBuf));
-    }
-  }
-
-  return tree.finalize();
 }
 
 // ─── Manifest assembly with presigned chunks ──────────────────────────────────
@@ -1587,6 +1531,10 @@ interface UploadCtx {
   uploadSession: PresignedChunkUploadSession | null;
   closeUploadSession: () => void;
   openUploadTransport: () => Promise<void>;
+  bmtClient: BmtWorkerClient | null;
+  openBmtClient: () => Promise<void>;
+  closeBmtClient: () => void;
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
 }
 
 async function createUploadContext(opts: {
@@ -1598,6 +1546,7 @@ async function createUploadContext(opts: {
   abortSignal?: AbortSignal;
   onProgress?: (processed: number, total: number) => void;
   totalChunksApprox: number;
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
 }): Promise<UploadCtx> {
   const { batchId, hotKey, depth, beeApiUrl, concurrency, abortSignal, onProgress } = opts;
   const progressOut = throttleUploadProgress(onProgress);
@@ -1656,6 +1605,10 @@ async function createUploadContext(opts: {
     uploadSession: null,
     closeUploadSession: () => {},
     openUploadTransport: async () => {},
+    bmtClient: null,
+    openBmtClient: async () => {},
+    closeBmtClient: () => {},
+    onUploadTransport: opts.onUploadTransport,
   };
 
   ctx.closeUploadSession = () => {
@@ -1667,6 +1620,15 @@ async function createUploadContext(opts: {
     ctx.uploadSession = await PresignedChunkUploadSession.open(ctx.beeApiUrl, {
       abortSignal: ctx.abortSignal,
     });
+    ctx.onUploadTransport?.(ctx.uploadSession.transport);
+  };
+  ctx.openBmtClient = async () => {
+    if (ctx.bmtClient) return;
+    ctx.bmtClient = await BmtWorkerClient.open();
+  };
+  ctx.closeBmtClient = () => {
+    ctx.bmtClient?.terminate();
+    ctx.bmtClient = null;
   };
 
   let lastStatePersistAt = 0;
@@ -1804,8 +1766,15 @@ async function streamFileThroughCtx(
   file: File,
   ctx: UploadCtx
 ): Promise<{ rootChunk: Chunk; chunkCount: number }> {
+  if (!ctx.bmtClient) {
+    throw new Error('BMT client not opened');
+  }
   const before = ctx.chunksUploaded;
-  const fileRootChunk = await streamFileThroughMerkleTree(file, ctx.onChunk, ctx.abortSignal);
+  const fileRootChunk = await ctx.bmtClient.streamFileThroughMerkleTree(
+    file,
+    ctx.onChunk,
+    ctx.abortSignal
+  );
   await ctx.queue.drain();
   if (ctx.firstError) {
     ctx.persistState(true);
@@ -1821,14 +1790,15 @@ async function streamBytesThroughCtx(
   bytes: Uint8Array,
   ctx: UploadCtx
 ): Promise<{ rootChunk: Chunk; chunkCount: number }> {
-  const before = ctx.chunksUploaded;
-  const tree = new MerkleTree(ctx.onChunk);
-  for (let off = 0; off < bytes.length; off += FILE_READ_SLAB_BYTES) {
-    if (ctx.abortSignal?.aborted) throw new Error('Upload aborted');
-    const end = Math.min(off + FILE_READ_SLAB_BYTES, bytes.length);
-    await tree.append(bytes.subarray(off, end));
+  if (!ctx.bmtClient) {
+    throw new Error('BMT client not opened');
   }
-  const rootChunk = await tree.finalize();
+  const before = ctx.chunksUploaded;
+  const rootChunk = await ctx.bmtClient.streamBytesThroughMerkleTree(
+    bytes,
+    ctx.onChunk,
+    ctx.abortSignal
+  );
   await ctx.queue.drain();
   if (ctx.firstError) {
     ctx.persistState(true);
@@ -1933,6 +1903,7 @@ export interface MultiFileUploadParams {
     fileProgress: { processed: number; total: number }
   ) => void;
   onStatus?: (message: string) => void;
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -1979,6 +1950,7 @@ export async function uploadMultipleFilesClientSide(
     beeApiUrl,
     onProgress,
     onStatus,
+    onUploadTransport,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -1995,6 +1967,7 @@ export async function uploadMultipleFilesClientSide(
     abortSignal,
     onProgress: undefined,
     totalChunksApprox: approxChunkCount(totalBytes),
+    onUploadTransport,
   });
 
   try {
@@ -2007,6 +1980,7 @@ export async function uploadMultipleFilesClientSide(
     // gets a clean error instead of N parallel HTTP-400 results.
     await ctx.ensureStampReady(onStatus);
     await ctx.openUploadTransport();
+    await ctx.openBmtClient();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -2081,6 +2055,7 @@ export async function uploadMultipleFilesClientSide(
     };
   } finally {
     ctx.closeUploadSession();
+    ctx.closeBmtClient();
     ctx.stampPool?.terminate();
     await ctx.addrBatcher.flush().catch(() => {});
   }
@@ -2118,6 +2093,7 @@ export interface CollectionUploadParams {
   };
   onProgress?: (processed: number, total: number) => void;
   onStatus?: (message: string) => void;
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -2150,6 +2126,7 @@ export async function uploadFilesAsCollectionClientSide(
     website,
     onProgress,
     onStatus,
+    onUploadTransport,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -2178,6 +2155,7 @@ export async function uploadFilesAsCollectionClientSide(
     abortSignal,
     onProgress,
     totalChunksApprox: approxChunkCount(totalBytes),
+    onUploadTransport,
   });
 
   try {
@@ -2185,6 +2163,7 @@ export async function uploadFilesAsCollectionClientSide(
     // the comment in `uploadMultipleFilesClientSide` for the full rationale.
     await ctx.ensureStampReady(onStatus);
     await ctx.openUploadTransport();
+    await ctx.openBmtClient();
 
     const manifest = new MantarayNode();
     const beforeAllFiles = ctx.chunksUploaded;
@@ -2243,6 +2222,7 @@ export async function uploadFilesAsCollectionClientSide(
     };
   } finally {
     ctx.closeUploadSession();
+    ctx.closeBmtClient();
     ctx.stampPool?.terminate();
     await ctx.addrBatcher.flush().catch(() => {});
   }

@@ -31,6 +31,7 @@
 import JSZip from 'jszip';
 import {
   uploadFilesAsCollectionClientSide,
+  type ChunkUploadTransport,
   type CollectionEntry,
   type CollectionUploadResult,
 } from './ClientSideUpload';
@@ -53,6 +54,7 @@ export interface NFTCollectionUploadParams {
   onProgress?: (percent: number, stage: string) => void;
   /** Optional status string callback for the UI. */
   onStatus?: (message: string) => void;
+  onUploadTransport?: (transport: ChunkUploadTransport) => void;
   /** Optional abort signal. */
   abortSignal?: AbortSignal;
 }
@@ -82,6 +84,7 @@ export async function processNFTCollectionClientSide(
     concurrency,
     onProgress,
     onStatus,
+    onUploadTransport,
     abortSignal,
   } = params;
 
@@ -147,6 +150,7 @@ export async function processNFTCollectionClientSide(
       onProgress?.(15 + pctWithinStage * 40, 'images');
     },
     onStatus,
+    onUploadTransport,
     abortSignal,
   });
 
@@ -213,6 +217,7 @@ export async function processNFTCollectionClientSide(
       onProgress?.(65 + pctWithinStage * 33, 'metadata-upload');
     },
     onStatus,
+    onUploadTransport,
     abortSignal,
   });
 

@@ -62,10 +62,8 @@ import {
   clearHotKey,
   getCachedHotKeyAddress,
   loadStampUsage,
-  loadStamperState,
   type DerivedHotKey,
 } from './ClientStamping';
-import { createPresignedStamper } from './FastPresignedStamp';
 import {
   computeBatchId,
   createSelfCustodyBatchViaRegistry,
@@ -81,9 +79,8 @@ import {
   uploadMultipleFilesClientSide,
   uploadFilesAsCollectionClientSide,
   StampNotReadyError,
-  checkProjectedStampCapacity,
   type MultiFileResult,
-  type ProjectedStampCapacity,
+  type ChunkUploadTransport,
 } from './ClientSideUpload';
 import {
   extractArchiveToEntries,
@@ -179,10 +176,9 @@ const SwapComponent: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
-  /** Pre-flight stamp capacity from {@link checkProjectedStampCapacity} at file-select time. */
-  const [stampCapacityCheck, setStampCapacityCheck] = useState<ProjectedStampCapacity | null>(
-    null
-  );
+  /** Live chunk transport once an upload session opens (`http` or `websocket`). */
+  const [chunkUploadTransport, setChunkUploadTransport] =
+    useState<ChunkUploadTransport | null>(null);
   const [showStampList, setShowStampList] = useState(false);
 
   // Upload-mode toggles brought back from 1.1.x but reimplemented over the
@@ -256,7 +252,14 @@ const SwapComponent: React.FC = () => {
   // visible (`uploadStep === 'ready'`). During an active upload the chunk POSTs
   // are themselves the most authoritative liveness signal, and during 'idle'
   // the user can't see the banner anyway, so polling is wasted bandwidth.
-  const beeNodeHealth = useBeeNodeHealth(beeApiUrl, uploadStep === 'ready');
+  const beeNodeHealth = useBeeNodeHealth(
+    beeApiUrl,
+    uploadStep === 'ready' || uploadStep === 'uploading'
+  );
+
+  const handleUploadTransport = useCallback((transport: ChunkUploadTransport) => {
+    setChunkUploadTransport(transport);
+  }, []);
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -1294,49 +1297,6 @@ const SwapComponent: React.FC = () => {
   const depthForUpload =
     isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      const totalBytes = getTotalFileSize();
-      if (!postageBatchId || totalBytes <= 0) {
-        if (!cancelled) setStampCapacityCheck(null);
-        return;
-      }
-
-      const batchIdHex = postageBatchId.startsWith('0x')
-        ? postageBatchId.slice(2)
-        : postageBatchId;
-
-      try {
-        const persisted = await loadStamperState(batchIdHex);
-        const stamper = persisted
-          ? createPresignedStamper(batchIdHex, persisted.depth, persisted.buckets)
-          : createPresignedStamper(batchIdHex, depthForUpload);
-
-        const result = checkProjectedStampCapacity(stamper, totalBytes, depthForUpload);
-        if (!cancelled) {
-          setStampCapacityCheck(result.level === 'ok' ? null : result);
-        }
-      } catch (err) {
-        console.warn('[Stamp capacity pre-check] skipped:', err);
-        if (!cancelled) setStampCapacityCheck(null);
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    postageBatchId,
-    selectedFile,
-    selectedFiles,
-    depthForUpload,
-    isMultipleFiles,
-    isFolderUpload,
-  ]);
-
   /**
    * Self-custody upload path (SWIP §Client-side stamping, mode α).
    *
@@ -1349,6 +1309,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setChunkUploadTransport(null);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setStatusMessage({ step: 'Uploading', message: 'Preparing upload…' });
@@ -1437,6 +1398,7 @@ const SwapComponent: React.FC = () => {
           if (pct >= 99) setIsDistributing(true);
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+        onUploadTransport: handleUploadTransport,
       });
 
       setUploadProgress(100);
@@ -1589,12 +1551,8 @@ const SwapComponent: React.FC = () => {
         warning: translated.warning,
         isError: true,
       });
-      // Transient = gateway still indexing; keepUploadFormOpen = e.g. bucket
-      // full — same form so the user can switch stamp or file without a stale
-      // banner on the next open.
-      setUploadStep(
-        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
-      );
+      // Keep the upload overlay open so the error banner is visible.
+      setUploadStep('ready');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1703,6 +1661,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setChunkUploadTransport(null);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setMultiFileResults([]);
@@ -1742,6 +1701,7 @@ const SwapComponent: React.FC = () => {
           if (overall >= 99) setIsDistributing(true);
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+        onUploadTransport: handleUploadTransport,
       });
 
       setMultiFileResults(result.results);
@@ -1793,9 +1753,7 @@ const SwapComponent: React.FC = () => {
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(
-        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
-      );
+      setUploadStep('ready');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1822,6 +1780,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setChunkUploadTransport(null);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setStatusMessage({ step: 'Uploading', message: 'Preparing collection upload…' });
@@ -1867,6 +1826,7 @@ const SwapComponent: React.FC = () => {
           if (pct >= 99) setIsDistributing(true);
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+        onUploadTransport: handleUploadTransport,
       });
 
       setUploadProgress(100);
@@ -1938,9 +1898,7 @@ const SwapComponent: React.FC = () => {
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(
-        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
-      );
+      setUploadStep('ready');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -1960,6 +1918,7 @@ const SwapComponent: React.FC = () => {
     setIsLoading(true);
     setShowOverlay(true);
     setUploadStep('uploading');
+    setChunkUploadTransport(null);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setNftCollectionResult(null);
@@ -1990,6 +1949,7 @@ const SwapComponent: React.FC = () => {
           if (percent >= 99) setIsDistributing(true);
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+        onUploadTransport: handleUploadTransport,
       });
 
       setNftCollectionResult(result);
@@ -2058,9 +2018,7 @@ const SwapComponent: React.FC = () => {
         warning: translated.warning,
         isError: true,
       });
-      setUploadStep(
-        translated.transient || translated.keepUploadFormOpen ? 'ready' : 'idle'
-      );
+      setUploadStep('ready');
       setUploadProgress(0);
       setIsDistributing(false);
       setIsLoading(false);
@@ -2208,6 +2166,7 @@ const SwapComponent: React.FC = () => {
     setIsNewStampCreated(false);
     setUploadStampInfo(null);
     setUploadProgress(0);
+    setChunkUploadTransport(null);
     setTopUpCompleted(false);
     setTopUpInfo(null);
   }, []);
@@ -2664,22 +2623,55 @@ const SwapComponent: React.FC = () => {
                         }...${postageBatchId.slice(-4)}`
                       : 'Upload File'}
                   </h3>
-                  {beeNodeHealth.state.status === 'ok' && beeNodeHealth.state.version && (
-                    <span
-                      className={`${styles.gatewayVersionBadge} ${
-                        beeSupportsChunkStream(beeNodeHealth.state.version)
-                          ? ''
-                          : styles.gatewayVersionLegacy
-                      }`}
-                      title={
-                        beeSupportsChunkStream(beeNodeHealth.state.version)
-                          ? 'Gateway supports Bee 2.8.1+ features (WebSocket chunk stream, /batches API).'
-                          : 'Upgrade the Bee gateway to 2.8.1+ for WebSocket uploads and newer API endpoints.'
-                      }
-                    >
-                      Bee {beeNodeHealth.state.version}
-                      {beeSupportsChunkStream(beeNodeHealth.state.version) ? ' ✓' : ' — upgrade'}
-                    </span>
+                  {(beeNodeHealth.state.version ||
+                    uploadStep === 'uploading') && (
+                    <div className={styles.uploadMetaBadges}>
+                      {beeNodeHealth.state.status === 'ok' &&
+                        beeNodeHealth.state.version && (
+                          <span
+                            className={`${styles.uploadMetaBadge} ${styles.gatewayVersionBadge} ${
+                              beeSupportsChunkStream(beeNodeHealth.state.version)
+                                ? ''
+                                : styles.gatewayVersionLegacy
+                            }`}
+                            title={
+                              beeSupportsChunkStream(beeNodeHealth.state.version)
+                                ? 'Gateway supports Bee 2.8.1+ features (WebSocket chunk stream, /batches API).'
+                                : 'Upgrade the Bee gateway to 2.8.1+ for WebSocket uploads and newer API endpoints.'
+                            }
+                          >
+                            via Bee {beeNodeHealth.state.version}
+                            {beeSupportsChunkStream(beeNodeHealth.state.version)
+                              ? ' ✓'
+                              : ' — upgrade'}
+                          </span>
+                        )}
+                      {uploadStep === 'uploading' &&
+                        (chunkUploadTransport ? (
+                          <span
+                            className={`${styles.uploadMetaBadge} ${
+                              chunkUploadTransport === 'websocket'
+                                ? styles.uploadTransportWs
+                                : styles.uploadTransportHttp
+                            }`}
+                            title={
+                              chunkUploadTransport === 'websocket'
+                                ? 'Chunks upload over wss://…/chunks/stream (Bee 2.8.1+).'
+                                : 'Chunks upload via parallel HTTP POST /chunks (WebSocket unavailable or disabled).'
+                            }
+                          >
+                            {chunkUploadTransport === 'websocket'
+                              ? 'WebSocket stream'
+                              : 'HTTP chunks'}
+                          </span>
+                        ) : (
+                          <span
+                            className={`${styles.uploadMetaBadge} ${styles.uploadTransportPending}`}
+                          >
+                            Connecting…
+                          </span>
+                        ))}
+                    </div>
                   )}
                 </div>
 
@@ -2716,24 +2708,6 @@ const SwapComponent: React.FC = () => {
                         {beeNodeHealth.state.message}. Uploads will fail until the gateway
                         recovers.
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {stampCapacityCheck?.level === 'warn' && (
-                  <div className={`${styles.healthBanner} ${styles.healthBannerWarn}`}>
-                    <span className={styles.healthBannerTitle}>⚠️ Stamp nearly full</span>
-                    {stampCapacityCheck.message && (
-                      <div className={styles.healthBannerDetail}>{stampCapacityCheck.message}</div>
-                    )}
-                  </div>
-                )}
-
-                {stampCapacityCheck?.level === 'fail' && (
-                  <div className={`${styles.healthBanner} ${styles.healthBannerError}`}>
-                    <span className={styles.healthBannerTitle}>⛔ Upload too large for this stamp</span>
-                    {stampCapacityCheck.message && (
-                      <div className={styles.healthBannerDetail}>{stampCapacityCheck.message}</div>
                     )}
                   </div>
                 )}
@@ -2988,7 +2962,6 @@ const SwapComponent: React.FC = () => {
                           : !selectedFile) ||
                         uploadStep === 'uploading' ||
                         exceedsMaximumUploadSize() ||
-                        stampCapacityCheck?.level === 'fail' ||
                         // Block uploads when we KNOW the gateway is broken.
                         // 'unknown' (no probe yet) and 'checking' do NOT
                         // block — we'd rather let an early upload through

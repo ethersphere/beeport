@@ -9,7 +9,7 @@
 
 import { BatchId, type EnvelopeWithBatchId, type Stamper } from '@ethersphere/bee-js';
 import type { Chunk } from 'cafe-utility';
-import { Binary } from 'cafe-utility';
+import { Binary, Elliptic } from 'cafe-utility';
 import * as secp from '@noble/secp256k1';
 import { hexToBytes, keccak256 } from 'viem';
 
@@ -64,10 +64,30 @@ export function ethSignedHashForStampPayload(
   return hexToBytes(keccak256(personal));
 }
 
-/** Digest bee-js uses for SOC owner signatures (`PrivateKey.sign` over raw data). */
-export function ethSignedDigestForOwnerPayload(data: Uint8Array): Uint8Array {
+/** Personal-sign message bytes for SOC owner attestation (`PrivateKey.sign` input). */
+export function ownerSignPersonalMessage(data: Uint8Array): Uint8Array {
   const innerHash = hexToBytes(keccak256(data));
   return concat2(ETH_SIGNED_CHUNK_PREFIX, innerHash);
+}
+
+/**
+ * SOC owner signature — must match bee-js {@link PrivateKey.sign} /
+ * `Elliptic.signMessage`, not {@link signStampMsgHash} (postage stamps).
+ */
+export function signOwnerPayloadElliptic(privKeyBytes: Uint8Array, data: Uint8Array): Uint8Array {
+  const personal = ownerSignPersonalMessage(data);
+  const privN = Binary.uint256ToNumber(privKeyBytes, 'BE');
+  const [r, s, v] = Elliptic.signMessage(personal, privN);
+  const sig65 = new Uint8Array(65);
+  sig65.set(Binary.numberToUint256(r, 'BE'), 0);
+  sig65.set(Binary.numberToUint256(s, 'BE'), 32);
+  sig65[64] = Number(v);
+  return sig65;
+}
+
+/** @deprecated Use {@link ownerSignPersonalMessage} — kept for grep compatibility. */
+export function ethSignedDigestForOwnerPayload(data: Uint8Array): Uint8Array {
+  return ownerSignPersonalMessage(data);
 }
 
 /**
@@ -761,12 +781,8 @@ export class StampSignerPool {
 
   /** SOC owner attestation — same digest path as bee-js `PrivateKey.sign`. */
   async signOwnerPayload(data: Uint8Array): Promise<Uint8Array> {
-    const digest = ethSignedDigestForOwnerPayload(data);
     await this.ready;
-    if (this.useMainThread || this.workers.length === 0) {
-      return signStampMsgHash(this.privKeyBytes, digest);
-    }
-    return this.postSign('signOwner', digest);
+    return signOwnerPayloadElliptic(this.privKeyBytes, data);
   }
 
   private async postSign(type: 'sign' | 'signOwner', payload: Uint8Array): Promise<Uint8Array> {

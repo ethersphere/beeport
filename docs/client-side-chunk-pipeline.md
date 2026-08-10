@@ -6,8 +6,10 @@ Technical reference for how Beeport stamps and uploads chunks from the browser w
 
 | Piece | Role |
 | ----- | ---- |
-| `ClientSideUpload.ts` | BMT chunking, `AsyncQueue` parallelism, manifest, optional SOC backup trigger |
+| `ClientSideUpload.ts` | BMT chunking (optional worker), `AsyncQueue` parallelism, manifest, optional SOC backup trigger |
+| `BmtWorkerClient.ts` | Optional off-main-thread BMT via `bmtWorker.ts`; main-thread fallback |
 | `FastPresignedStamp.ts` | EIP-191 stamp digest, `@noble/secp256k1` signing, optional worker pool, `fetch` to `/chunks` (CAC) or `/soc/...` (issuer-state SOC) |
+| `src/workers/bmtWorker.ts` | Off-main-thread `MerkleTree` hashing (optional); main thread reads file slabs |
 | `src/workers/stampSignerWorker.ts` | Off-main-thread signing (optional); pool falls back to main thread if workers fail |
 | `HotKeySession.ts` | Derive hot key, worker-only scalar, 15 min idle re-sign |
 | `ClientStamping.ts` | Stamper persistence (IndexedDB), chunk-address dedup batching |
@@ -18,6 +20,12 @@ Technical reference for how Beeport stamps and uploads chunks from the browser w
 Webpack 5 (used by `next dev`) only detects worker entries when **`new URL('…/worker.ts', import.meta.url)` is nested directly inside `new Worker(..., { type: 'module' })`**. If the URL is assigned to a variable first, the dev middleware can serve the raw `*.ts` asset with MIME **`video/mp2t`**, the browser refuses the module worker, and **`StampSignerPool`** falls back to main-thread signing.
 
 The hot-key **private scalar lives only in these workers** after derivation. Main thread holds the public address, SOC AES `CryptoKey`, and routes signing through the pool. After **15 minutes without user activity**, the session clears and the wallet must sign the canonical derivation message again — see [Wallet security](./wallet-security.md).
+
+## BMT web worker
+
+File reads stay on the main thread (`File.slice` / `arrayBuffer` in 1 MiB slabs). **`BmtWorkerClient`** posts each slab to **`bmtWorker.ts`**, which runs bee-js **`MerkleTree`** off the UI thread. Leaf chunks stream back as wire bytes + content hashes; the main thread enqueues stamp + upload work unchanged.
+
+Set **`NEXT_PUBLIC_BMT_WORKER=false`** to hash on the main thread (same algorithm, useful for debugging). Same webpack `new Worker(new URL(...))` pattern as the stamp signer worker.
 
 ## Postage stamps
 
