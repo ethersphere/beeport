@@ -55,7 +55,11 @@ The post-ramp target is **`HTTP2_TARGET_CONCURRENCY`**. It must stay **at or und
 
 ## Transport details (`uploadChunkPresignedFetch` / `uploadSocPresignedFetch`)
 
-- **CAC:** `uploadChunkPresignedFetch` — `POST {bee}/chunks`, body = full CAC (`span || payload`).
+- **CAC (default):** parallel `POST {bee}/chunks` with `swarm-postage-stamp` header.
+- **CAC (Bee v2.8.1+):** when the gateway accepts it, `PresignedChunkUploadSession` opens
+  `wss://…/chunks/stream` in per-chunk stamp mode (no batch-id header; each binary message is
+  `stamp[113] || chunk`). Falls back to HTTP automatically. Disable with
+  `NEXT_PUBLIC_PREFER_CHUNK_STREAM=false`.
 - **Issuer-state SOC:** `uploadSocPresignedFetch` — `POST {bee}/soc/{ownerHex}/{identifierHex}?sig={socSigHex}`, body = inner CAC only (same as bee-js `uploadSingleOwnerChunk`).
 - Request bodies are **copies** (`new Uint8Array(...)`) so the POST cannot race under extreme parallelism.
 - **`keepalive`** is not used on these POSTs (some browsers mishandle many parallel keepalive uploads).
@@ -65,6 +69,17 @@ The post-ramp target is **`HTTP2_TARGET_CONCURRENCY`**. It must stay **at or und
 | Variable | Effect |
 | -------- | ------ |
 | `NEXT_PUBLIC_ASSUME_HTTP2_UPLOAD=true` | Assume HTTP/2 for any `https:` Bee API URL when `nextHopProtocol` is hidden (requires `Timing-Allow-Origin` on `/chunks` for a definitive `h2` readout). |
+| `NEXT_PUBLIC_PREFER_CHUNK_STREAM=false` | Force HTTP `POST /chunks` even when WebSocket `/chunks/stream` is available. |
+
+## Bee gateway API (v2.8.1+)
+
+`BeeApi.ts` wraps endpoints useful for self-custody:
+
+| Endpoint | Use in Beeport |
+| -------- | -------------- |
+| `GET /chainstate` | `minimumValidityBlocks` + optional `currentPrice` for stamp cost estimates |
+| `GET /batches/{id}` | Batch TTL / depth when `/stamps/{id}` 404s (foreign-owned batches) |
+| `GET /stamps/{id}` | `utilizationRatio` when the gateway owns the batch issuer |
 
 ## Related docs
 

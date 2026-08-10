@@ -44,6 +44,7 @@ import {
 import {
   buildStampEnvelope,
   createPresignedStamper,
+  PresignedChunkUploadSession,
   uploadChunkPresignedFetch,
   type StampSignerPool,
 } from './FastPresignedStamp';
@@ -298,6 +299,8 @@ export interface ClientSideUploadResult {
   detectedHttpProtocol?: string;
   /** Concurrency the upload settled at after any adaptive ramp-up. */
   effectiveConcurrency: number;
+  /** Chunk transport used for leaf uploads (`websocket` when Bee v2.8.1+ accepts it). */
+  uploadTransport?: 'http' | 'websocket';
   /**
    * Promise that resolves with the SOC-save metadata once the issuer-state
    * backup completes (or with `undefined` if it failed / was skipped).
@@ -550,6 +553,8 @@ export async function uploadFileClientSide(
   }
 
   let stampPool: StampSignerPool | null = null;
+  let uploadSession: PresignedChunkUploadSession | null = null;
+  let uploadTransport: 'http' | 'websocket' = 'http';
 
   // Errors thrown inside a queue task become unhandled promise rejections
   // because cafe-utility's AsyncQueue only `.finally()`s the task — it does
@@ -598,7 +603,7 @@ export async function uploadFileClientSide(
             stampPool
           );
         }
-        await uploadChunkPresignedFetch(beeApiUrl, chunkBytes, envelope, {
+        await uploadChunkViaTransport(uploadSession, beeApiUrl, chunkBytes, envelope, {
           abortSignal,
           timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
         });
@@ -615,8 +620,9 @@ export async function uploadFileClientSide(
         }
         // After the first successful chunk we have at least one Resource
         // Timing entry; check whether the gateway gave us HTTP/2 and ramp
-        // up concurrency if so. No-op on subsequent calls.
-        if (chunksUploaded === 1) {
+        // up concurrency if so. No-op on subsequent calls. Skipped when
+        // using WebSocket stream transport (no parallel HTTP POSTs).
+        if (chunksUploaded === 1 && uploadTransport === 'http') {
           maybeRampUploadQueueForHttp2(queue, beeApiUrl, concurrency, diag => {
             if (diag.ramped) {
               detectedHttpProtocol = diag.rawNextHop === 'h2' ? 'h2' : 'h2-assumed';
@@ -726,6 +732,12 @@ export async function uploadFileClientSide(
       mark('readiness probe accepted');
     }
 
+    uploadSession = await PresignedChunkUploadSession.open(beeApiUrl, { abortSignal });
+    uploadTransport = uploadSession.transport;
+    if (uploadTransport === 'websocket') {
+      mark('using WebSocket /chunks/stream');
+    }
+
     // ── Chunk file → BMT MerkleTree → onChunk → upload ──────────────────────
     onStatus?.('Chunking and stamping file…');
     const fileRootChunk = await streamFileThroughMerkleTree(file, onChunk, abortSignal);
@@ -788,7 +800,8 @@ export async function uploadFileClientSide(
         },
         issuerAddrBytes,
         stampPool,
-        null
+        null,
+        uploadSession
       );
     });
 
@@ -865,8 +878,9 @@ export async function uploadFileClientSide(
       totalChunks,
       cps: averageChunksPerSecond.toFixed(1),
       retries: retryCount,
-      protocol: detectedHttpProtocol ?? 'unknown',
+      protocol: detectedHttpProtocol ?? uploadTransport,
       conc: queue.concurrency,
+      transport: uploadTransport,
     });
 
     await addrBatcher.flush();
@@ -880,6 +894,7 @@ export async function uploadFileClientSide(
       retryCount,
       detectedHttpProtocol,
       effectiveConcurrency: queue.concurrency,
+      uploadTransport,
       issuerStateSocPromise,
     };
   } catch (err) {
@@ -892,6 +907,7 @@ export async function uploadFileClientSide(
     await addrBatcher.flush().catch(() => {});
     throw err;
   } finally {
+    uploadSession?.close();
     stampPool?.terminate();
   }
 }
@@ -1072,12 +1088,22 @@ export async function uploadDataPresigned(
   onUploaded: () => void,
   issuer: Uint8Array,
   stampPool: StampSignerPool | null,
-  privKeyBytes: Uint8Array | null = null
+  privKeyBytes: Uint8Array | null = null,
+  uploadSession: PresignedChunkUploadSession | null = null
 ): Promise<Reference> {
   // Single-chunk fast path: most marshalled mantaray nodes are < 4 KB.
   if (data.length <= 4096) {
     const chunk = await MerkleTree.root(data);
-    await uploadOneChunk(chunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
+    await uploadOneChunk(
+      chunk,
+      stamper,
+      bee.url,
+      issuer,
+      privKeyBytes,
+      stampPool,
+      abortSignal,
+      uploadSession
+    );
     onUploaded();
     return new Reference(chunk.hash());
   }
@@ -1085,16 +1111,47 @@ export async function uploadDataPresigned(
   // Larger blobs: stream through MerkleTree exactly like a file.
   let lastChunk: Chunk | null = null;
   const tree = new MerkleTree(async chunk => {
-    await uploadOneChunk(chunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
+    await uploadOneChunk(
+      chunk,
+      stamper,
+      bee.url,
+      issuer,
+      privKeyBytes,
+      stampPool,
+      abortSignal,
+      uploadSession
+    );
     onUploaded();
   });
   for (let off = 0; off < data.length; off += 4096) {
     await tree.append(data.subarray(off, Math.min(off + 4096, data.length)));
   }
   lastChunk = await tree.finalize();
-  await uploadOneChunk(lastChunk, stamper, bee.url, issuer, privKeyBytes, stampPool, abortSignal);
+  await uploadOneChunk(
+    lastChunk,
+    stamper,
+    bee.url,
+    issuer,
+    privKeyBytes,
+    stampPool,
+    abortSignal,
+    uploadSession
+  );
   onUploaded();
   return new Reference(lastChunk.hash());
+}
+
+async function uploadChunkViaTransport(
+  session: PresignedChunkUploadSession | null,
+  beeApiUrl: string,
+  chunkBytes: Uint8Array,
+  envelope: EnvelopeWithBatchId,
+  opts: { abortSignal?: AbortSignal; timeoutMs: number }
+): Promise<void> {
+  if (session) {
+    return session.upload(chunkBytes, envelope, opts);
+  }
+  return uploadChunkPresignedFetch(beeApiUrl, chunkBytes, envelope, opts);
 }
 
 async function uploadOneChunk(
@@ -1104,7 +1161,8 @@ async function uploadOneChunk(
   issuer: Uint8Array,
   privKeyBytes: Uint8Array | null,
   stampPool: StampSignerPool | null,
-  abortSignal: AbortSignal | undefined
+  abortSignal: AbortSignal | undefined,
+  uploadSession: PresignedChunkUploadSession | null = null
 ): Promise<void> {
   const data = chunk.build();
   let envelope: EnvelopeWithBatchId | null = null;
@@ -1114,7 +1172,7 @@ async function uploadOneChunk(
       if (envelope === null) {
         envelope = await buildStampEnvelope(stamper, chunk, issuer, privKeyBytes, stampPool);
       }
-      await uploadChunkPresignedFetch(beeApiUrl, data, envelope, {
+      await uploadChunkViaTransport(uploadSession, beeApiUrl, data, envelope, {
         abortSignal,
         timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
       });
@@ -1526,6 +1584,9 @@ interface UploadCtx {
   ensureStampReady: (onStatus?: (msg: string) => void) => Promise<void>;
   stampAndUpload: (chunk: Chunk) => Promise<void>;
   onChunk: (chunk: Chunk) => Promise<void>;
+  uploadSession: PresignedChunkUploadSession | null;
+  closeUploadSession: () => void;
+  openUploadTransport: () => Promise<void>;
 }
 
 async function createUploadContext(opts: {
@@ -1592,6 +1653,20 @@ async function createUploadContext(opts: {
     ensureStampReady: async () => {},
     stampAndUpload: async () => {},
     onChunk: async () => {},
+    uploadSession: null,
+    closeUploadSession: () => {},
+    openUploadTransport: async () => {},
+  };
+
+  ctx.closeUploadSession = () => {
+    ctx.uploadSession?.close();
+    ctx.uploadSession = null;
+  };
+  ctx.openUploadTransport = async () => {
+    if (ctx.uploadSession) return;
+    ctx.uploadSession = await PresignedChunkUploadSession.open(ctx.beeApiUrl, {
+      abortSignal: ctx.abortSignal,
+    });
   };
 
   let lastStatePersistAt = 0;
@@ -1676,7 +1751,7 @@ async function createUploadContext(opts: {
             ctx.stampPool
           );
         }
-        await uploadChunkPresignedFetch(ctx.beeApiUrl, chunkBytes, envelope, {
+        await uploadChunkViaTransport(ctx.uploadSession, ctx.beeApiUrl, chunkBytes, envelope, {
           abortSignal: ctx.abortSignal,
           timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
         });
@@ -1685,7 +1760,7 @@ async function createUploadContext(opts: {
         ctx.addrBatcher.add(addrHex);
         ctx.persistState();
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
-        if (!uploadRampProbeDone) {
+        if (!uploadRampProbeDone && ctx.uploadSession?.transport !== 'websocket') {
           uploadRampProbeDone = true;
           maybeRampUploadQueueForHttp2(ctx.queue, beeApiUrl, concurrency);
         }
@@ -1930,6 +2005,7 @@ export async function uploadMultipleFilesClientSide(
     // gateway never indexes the batch within the probe budget; the caller
     // gets a clean error instead of N parallel HTTP-400 results.
     await ctx.ensureStampReady(onStatus);
+    await ctx.openUploadTransport();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -2002,6 +2078,7 @@ export async function uploadMultipleFilesClientSide(
       issuerStateSoc,
     };
   } finally {
+    ctx.closeUploadSession();
     ctx.stampPool?.terminate();
     await ctx.addrBatcher.flush().catch(() => {});
   }
@@ -2104,6 +2181,7 @@ export async function uploadFilesAsCollectionClientSide(
     // One-shot readiness probe before the first entry's chunks go out — see
     // the comment in `uploadMultipleFilesClientSide` for the full rationale.
     await ctx.ensureStampReady(onStatus);
+    await ctx.openUploadTransport();
 
     const manifest = new MantarayNode();
     const beforeAllFiles = ctx.chunksUploaded;
@@ -2160,6 +2238,7 @@ export async function uploadFilesAsCollectionClientSide(
       issuerStateSoc,
     };
   } finally {
+    ctx.closeUploadSession();
     ctx.stampPool?.terminate();
     await ctx.addrBatcher.flush().catch(() => {});
   }

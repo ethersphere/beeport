@@ -241,7 +241,8 @@ are:
 |---|---|---|
 | `GET /stamps/<id>/buckets` | per-bucket `cnt` for an **owned** batch | ❌ — `404 "issuer does not exist"` for foreign-owned batches |
 | `GET /batches/<id>/buckets` | — | ❌ — endpoint doesn't exist |
-| `GET /batches` | chain-indexed batch summary | ✅ — but no per-bucket data |
+| `GET /batches/<id>` | chain-indexed batch summary (TTL, depth, owner) | ✅ — Bee v2.8.1+; works for self-custody batches |
+| `GET /batches` | chain-indexed batch list | ✅ — but no per-bucket data |
 
 Bee tracks the counter only on the node that **issued** stamps for the
 batch, i.e. the node that owns the batch. For self-custody, *we* are that

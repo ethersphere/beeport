@@ -48,6 +48,7 @@ import {
   getStampUsage,
   updateHistoryAfterTopUp,
 } from './utils';
+import { fetchChainState, stampUtilizationPercent } from './BeeApi';
 import { useTimer } from './TimerUtils';
 
 import {
@@ -150,6 +151,8 @@ const SwapComponent: React.FC = () => {
   const [executionResult, setExecutionResult] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPrice, setCurrentPrice] = useState<bigint | null>(null);
+  /** Blocks per day of validity — from Bee `/chainstate` when available (v2.8.1+). */
+  const [validityBlocksPerDay, setValidityBlocksPerDay] = useState(17280);
   const [selectedDays, setSelectedDays] = useState<number | null>(null);
   const [selectedDepth, setSelectedDepth] = useState(22);
   const [nodeAddress, setNodeAddress] = useState<string>(DEFAULT_NODE_ADDRESS);
@@ -469,7 +472,7 @@ const SwapComponent: React.FC = () => {
           // will sign (bridge + executor runs `txs` against StampsRegistryV2),
           // so the displayed price equals what they'll actually pay.
           const calcInitialBalance = currentPrice
-            ? BigInt(currentPrice) * BigInt(17280) * BigInt(selectedDays || 1)
+            ? BigInt(currentPrice) * BigInt(validityBlocksPerDay) * BigInt(selectedDays || 1)
             : 0n;
           const calcDepth =
             isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
@@ -653,6 +656,18 @@ const SwapComponent: React.FC = () => {
     fetchAndSetNode();
   }, [beeApiUrl, fetchAndSetNodeWalletAddress]);
 
+  useEffect(() => {
+    if (!beeApiUrl) return;
+    void fetchChainState(beeApiUrl).then(state => {
+      if (state?.minimumValidityBlocks && state.minimumValidityBlocks > 0) {
+        setValidityBlocksPerDay(state.minimumValidityBlocks);
+      }
+      if (state?.currentPrice && state.currentPrice > 0n) {
+        setCurrentPrice(prev => prev ?? state.currentPrice!);
+      }
+    });
+  }, [beeApiUrl]);
+
   // This useEffect will be moved after fetchCurrentPrice declaration
 
   const fetchCurrentPrice = useCallback(async () => {
@@ -708,7 +723,7 @@ const SwapComponent: React.FC = () => {
 
   const updateSwarmBatchInitialBalance = useCallback(() => {
     if (currentPrice !== null) {
-      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(validityBlocksPerDay);
       const totalPricePerDuration =
         BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
 
@@ -754,7 +769,7 @@ const SwapComponent: React.FC = () => {
 
   const calculateTotalAmount = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
-    const initialPaymentPerChunkPerDay = price * 17280n;
+    const initialPaymentPerChunkPerDay = price * BigInt(validityBlocksPerDay);
     const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
 
     // Use the appropriate depth based on whether this is a top-up
@@ -1123,7 +1138,7 @@ const SwapComponent: React.FC = () => {
     // IMPORTANT: Ensure the updatedConfig has the latest calculated values
     // This fixes the BZZ amount mismatch between price estimation and execution
     if (currentPrice !== null && selectedDays) {
-      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(validityBlocksPerDay);
       const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
 
       // Calculate total amount based on whether this is a top-up or new batch
@@ -1809,11 +1824,7 @@ const SwapComponent: React.FC = () => {
           const totalSizeString =
             STORAGE_OPTIONS.find(o => o.depth === stampStatus.depth)?.size ??
             `depth ${stampStatus.depth}`;
-          const realUtilizationPercent = getStampUsage(
-            stampStatus.utilization,
-            stampStatus.depth,
-            stampStatus.bucketDepth || 16
-          );
+          const realUtilizationPercent = stampUtilizationPercent(stampStatus);
           setUploadStampInfo({
             ...stampStatus,
             totalSize: totalSizeString,
@@ -2215,7 +2226,7 @@ const SwapComponent: React.FC = () => {
     if (currentPrice === null || !selectedDays) return 0n;
 
     // We use the original depth from the stamp, not the currently selected depth
-    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(17280);
+    const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(validityBlocksPerDay);
     const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
 
     // Calculate for the original batch depth
@@ -3180,11 +3191,7 @@ const SwapComponent: React.FC = () => {
                         <span>
                           {Math.min(
                             100,
-                            getStampUsage(
-                              uploadStampInfo.utilization || 0,
-                              uploadStampInfo.depth || 0,
-                              uploadStampInfo.bucketDepth ?? 16
-                            )
+                            stampUtilizationPercent(uploadStampInfo)
                           ).toFixed(2)}
                           %
                         </span>
@@ -3208,11 +3215,7 @@ const SwapComponent: React.FC = () => {
                         style={{
                           width: `${Math.min(
                             100,
-                            getStampUsage(
-                              uploadStampInfo.utilization || 0,
-                              uploadStampInfo.depth || 0,
-                              uploadStampInfo.bucketDepth ?? 16
-                            )
+                            stampUtilizationPercent(uploadStampInfo)
                           ).toFixed(2)}%`,
                         }}
                       ></div>

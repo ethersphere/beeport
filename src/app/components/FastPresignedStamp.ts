@@ -176,6 +176,317 @@ export function marshaledStampHex(envelope: EnvelopeWithBatchId): string {
   return Binary.uint8ArrayToHex(Binary.concatBytes(batchId, envelope.index, envelope.timestamp, sig));
 }
 
+/** 113-byte binary stamp prefix for Bee v2.8.1+ WebSocket `/chunks/stream`. */
+export function marshaledStampBytes(envelope: EnvelopeWithBatchId): Uint8Array {
+  const sig = envelope.signature;
+  if (sig.length !== 65) throw new Error('invalid signature length');
+  const batchId = envelope.batchId.toUint8Array();
+  if (batchId.length !== 32) throw new Error('invalid batch ID length');
+  if (envelope.timestamp.length !== 8) throw new Error('invalid timestamp length');
+  if (envelope.index.length !== 8) throw new Error('invalid index length');
+  return Binary.concatBytes(batchId, envelope.index, envelope.timestamp, sig);
+}
+
+const STAMP_WIRE_LEN = 113;
+const CHUNK_STREAM_ACK = 0;
+
+function httpBaseToWsUrl(beeApiBase: string, path: string): string {
+  const base = beeApiBase.replace(/\/$/, '');
+  const url = new URL(path.startsWith('/') ? `${base}${path}` : `${base}/${path}`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
+type StreamAckWaiter = {
+  resolve: () => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+/**
+ * Bee v2.8.1+ WebSocket chunk stream in per-chunk stamp mode (no batch-id
+ * header on the connection). Each binary message is `stamp[113] || chunk`.
+ */
+export class PresignedChunkStreamClient {
+  private ws: WebSocket | null = null;
+  private readonly ackWaiters: StreamAckWaiter[] = [];
+  private closed = false;
+  private connectInFlight: Promise<boolean> | null = null;
+  private pendingAcks = 0;
+  private readonly slotWaiters: Array<() => void> = [];
+
+  constructor(readonly maxInFlight = 64) {}
+
+  private releaseSlot(): void {
+    this.pendingAcks = Math.max(0, this.pendingAcks - 1);
+    const next = this.slotWaiters.shift();
+    next?.();
+  }
+
+  private async acquireSlot(): Promise<void> {
+    if (this.pendingAcks < this.maxInFlight) {
+      this.pendingAcks++;
+      return;
+    }
+    await new Promise<void>(resolve => this.slotWaiters.push(resolve));
+    this.pendingAcks++;
+  }
+
+  private failAllWaiters(err: Error): void {
+    while (this.ackWaiters.length > 0) {
+      const w = this.ackWaiters.shift()!;
+      clearTimeout(w.timer);
+      w.reject(err);
+      this.releaseSlot();
+    }
+    while (this.slotWaiters.length > 0) {
+      this.slotWaiters.shift()?.();
+    }
+  }
+
+  private attachHandlers(ws: WebSocket): void {
+    ws.onmessage = (ev: MessageEvent) => {
+      if (ev.data instanceof ArrayBuffer) {
+        const view = new Uint8Array(ev.data);
+        if (view.length >= 1 && view[0] === CHUNK_STREAM_ACK) {
+          const waiter = this.ackWaiters.shift();
+          if (waiter) {
+            clearTimeout(waiter.timer);
+            waiter.resolve();
+          }
+          this.releaseSlot();
+          return;
+        }
+      }
+      if (typeof ev.data === 'string') {
+        let detail = ev.data;
+        try {
+          const parsed = JSON.parse(ev.data) as { message?: string; error?: string };
+          detail = parsed.message ?? parsed.error ?? ev.data;
+        } catch {
+          // keep raw string
+        }
+        this.failAllWaiters(new ChunkUploadHttpError(detail, undefined, ev.data));
+      }
+    };
+
+    ws.onclose = () => {
+      if (!this.closed) {
+        this.failAllWaiters(new ChunkUploadHttpError('WebSocket closed unexpectedly'));
+      }
+    };
+
+    ws.onerror = () => {
+      this.failAllWaiters(new ChunkUploadHttpError('WebSocket error'));
+    };
+  }
+
+  async connect(
+    beeApiBase: string,
+    opts?: { abortSignal?: AbortSignal; timeoutMs?: number }
+  ): Promise<boolean> {
+    if (typeof WebSocket === 'undefined') return false;
+    if (this.ws?.readyState === WebSocket.OPEN) return true;
+    if (this.connectInFlight) return this.connectInFlight;
+
+    const pending = new Promise<boolean>(resolve => {
+      const timeoutMs = opts?.timeoutMs ?? 8_000;
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        opts?.abortSignal?.removeEventListener('abort', onAbort);
+        resolve(ok);
+      };
+
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(httpBaseToWsUrl(beeApiBase, '/chunks/stream'));
+      } catch {
+        finish(false);
+        return;
+      }
+
+      ws.binaryType = 'arraybuffer';
+      const timer = setTimeout(() => {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        finish(false);
+      }, timeoutMs);
+
+      const onAbort = () => {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        finish(false);
+      };
+      opts?.abortSignal?.addEventListener('abort', onAbort, { once: true });
+
+      ws.onopen = () => {
+        this.ws = ws;
+        this.attachHandlers(ws);
+        finish(true);
+      };
+
+      ws.onerror = () => finish(false);
+    });
+
+    this.connectInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      this.connectInFlight = null;
+    }
+  }
+
+  async upload(
+    chunkBytes: Uint8Array,
+    envelope: EnvelopeWithBatchId,
+    opts: { abortSignal?: AbortSignal; timeoutMs: number }
+  ): Promise<void> {
+    if (opts.abortSignal?.aborted) throw new Error('Upload aborted');
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new ChunkUploadHttpError('WebSocket not connected');
+    }
+
+    await this.acquireSlot();
+
+    const stamp = marshaledStampBytes(envelope);
+    if (stamp.length !== STAMP_WIRE_LEN) {
+      this.releaseSlot();
+      throw new Error(`invalid stamp wire length: ${stamp.length}`);
+    }
+
+    const wire = new Uint8Array(STAMP_WIRE_LEN + chunkBytes.length);
+    wire.set(stamp, 0);
+    wire.set(chunkBytes, STAMP_WIRE_LEN);
+
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        const idx = this.ackWaiters.indexOf(waiter);
+        if (idx >= 0) {
+          this.ackWaiters.splice(idx, 1);
+          this.releaseSlot();
+        }
+        reject(new Error('Upload aborted'));
+      };
+
+      const waiter: StreamAckWaiter = {
+        resolve: () => {
+          clearTimeout(timer);
+          opts.abortSignal?.removeEventListener('abort', onAbort);
+          resolve();
+        },
+        reject: (err: Error) => {
+          clearTimeout(timer);
+          opts.abortSignal?.removeEventListener('abort', onAbort);
+          reject(err);
+        },
+        timer: 0 as unknown as ReturnType<typeof setTimeout>,
+      };
+
+      const timer = setTimeout(() => {
+        const idx = this.ackWaiters.indexOf(waiter);
+        if (idx >= 0) {
+          this.ackWaiters.splice(idx, 1);
+          this.releaseSlot();
+        }
+        waiter.reject(new ChunkUploadHttpError('chunk stream ack timeout'));
+      }, opts.timeoutMs);
+      waiter.timer = timer;
+
+      opts.abortSignal?.addEventListener('abort', onAbort, { once: true });
+      this.ackWaiters.push(waiter);
+
+      try {
+        this.ws!.send(wire);
+      } catch (err) {
+        clearTimeout(timer);
+        opts.abortSignal?.removeEventListener('abort', onAbort);
+        const idx = this.ackWaiters.indexOf(waiter);
+        if (idx >= 0) this.ackWaiters.splice(idx, 1);
+        this.releaseSlot();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.failAllWaiters(new ChunkUploadHttpError('WebSocket closed'));
+    try {
+      this.ws?.close();
+    } catch {
+      // ignore
+    }
+    this.ws = null;
+  }
+}
+
+export type ChunkUploadTransport = 'http' | 'websocket';
+
+/** Upload session — tries WebSocket stream first, falls back to HTTP POST. */
+export class PresignedChunkUploadSession {
+  readonly transport: ChunkUploadTransport;
+  private stream: PresignedChunkStreamClient | null = null;
+
+  private constructor(
+    readonly beeApiBase: string,
+    transport: ChunkUploadTransport,
+    stream: PresignedChunkStreamClient | null
+  ) {
+    this.transport = transport;
+    this.stream = stream;
+  }
+
+  static async open(
+    beeApiBase: string,
+    opts?: { abortSignal?: AbortSignal; preferStream?: boolean; connectTimeoutMs?: number }
+  ): Promise<PresignedChunkUploadSession> {
+    const preferStream =
+      opts?.preferStream ??
+      (typeof process !== 'undefined' &&
+        process.env.NEXT_PUBLIC_PREFER_CHUNK_STREAM !== 'false');
+
+    if (preferStream && typeof WebSocket !== 'undefined') {
+      const stream = new PresignedChunkStreamClient();
+      const ok = await stream.connect(beeApiBase, {
+        abortSignal: opts?.abortSignal,
+        timeoutMs: opts?.connectTimeoutMs ?? 8_000,
+      });
+      if (ok) {
+        return new PresignedChunkUploadSession(beeApiBase, 'websocket', stream);
+      }
+      stream.close();
+    }
+
+    return new PresignedChunkUploadSession(beeApiBase, 'http', null);
+  }
+
+  async upload(
+    chunkBytes: Uint8Array,
+    envelope: EnvelopeWithBatchId,
+    opts: { abortSignal?: AbortSignal; timeoutMs: number }
+  ): Promise<void> {
+    if (this.stream) {
+      return this.stream.upload(chunkBytes, envelope, opts);
+    }
+    return uploadChunkPresignedFetch(this.beeApiBase, chunkBytes, envelope, opts);
+  }
+
+  close(): void {
+    this.stream?.close();
+    this.stream = null;
+  }
+}
+
 function joinUrl(base: string, path: string): string {
   const b = base.replace(/\/$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;

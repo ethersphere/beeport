@@ -8,6 +8,8 @@ import {
 } from 'viem';
 import { gnosis } from 'viem/chains';
 import { getRpcUrlsForChain } from '@/app/wagmi';
+import type { StampInfo } from './types';
+import { fetchStampBatchInfo } from './BeeApi';
 
 // Global state for custom RPC URL
 let globalCustomRpcUrl: string | undefined = undefined;
@@ -413,38 +415,15 @@ export const fetchCurrentPriceFromOracle = async (
 };
 
 /**
- * Fetches stamp information for a given batch ID
- * @param batchId The batch ID (with or without 0x prefix)
- * @param beeApiUrl The Bee API URL
- * @returns Promise<StampInfo | null> The stamp information or null if failed
+ * Fetches stamp / batch metadata from the Bee gateway.
+ *
+ * Tries `GET /stamps/{id}` first, then `GET /batches/{id}` (Bee v2.8.1+,
+ * works for self-custody batches whose issuer is not the gateway).
  */
-export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promise<any | null> => {
-  try {
-    // Make sure the batchId doesn't have 0x prefix for the API call
-    const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
-
-    const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      // 404 is the normal response for self-custody batches because Bee's
-      // `/stamps` endpoint only lists batches owned by Bee's own wallet.
-      // Suppress the noisy console.error in that case — silently return null
-      // and let callers fall back to locally-stored metadata.
-      if (response.status !== 404) {
-        console.warn(`Bee /stamps returned ${response.status} ${response.statusText}`);
-      }
-      return null;
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.warn(`Could not reach Bee /stamps for ${batchId.slice(0, 10)}…:`, error);
-    return null;
-  }
-};
+export const fetchStampInfo = async (
+  batchId: string,
+  beeApiUrl: string
+): Promise<StampInfo | null> => fetchStampBatchInfo(batchId, beeApiUrl);
 
 /**
  * Update upload history expiry dates for a specific stamp after top-up

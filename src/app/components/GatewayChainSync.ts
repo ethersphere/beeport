@@ -94,42 +94,9 @@ async function probeChainstate(
   beeApiUrl: string,
   probeTimeoutMs: number
 ): Promise<bigint | null> {
-  const url = `${beeApiUrl.replace(/\/+$/, '')}/chainstate`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), probeTimeoutMs);
-
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      cache: 'no-store',
-    });
-
-    // Authentication / not-exposed / endpoint-missing — caller falls back.
-    if (res.status === 401 || res.status === 403 || res.status === 404) {
-      return null;
-    }
-    if (!res.ok) return null;
-
-    let parsed: { block?: number | string } | null = null;
-    try {
-      parsed = (await res.json()) as { block?: number | string };
-    } catch {
-      return null;
-    }
-
-    if (parsed?.block === undefined || parsed.block === null) return null;
-    try {
-      return BigInt(parsed.block);
-    } catch {
-      return null;
-    }
-  } catch {
-    // AbortError, network blip, DNS — treat as transient, let the loop retry.
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const { fetchChainState } = await import('./BeeApi');
+  const state = await fetchChainState(beeApiUrl, probeTimeoutMs);
+  return state?.block ?? null;
 }
 
 /**
