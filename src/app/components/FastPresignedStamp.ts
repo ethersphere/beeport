@@ -208,7 +208,13 @@ export function marshaledStampBytes(envelope: EnvelopeWithBatchId): Uint8Array {
 }
 
 const STAMP_WIRE_LEN = 113;
+/** Legacy/single-byte ack some builds may send; Bee v2.8.1 uses an empty binary frame. */
 const CHUNK_STREAM_ACK = 0;
+
+function isChunkStreamSuccessAck(data: ArrayBuffer): boolean {
+  const view = new Uint8Array(data);
+  return view.length === 0 || (view.length === 1 && view[0] === CHUNK_STREAM_ACK);
+}
 
 function httpBaseToWsUrl(beeApiBase: string, path: string): string {
   const base = beeApiBase.replace(/\/$/, '');
@@ -267,8 +273,7 @@ export class PresignedChunkStreamClient {
   private attachHandlers(ws: WebSocket): void {
     ws.onmessage = (ev: MessageEvent) => {
       if (ev.data instanceof ArrayBuffer) {
-        const view = new Uint8Array(ev.data);
-        if (view.length >= 1 && view[0] === CHUNK_STREAM_ACK) {
+        if (isChunkStreamSuccessAck(ev.data)) {
           const waiter = this.ackWaiters.shift();
           if (waiter) {
             clearTimeout(waiter.timer);
