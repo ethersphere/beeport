@@ -2681,19 +2681,51 @@ const SwapComponent: React.FC = () => {
                     warning because a sick gateway is the more actionable
                     problem — the user can pick a different node, while the
                     data warning is informational. */}
-                {(beeNodeHealth.state.status === 'unreachable' ||
-                  beeNodeHealth.state.status === 'unhealthy') && (
-                  <div
-                    className={`${styles.healthBanner} ${
-                      beeNodeHealth.state.status === 'unreachable'
-                        ? styles.healthBannerError
-                        : styles.healthBannerWarn
-                    }`}
-                  >
+                {beeNodeHealth.state.corsLimited && (
+                  <div className={`${styles.healthBanner} ${styles.healthBannerWarn}`}>
                     <span className={styles.healthBannerTitle}>
-                      {beeNodeHealth.state.status === 'unreachable'
-                        ? '⛔ Bee gateway unreachable'
-                        : '⚠️ Bee gateway unhealthy'}
+                      ⚠️ Gateway health check blocked (CORS)
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.healthBannerRetry}
+                      onClick={beeNodeHealth.refresh}
+                      disabled={beeNodeHealth.isProbing}
+                    >
+                      {beeNodeHealth.isProbing ? 'Checking…' : 'Retry'}
+                    </button>
+                    {beeNodeHealth.state.message && (
+                      <div className={styles.healthBannerDetail}>{beeNodeHealth.state.message}</div>
+                    )}
+                  </div>
+                )}
+
+                {beeNodeHealth.state.status === 'unreachable' && (
+                  <div className={`${styles.healthBanner} ${styles.healthBannerError}`}>
+                    <span className={styles.healthBannerTitle}>
+                      ⛔ Bee gateway unreachable
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.healthBannerRetry}
+                      onClick={beeNodeHealth.refresh}
+                      disabled={beeNodeHealth.isProbing}
+                    >
+                      {beeNodeHealth.isProbing ? 'Checking…' : 'Retry'}
+                    </button>
+                    {beeNodeHealth.state.message && (
+                      <div className={styles.healthBannerDetail}>
+                        {beeNodeHealth.state.message}. Uploads will fail until the gateway
+                        recovers.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {beeNodeHealth.state.status === 'unhealthy' && (
+                  <div className={`${styles.healthBanner} ${styles.healthBannerWarn}`}>
+                    <span className={styles.healthBannerTitle}>
+                      ⚠️ Bee gateway unhealthy
                     </span>
                     <button
                       type="button"

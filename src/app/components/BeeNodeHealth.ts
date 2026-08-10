@@ -37,6 +37,12 @@ export interface BeeHealthState {
   version?: string;
   /** Wall-clock timestamp of the most recent completed probe. */
   lastChecked?: number;
+  /**
+   * Set when a readable cross-origin `/health` fetch failed but a follow-up
+   * `no-cors` probe still reached the gateway — typical of duplicate CORS
+   * headers (Bee + nginx both emitting `Access-Control-Allow-Origin`).
+   */
+  corsLimited?: boolean;
 }
 
 /**
@@ -53,6 +59,32 @@ const PROBE_TIMEOUT_MS = 5_000;
  * sees the banner clear within a polling cycle once the node recovers.
  */
 const POLL_INTERVAL_MS = 30_000;
+
+/** Best-effort: did the TCP/TLS request complete even though CORS blocked JS? */
+async function probeReachableNoCors(url: string, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'no-cors',
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    return res.type === 'opaque';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isLikelyCorsFetchFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError') return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed');
+}
 
 /**
  * Run a single `/health` probe. Resolves with a `BeeHealthState` describing
@@ -120,11 +152,25 @@ export async function probeBeeNodeHealth(beeApiUrl: string): Promise<BeeHealthSt
     };
   } catch (err) {
     const aborted = (err as Error)?.name === 'AbortError';
+    if (!aborted && isLikelyCorsFetchFailure(err)) {
+      const reachable = await probeReachableNoCors(url, PROBE_TIMEOUT_MS);
+      if (reachable) {
+        return {
+          status: 'ok',
+          corsLimited: true,
+          message:
+            'Gateway is reachable but the browser blocked reading /health (usually duplicate CORS headers from Bee and nginx). Uploads may still work — try Retry or upload anyway.',
+          lastChecked: Date.now(),
+        };
+      }
+    }
     return {
       status: 'unreachable',
       message: aborted
         ? `No response from the Bee gateway within ${PROBE_TIMEOUT_MS / 1000}s.`
-        : `Cannot reach the Bee gateway: ${(err as Error)?.message ?? 'unknown error'}`,
+        : isLikelyCorsFetchFailure(err)
+          ? `Cannot reach the Bee gateway from this browser (network or CORS). If uploads still work, the gateway is fine — check Origin allowlists on nginx and Bee cors-allowed-origins.`
+          : `Cannot reach the Bee gateway: ${(err as Error)?.message ?? 'unknown error'}`,
       lastChecked: Date.now(),
     };
   } finally {
