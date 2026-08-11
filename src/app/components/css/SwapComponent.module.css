@@ -545,53 +545,6 @@
   font-size: 13px;
 }
 
-.transportBenchmark {
-  margin: 16px 0 20px;
-  padding: 12px;
-  border-radius: 8px;
-  background-color: rgba(64, 196, 180, 0.06);
-  border: 1px solid rgba(64, 196, 180, 0.25);
-  text-align: left;
-}
-
-.transportBenchmarkTitle {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #7ee8dc;
-}
-
-.transportBenchmarkTable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  color: #d0d6df;
-}
-
-.transportBenchmarkTable th,
-.transportBenchmarkTable td {
-  padding: 6px 8px;
-  text-align: left;
-  border-bottom: 1px solid rgba(120, 130, 145, 0.2);
-}
-
-.transportBenchmarkTable th {
-  font-weight: 600;
-  color: #b9c2cf;
-  font-size: 12px;
-}
-
-.transportBenchmarkWinner td {
-  color: #9be7a0;
-}
-
-.transportBenchmarkNote {
-  margin: 10px 0 0;
-  font-size: 11px;
-  color: #9aa3b0;
-  line-height: 1.4;
-}
-
 .checkboxWrapper {
   display: flex;
   align-items: center;

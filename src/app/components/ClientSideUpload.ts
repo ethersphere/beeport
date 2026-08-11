@@ -267,14 +267,9 @@ export interface ClientSideUploadParams {
   chunkTransport?: ChunkTransportMode;
   /**
    * Parallel `/chunks/stream` WebSockets when using the stream transport.
-   * Default 8 (or `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS`).
+   * Default 32 (or `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS`).
    */
   streamSocketCount?: number;
-  /**
-   * Re-upload every chunk even if this browser already stamped it for the batch.
-   * Benchmark-only — burns postage slots but gives a fair transport comparison.
-   */
-  skipChunkDedup?: boolean;
   /** Optional concurrency override. */
   concurrency?: number;
   /** Optional abort signal. */
@@ -379,7 +374,6 @@ export async function uploadFileClientSide(
     onUploadTransport,
     chunkTransport = 'auto',
     streamSocketCount,
-    skipChunkDedup = false,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -581,7 +575,7 @@ export async function uploadFileClientSide(
     // its end). Counts toward `chunksUploaded` so the progress bar still
     // advances normally.
     const addrHex = chunkAddressHex(chunk.hash());
-    if (!skipChunkDedup && stampedAddrs.has(addrHex)) {
+    if (stampedAddrs.has(addrHex)) {
       chunksUploaded++;
       dedupSkipCount++;
       progressOut?.(chunksUploaded, totalChunksApprox);
@@ -1628,7 +1622,6 @@ interface UploadCtx {
   openBmtClient: () => Promise<void>;
   closeBmtClient: () => void;
   onUploadTransport?: UploadTransportListener;
-  skipChunkDedup: boolean;
 }
 
 async function createUploadContext(opts: {
@@ -1643,7 +1636,6 @@ async function createUploadContext(opts: {
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
-  skipChunkDedup?: boolean;
 }): Promise<UploadCtx> {
   const {
     batchId,
@@ -1655,7 +1647,6 @@ async function createUploadContext(opts: {
     onProgress,
     chunkTransport = 'auto',
     streamSocketCount,
-    skipChunkDedup = false,
   } = opts;
   const progressOut = throttleUploadProgress(onProgress);
 
@@ -1717,7 +1708,6 @@ async function createUploadContext(opts: {
     openBmtClient: async () => {},
     closeBmtClient: () => {},
     onUploadTransport: opts.onUploadTransport,
-    skipChunkDedup,
   };
 
   ctx.closeUploadSession = () => {
@@ -1819,7 +1809,7 @@ async function createUploadContext(opts: {
     // for nothing — Bee dedups by chunk hash on its end. Counts toward
     // `chunksUploaded` so progress still advances normally.
     const addrHex = chunkAddressHex(chunk.hash());
-    if (!ctx.skipChunkDedup && ctx.stampedAddrs.has(addrHex)) {
+    if (ctx.stampedAddrs.has(addrHex)) {
       ctx.chunksUploaded++;
       ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
       return;
