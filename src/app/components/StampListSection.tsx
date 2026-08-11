@@ -47,6 +47,37 @@ import {
 import { loadIssuerStateFromSOC } from './IssuerStateSOC';
 import styles from './css/StampListSection.module.css';
 
+/** User-defined names for postage batches (this browser only). */
+const STORAGE_LABELS_KEY = 'beeport_storage_labels';
+
+function normalizeBatchId(batchId: string): string {
+  const s = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
+  return s.toLowerCase();
+}
+
+function loadStorageLabels(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_LABELS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function persistStorageLabels(labels: Record<string, string>) {
+  try {
+    localStorage.setItem(STORAGE_LABELS_KEY, JSON.stringify(labels));
+  } catch (e) {
+    console.warn('Failed to save storage label', e);
+  }
+}
+
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
   address: string | undefined;
@@ -125,6 +156,38 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     >
   >({});
   const [statsLoadingBatchId, setStatsLoadingBatchId] = useState<string | null>(null);
+  const [storageLabels, setStorageLabels] = useState<Record<string, string>>({});
+  const [editingLabelFor, setEditingLabelFor] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState('');
+
+  useEffect(() => {
+    setStorageLabels(loadStorageLabels());
+  }, []);
+
+  const saveLabelDraft = (batchId: string) => {
+    const key = normalizeBatchId(batchId);
+    const trimmed = labelDraft.trim();
+    setStorageLabels(prev => {
+      const next = { ...prev };
+      if (!trimmed) delete next[key];
+      else next[key] = trimmed;
+      persistStorageLabels(next);
+      return next;
+    });
+    setEditingLabelFor(null);
+    setLabelDraft('');
+  };
+
+  const cancelLabelEdit = () => {
+    setEditingLabelFor(null);
+    setLabelDraft('');
+  };
+
+  const startLabelEdit = (batchId: string) => {
+    const key = normalizeBatchId(batchId);
+    setEditingLabelFor(key);
+    setLabelDraft(storageLabels[key] ?? '');
+  };
 
   const getSizeForDepth = (depth: number): string => {
     const option = STORAGE_OPTIONS.find(o => o.depth === depth);
@@ -455,8 +518,81 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           </div>
         ) : (
           <>
-            {stamps.map((stamp, index) => (
+            {stamps.map((stamp, index) => {
+              const idKey = normalizeBatchId(stamp.batchId);
+              const labelText = storageLabels[idKey];
+              return (
               <div key={index} className={styles.stampListItem}>
+                <div className={styles.storageLabelRow}>
+                  <span className={styles.storageLabelHeading}>Label</span>
+                  {editingLabelFor === idKey ? (
+                    <div className={styles.labelEditWrap}>
+                      <input
+                        type="text"
+                        className={styles.labelInput}
+                        value={labelDraft}
+                        onChange={e => setLabelDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveLabelDraft(stamp.batchId);
+                          if (e.key === 'Escape') cancelLabelEdit();
+                        }}
+                        onBlur={() => saveLabelDraft(stamp.batchId)}
+                        placeholder="Name this storage (local only)"
+                        autoFocus
+                        aria-label="Storage label"
+                      />
+                      <button
+                        type="button"
+                        className={styles.labelSaveButton}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => saveLabelDraft(stamp.batchId)}
+                        title="Save label"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.labelCancelButton}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => cancelLabelEdit()}
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={styles.labelDisplay}>
+                      <span
+                        className={
+                          labelText ? styles.storageLabelValue : styles.storageLabelPlaceholder
+                        }
+                        title={labelText || 'No label yet'}
+                      >
+                        {labelText || 'Unlabeled'}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.labelEditButton}
+                        onClick={() => startLabelEdit(stamp.batchId)}
+                        title="Edit label (saved in this browser only)"
+                        aria-label="Edit storage label"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden={true}
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div
                   className={styles.stampListId}
                   onClick={() => {
@@ -775,7 +911,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </>
         )}
 
