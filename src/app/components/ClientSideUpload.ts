@@ -242,6 +242,45 @@ export type { ChunkUploadTransport };
 /** How to reach the Bee gateway for chunk uploads. */
 export type ChunkTransportMode = 'auto' | 'http' | 'websocket';
 
+/**
+ * When `chunkTransport` is `auto`, use the WebSocket stream pool for files at
+ * or above this size; smaller uploads use HTTP POST /chunks (lower fixed cost).
+ * Empirically ~50 MB is where the 32-socket pool overtakes HTTP on beeport.xyz.
+ * Override with `NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB`.
+ */
+export const AUTO_CHUNK_STREAM_MIN_BYTES = 50 * 1024 * 1024;
+
+function autoChunkStreamMinBytes(): number {
+  if (typeof process !== 'undefined') {
+    const raw = process.env.NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB;
+    if (raw) {
+      const mb = Number.parseFloat(raw);
+      if (Number.isFinite(mb) && mb > 0) return mb * 1024 * 1024;
+    }
+  }
+  return AUTO_CHUNK_STREAM_MIN_BYTES;
+}
+
+/**
+ * Map UI transport mode + payload size to the session open mode.
+ * `auto` + small → `http`; `auto` + large → `auto` (try WebSocket, fall back HTTP).
+ */
+export function resolveSessionTransportMode(
+  mode: ChunkTransportMode,
+  byteSize: number
+): 'auto' | 'http' | 'websocket' {
+  if (mode === 'http' || mode === 'websocket') return mode;
+  const minBytes = autoChunkStreamMinBytes();
+  if (byteSize < minBytes) return 'http';
+  return 'auto';
+}
+
+function formatBytesShort(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)}KB`;
+  return `${n}B`;
+}
+
 export interface ClientSideUploadParams {
   file: File;
   /** 32-byte hex (with or without 0x) batch id, on-chain owner = hot key. */
@@ -261,8 +300,8 @@ export interface ClientSideUploadParams {
   /** Fired once chunk transport is chosen (WebSocket stream or HTTP POST). */
   onUploadTransport?: UploadTransportListener;
   /**
-   * Chunk transport selection. Default `auto` tries WebSocket first (Bee 2.8.1+),
-   * falling back to parallel HTTP POST /chunks.
+   * Chunk transport selection. Default `auto` picks HTTP for smaller files and
+   * the WebSocket stream pool for larger ones (see {@link AUTO_CHUNK_STREAM_MIN_BYTES}).
    */
   chunkTransport?: ChunkTransportMode;
   /**
@@ -732,13 +771,17 @@ export async function uploadFileClientSide(
       mark('readiness probe accepted');
     }
 
+    const sessionTransport = resolveSessionTransportMode(chunkTransport, file.size);
     mark('opening chunk transport', {
       mode: chunkTransport,
+      resolved: sessionTransport,
+      size: formatBytesShort(file.size),
+      autoMin: formatBytesShort(autoChunkStreamMinBytes()),
       streamSockets: streamSocketCount ?? 'default',
     });
     uploadSession = await PresignedChunkUploadSession.open(beeApiUrl, {
       abortSignal,
-      transportMode: chunkTransport,
+      transportMode: sessionTransport,
       streamSocketCount,
     });
     uploadTransport = uploadSession.transport;
@@ -1633,6 +1676,8 @@ async function createUploadContext(opts: {
   abortSignal?: AbortSignal;
   onProgress?: (processed: number, total: number) => void;
   totalChunksApprox: number;
+  /** Total payload bytes — used when `chunkTransport` is `auto`. */
+  totalBytes?: number;
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
@@ -1647,6 +1692,7 @@ async function createUploadContext(opts: {
     onProgress,
     chunkTransport = 'auto',
     streamSocketCount,
+    totalBytes = 0,
   } = opts;
   const progressOut = throttleUploadProgress(onProgress);
 
@@ -1716,9 +1762,14 @@ async function createUploadContext(opts: {
   };
   ctx.openUploadTransport = async () => {
     if (ctx.uploadSession) return;
+    const sessionTransport = resolveSessionTransportMode(chunkTransport, totalBytes);
+    console.info(
+      `[ClientSideUpload] chunk transport mode=${chunkTransport} → ${sessionTransport} ` +
+        `(size=${formatBytesShort(totalBytes)}, autoMin=${formatBytesShort(autoChunkStreamMinBytes())})`
+    );
     ctx.uploadSession = await PresignedChunkUploadSession.open(ctx.beeApiUrl, {
       abortSignal: ctx.abortSignal,
-      transportMode: chunkTransport,
+      transportMode: sessionTransport,
       streamSocketCount,
     });
     if (ctx.uploadSession.transport === 'websocket') {
@@ -2088,6 +2139,7 @@ export async function uploadMultipleFilesClientSide(
     abortSignal,
     onProgress: undefined,
     totalChunksApprox: approxChunkCount(totalBytes),
+    totalBytes,
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
@@ -2282,6 +2334,7 @@ export async function uploadFilesAsCollectionClientSide(
     abortSignal,
     onProgress,
     totalChunksApprox: approxChunkCount(totalBytes),
+    totalBytes,
     onUploadTransport,
     chunkTransport,
     streamSocketCount,

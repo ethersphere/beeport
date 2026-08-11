@@ -21,6 +21,7 @@ Documentation for uploading to Swarm with **Beeport** (self-custody: your browse
 | [Self-custody hot key](./self-custody-hot-key.md) | Key derivation, issuer state, SOC backup |
 | [Wallet security](./wallet-security.md) | Session model, idle lock, threat comparison |
 | [Client-side chunk pipeline](./client-side-chunk-pipeline.md) | `/chunks` vs `/soc`, workers, HTTP/2 caps |
+| [Chunk transport: HTTP vs WebSocket](./chunk-transport-http-vs-websocket.md) | When Auto picks each, pool tuning, measured trade-offs |
 | [Postage stamps](./postage-stamps.md) | Capacity, depth, economics |
 | [File formats & limits](./file-formats-limits.md) | Size caps from app constants |
 | [Architecture](./architecture.md) | Stack, integrations, data flow |

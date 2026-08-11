@@ -2937,7 +2937,7 @@ const SwapComponent: React.FC = () => {
                       <div className={styles.transportSelectorOptions}>
                         {(
                           [
-                            ['auto', 'Auto (WebSocket if available)'],
+                            ['auto', 'Auto (HTTP if small, WebSocket if ≥50MB)'],
                             ['websocket', 'WebSocket stream'],
                             ['http', 'HTTP POST /chunks'],
                           ] as const
