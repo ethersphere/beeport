@@ -5,7 +5,8 @@ import Script from 'next/script';
 
 export const metadata = {
   title: 'Beeport',
-  description: 'Solutions for buying Bzz and obtaining postage stamps in multichain environment',
+  description:
+    'Solutions for buying BZZ and reserving Swarm storage capacity in a multichain environment',
   icons: {
     icon: './favicon.png', // Standard favicon
     shortcut: './favicon.png', // Shortcut icon for iOS

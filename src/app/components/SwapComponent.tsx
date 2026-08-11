@@ -66,7 +66,6 @@ import {
 } from './ClientStamping';
 import {
   computeBatchId,
-  createSelfCustodyBatchViaRegistry,
   topUpSelfCustodyBatchViaRegistry,
   saveSelfCustodyBatch,
   getSelfCustodyBatches,
@@ -128,6 +127,13 @@ const isArchiveFile = (filename?: string): boolean => {
     filename.toLowerCase().endsWith(ext)
   );
 };
+
+function getFileReferenceUrl(beeApiUrl: string, reference: string, filename?: string): string {
+  const base = beeApiUrl.endsWith('/') ? `${beeApiUrl}bzz/` : `${beeApiUrl}/bzz/`;
+  const ref = reference.startsWith('0x') ? reference.slice(2) : reference;
+  if (filename && !isArchiveFile(filename)) return `${base}${ref}/${filename}`;
+  return `${base}${ref}/`;
+}
 
 // Update the StampInfo interface to include the additional properties
 interface StampInfo {
@@ -522,16 +528,14 @@ const SwapComponent: React.FC = () => {
             STORAGE_OPTIONS.find(option => option.depth === selectedDepth)?.size || 'Unknown',
           selectedChainId,
           fromToken,
-          path: isPureGnosisBzzPath ? 'direct-registry' : 'relay-one-shot',
+          path:
+            isPureGnosisBzzPath && isTopUp ? 'top-up-direct' : 'relay-one-shot',
         });
 
-        // For Gnosis + BZZ there's no Relay leg — the user calls
-        // StampsRegistryV2 directly with the BZZ they already hold. Cost in
-        // USD is just the BZZ cost (everything else is gas, which we don't
-        // estimate here, matching the previous flow's "Cost without gas"
-        // semantics).
+        // Top-up on Gnosis with BZZ already held: cost is just BZZ (no Relay).
+        // New stamps always go through Relay one-shot (including Gnosis+BZZ).
         let totalAmountUSD: number;
-        if (isPureGnosisBzzPath) {
+        if (isPureGnosisBzzPath && isTopUp) {
           if (selectedTokenInfo?.priceUSD) {
             const bzzInTokenUnits = Number(formatUnits(BigInt(bzzAmount), 16));
             totalAmountUSD = bzzInTokenUnits * Number(selectedTokenInfo.priceUSD);
@@ -904,24 +908,17 @@ const SwapComponent: React.FC = () => {
   /**
    * Self-custody buy path (SWIP §Client-side stamping, mode α).
    *
-   * Two sub-paths, both ending in a non-custodial batch (`_owner = hotKey`):
+   * New batches always go through a one-shot Relay buy via
+   * {@link getRelayBuyStampQuote} (including Gnosis + BZZ). Relay bridges/swaps
+   * to BZZ on Gnosis and the executor runs `BZZ.approve` +
+   * `createSelfCustodyBatch` on {@link STAMPS_REGISTRY_V2_ADDRESS} with
+   * `_owner = hotKey` — one wallet prompt, no Sushi/router or manual approve.
    *
-   *   • **Gnosis + BZZ** — no Relay leg needed. The user's wallet calls
-   *     {@link createSelfCustodyBatchViaRegistry} directly: BZZ approve to
-   *     {@link STAMPS_REGISTRY_V2_ADDRESS} → `createSelfCustodyBatch`. Two
-   *     wallet prompts.
+   * Top-ups still use registry `topUpBatch` (optionally after a Relay bridge
+   * to BZZ when the wallet is not already on Gnosis with BZZ).
    *
-   *   • **Anything else** — one-shot Relay buy via {@link getRelayBuyStampQuote}.
-   *     Relay bridges/swaps the user's token to BZZ on Gnosis and lands it in
-   *     the executor multicaller, which then runs two `txs` against
-   *     {@link STAMPS_REGISTRY_V2_ADDRESS}: `BZZ.approve` then
-   *     `createSelfCustodyBatch`. **One** wallet prompt total — restoring the
-   *     legacy single-signature buy UX.
-   *
-   * Because every call to PostageStamp routes through StampsRegistryV2,
    * `batchId = keccak256(STAMPS_REGISTRY_V2_ADDRESS, nonce)` is deterministic
-   * client-side regardless of who calls the registry (user EOA vs. Relay's
-   * multicaller).
+   * client-side because the registry is always `msg.sender` to PostageStamp.
    */
   const handleSelfCustodyBuy = async (updatedConfig: any) => {
     if (!address || !publicClient || !walletClient || selectedChainId === null) return;
@@ -1026,41 +1023,15 @@ const SwapComponent: React.FC = () => {
       const predictedBatchId = computeBatchId(STAMPS_REGISTRY_V2_ADDRESS, nonce);
 
       let createBatchTxHash: `0x${string}` | undefined;
-      // Block number at which the batch became visible on-chain. For the
-      // direct path that's the receipt block; for the Relay path we don't
-      // know which block the multicaller's tx mined in, so we snapshot the
-      // Gnosis chain tip the moment our `batchAttribution` verifier first
-      // returns true — the gateway must be at least this block to see the
-      // batch, which is what {@link waitForGatewayBatchSync} compares against.
+      // Block number at which the batch became visible on-chain. For the Relay
+      // path we don't know which block the multicaller's tx mined in, so we
+      // snapshot the Gnosis chain tip the moment our verifier first returns
+      // true — the gateway must be at least this block to see the batch.
       let createBatchBlockNumber: bigint | undefined;
 
-      if (isPureGnosisBzzPath) {
-        // Direct registry call — two wallet prompts (approve + create).
-        const result = await createSelfCustodyBatchViaRegistry({
-          walletClient,
-          publicClient,
-          walletAddress: address as `0x${string}`,
-          hotKeyAddress: derived.address,
-          initialBalancePerChunk,
-          depth,
-          bucketDepth,
-          nonce,
-          immutable_,
-          approvalType,
-          onStatus: msg => setStatusMessage({ step: 'SelfCustody', message: msg }),
-        });
-        createBatchTxHash = result.createBatchTxHash;
-        createBatchBlockNumber = result.createBatchBlockNumber;
-        if (result.batchId.toLowerCase() !== predictedBatchId.toLowerCase()) {
-          console.warn(
-            'predicted batchId did not match on-chain batchId',
-            { predicted: predictedBatchId, actual: result.batchId }
-          );
-        }
-      } else {
-        // One-shot Relay buy — single wallet prompt to fund the bridge tx.
-        // Relay's executor handles BZZ.approve + createSelfCustodyBatch on
-        // Gnosis as the multicaller via `txs[]`.
+      // Always Relay one-shot — including Gnosis+BZZ. No separate Sushi/router
+      // or manual approve+createSelfCustodyBatch wallet prompts.
+      {
         setStatusMessage({
           step: 'Quoting',
           message: 'Quoting one-shot buy via Relay…',
@@ -2414,7 +2385,7 @@ const SwapComponent: React.FC = () => {
                 Self-custody storage{' '}
                 <span
                   className={styles.tooltip}
-                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis, then BZZ is approved to StampsRegistryV2 and `createSelfCustodyBatch` sets the hot key as on-chain owner (the registry calls Postage Stamp). Uploading: chain-independent — chunks are BMT-hashed and stamped locally in this tab; pre-stamped chunks are POSTed to a key-less Bee gateway."
+                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis (including Gnosis+BZZ), then the Relay executor approves BZZ to StampsRegistryV2 and calls `createSelfCustodyBatch` with the hot key as on-chain owner. Uploading: chain-independent — chunks are BMT-hashed and stamped locally; pre-stamped chunks go to a key-less Bee gateway."
                 >
                   ?
                 </span>
@@ -2894,6 +2865,7 @@ const SwapComponent: React.FC = () => {
                           setSelectedFiles([]);
                           setIsFolderUpload(false);
                           setIsNFTCollection(false);
+                          setIsWebpageUpload(false);
                         }}
                         className={styles.checkbox}
                         disabled={uploadStep === 'uploading'}
@@ -2993,9 +2965,14 @@ const SwapComponent: React.FC = () => {
                           } else if (isMultipleFiles) {
                             setSelectedFiles(files);
                             setSelectedFile(null);
+                            setIsWebpageUpload(false);
                           } else {
-                            setSelectedFile(files[0] || null);
+                            const file = files[0] || null;
+                            setSelectedFile(file);
                             setSelectedFiles([]);
+                            if (!file || !isArchiveFile(file.name)) {
+                              setIsWebpageUpload(false);
+                            }
                           }
                         }}
                         className={styles.fileInput}
@@ -3228,15 +3205,60 @@ const SwapComponent: React.FC = () => {
                           </span>
                         </div>
                         {result.success && result.reference && (
-                          <div
-                            className={styles.fileResultReference}
-                            onClick={() => {
-                              navigator.clipboard.writeText(result.reference || '');
-                            }}
-                            title="Click to copy reference"
-                          >
-                            {result.reference}
-                          </div>
+                          <>
+                            <div className={styles.referenceCopyWrapper}>
+                              <code
+                                className={`${styles.referenceCode} ${styles.fileResultReferenceCode}`}
+                                onClick={e => {
+                                  navigator.clipboard.writeText(result.reference || '');
+                                  const el = e.currentTarget;
+                                  el.setAttribute('data-copied', 'true');
+                                  setTimeout(() => {
+                                    el.setAttribute('data-copied', 'false');
+                                  }, 2000);
+                                }}
+                                title="Click to copy reference"
+                                data-copied="false"
+                              >
+                                {result.reference}
+                              </code>
+                            </div>
+                            <div className={styles.fileResultLinkButtons}>
+                              <button
+                                type="button"
+                                className={styles.fileResultLink}
+                                onClick={e => {
+                                  navigator.clipboard.writeText(
+                                    getFileReferenceUrl(
+                                      beeApiUrl,
+                                      result.reference || '',
+                                      result.filename
+                                    )
+                                  );
+                                  const button = e.currentTarget;
+                                  const originalText = button.textContent;
+                                  button.textContent = 'Copied!';
+                                  setTimeout(() => {
+                                    button.textContent = originalText;
+                                  }, 2000);
+                                }}
+                              >
+                                Copy link
+                              </button>
+                              <a
+                                href={getFileReferenceUrl(
+                                  beeApiUrl,
+                                  result.reference || '',
+                                  result.filename
+                                )}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.fileResultLink}
+                              >
+                                Open link
+                              </a>
+                            </div>
+                          </>
                         )}
                         {!result.success && result.error && (
                           <div className={styles.fileResultError}>{result.error}</div>
@@ -3336,6 +3358,36 @@ const SwapComponent: React.FC = () => {
                                   className={styles.referenceLink}
                                 >
                                   View metadata
+                                </a>
+                              </div>
+                            </div>
+
+                            <div className={styles.nftPathHint}>
+                              <p className={styles.nftPathHintTitle}>How to load each token file</p>
+                              <p className={styles.nftPathHintGatewayLead}>
+                                Example URLs (swap{' '}
+                                <code className={styles.nftPathHintCode}>1.json</code> /{' '}
+                                <code className={styles.nftPathHintCode}>1.png</code> for your
+                                filenames):
+                              </p>
+                              <div className={styles.nftPathHintGatewayLinks}>
+                                <a
+                                  href={`${base}${metadataRef}/1.json`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.nftPathHintLink}
+                                >
+                                  {base}
+                                  {metadataRef}/1.json
+                                </a>
+                                <a
+                                  href={`${base}${imagesRef}/1.png`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.nftPathHintLink}
+                                >
+                                  {base}
+                                  {imagesRef}/1.png
                                 </a>
                               </div>
                             </div>

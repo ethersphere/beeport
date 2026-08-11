@@ -6,6 +6,9 @@
  *   /images/<id>.png       (or .jpg, .gif, …; subdirectories tolerated)
  *   /json/<id>.json        ({"image": "ipfs://… or ./images/…", …})
  *
+ * Nested layouts are supported (e.g. build/images/, build/json/) — see
+ * `classifyNftZipPath`.
+ *
  * What it does:
  *   1. Extract the ZIP entirely client-side via JSZip.
  *   2. Upload every file in `images/` as ONE Mantaray collection (one root
@@ -37,6 +40,66 @@ import {
   type UploadTransportListener,
 } from './ClientSideUpload';
 import type { DerivedHotKey } from './ClientStamping';
+
+/** Normalize archive entry paths (OS separators, leading junk). */
+function normalizeZipPath(filename: string): string {
+  return filename
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '')
+    .replace(/^\/+/, '');
+}
+
+function shouldSkipZipEntry(normalizedPath: string): boolean {
+  const lower = normalizedPath.toLowerCase();
+  return (
+    lower.includes('__macosx/') ||
+    lower.endsWith('.ds_store') ||
+    normalizedPath.split('/').some(seg => seg === '.' || seg === '..')
+  );
+}
+
+/**
+ * Find collection files whether the ZIP root is `images/` or nested e.g. `build/images/`.
+ * Uses the last path segment named `images` or `json` before the filename (case-insensitive),
+ * so e.g. …/images/json/1.json is treated as metadata under json/.
+ */
+function classifyNftZipPath(
+  normalizedPath: string
+): { kind: 'images' | 'json'; fileName: string } | null {
+  const parts = normalizedPath.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const fileName = parts[parts.length - 1];
+  const dirs = parts.slice(0, -1);
+
+  for (let i = dirs.length - 1; i >= 0; i--) {
+    const seg = dirs[i].toLowerCase();
+    if (seg === 'images') {
+      return { kind: 'images', fileName };
+    }
+    if (seg === 'json') {
+      return { kind: 'json', fileName };
+    }
+  }
+  return null;
+}
+
+function sampleZipPaths(zipContents: JSZip): string[] {
+  const out: string[] = [];
+  for (const name of Object.keys(zipContents.files)) {
+    const entry = zipContents.files[name];
+    if (entry.dir) continue;
+    const norm = normalizeZipPath(name);
+    if (shouldSkipZipEntry(norm)) continue;
+    out.push(norm);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+const NFT_ZIP_EXPECTED_LAYOUT =
+  'Put metadata JSON files under a json/ folder and image files under an images/ folder. ' +
+  'Example: json/1.json, images/1.png. You may zip a parent folder (e.g. build/ containing build/images and build/json); that layout is supported.';
 
 export interface NFTCollectionUploadParams {
   /** ZIP file containing `images/` and `json/` folders. */
@@ -104,31 +167,41 @@ export async function processNFTCollectionClientSide(
   const imageEntries: CollectionEntry[] = [];
   const jsonEntries: Array<{ filename: string; content: string }> = [];
 
+  // Supports images/ and json/ at any depth, e.g. build/images/
   for (const [filename, zipEntry] of Object.entries(zipContents.files)) {
     if (zipEntry.dir) continue;
     if (abortSignal?.aborted) throw new Error('Upload aborted');
 
-    // The legacy processor split on the FIRST path component. We do the same
-    // so existing collection ZIPs keep working.
-    const parts = filename.split('/');
-    if (parts.length < 2) continue;
-    const folder = parts[0].toLowerCase();
-    const baseName = parts[parts.length - 1]; // bare filename, no folder prefix
+    const normalized = normalizeZipPath(filename);
+    if (shouldSkipZipEntry(normalized)) continue;
 
-    if (folder === 'images') {
+    const classified = classifyNftZipPath(normalized);
+    if (!classified) continue;
+
+    const { kind, fileName } = classified;
+
+    if (kind === 'images') {
       const buf = await zipEntry.async('arraybuffer');
-      imageEntries.push({ path: baseName, data: new Uint8Array(buf) });
-    } else if (folder === 'json') {
+      imageEntries.push({ path: fileName, data: new Uint8Array(buf) });
+    } else {
       const text = await zipEntry.async('string');
-      jsonEntries.push({ filename: baseName, content: text });
+      jsonEntries.push({ filename: fileName, content: text });
     }
   }
 
+  const samples = sampleZipPaths(zipContents);
+  const sampleSuffix =
+    samples.length > 0 ? ` Paths found in the ZIP (sample): ${samples.join('; ')}.` : '';
+
   if (imageEntries.length === 0) {
-    throw new Error("No images found in the ZIP's `images/` folder");
+    throw new Error(
+      `No image files found under an images/ folder.${sampleSuffix} ${NFT_ZIP_EXPECTED_LAYOUT}`
+    );
   }
   if (jsonEntries.length === 0) {
-    throw new Error("No JSON metadata files found in the ZIP's `json/` folder");
+    throw new Error(
+      `No JSON metadata files found under a json/ folder.${sampleSuffix} ${NFT_ZIP_EXPECTED_LAYOUT}`
+    );
   }
 
   console.log(

@@ -19,7 +19,6 @@
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #30363d;
 }
 
 .stampListHeader h2 {
@@ -51,6 +50,126 @@
   padding: 15px;
   margin-bottom: 15px;
   border: 1px solid #30363d;
+}
+
+.storageLabelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #30363d;
+}
+
+.storageLabelHeading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6e7681;
+}
+
+.labelDisplay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.storageLabelValue {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f0f6fc;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.storageLabelPlaceholder {
+  font-size: 16px;
+  font-weight: 500;
+  color: #6e7681;
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+}
+
+.labelEditButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.labelEditButton:hover {
+  border-color: #ff7a00;
+  color: #ff7a00;
+  background-color: rgba(255, 122, 0, 0.08);
+}
+
+.labelEditButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.labelEditWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.labelInput {
+  flex: 1;
+  min-width: 0;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f0f6fc;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.labelInput:focus {
+  border-color: #58a6ff;
+}
+
+.labelSaveButton,
+.labelCancelButton {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  transition: all 0.2s ease;
+}
+
+.labelSaveButton:hover {
+  border-color: #3fb950;
+  color: #3fb950;
+}
+
+.labelCancelButton:hover {
+  border-color: #f85149;
+  color: #f85149;
 }
 
 .stampListId {
@@ -523,6 +642,9 @@
 }
 
 .resetButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 1px solid #30363d;
   color: #8b949e;
@@ -539,4 +661,99 @@
   background-color: rgba(48, 54, 61, 0.3);
   border-color: #6e7681;
   color: #f0f6fc;
+}
+
+/* Bee /health gate (mirrors SwapComponent upload banner) */
+.healthBanner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.healthBannerError {
+  background-color: rgba(229, 83, 75, 0.12);
+  border: 1px solid rgba(229, 83, 75, 0.45);
+  color: #ffb3ad;
+}
+
+.healthBannerWarn {
+  background-color: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  color: #ffe082;
+}
+
+.healthBannerBody {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.healthBannerBody strong {
+  display: block;
+  color: #ffffff;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+
+.healthBannerSub {
+  margin: 0;
+  line-height: 1.45;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.healthBannerBody p {
+  margin: 0 0 6px 0;
+  line-height: 1.45;
+}
+
+.healthBannerBody p:last-child {
+  margin-bottom: 0;
+}
+
+.healthBannerRetry {
+  padding: 8px 14px;
+  background-color: #ff7a00;
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.healthBannerRetry:hover:not(:disabled) {
+  background-color: #e56e00;
+}
+
+.healthBannerRetry:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.smallSpinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #ffffff;
+  animation: spin 1s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
