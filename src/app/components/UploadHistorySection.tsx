@@ -26,6 +26,16 @@ interface UploadRecord {
   isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
   isFolderUpload?: boolean; // Flag to indicate this was uploaded as a folder
   fileSize?: number; // File size in bytes
+  /** Swarm erasure-coding level used at upload (0=None … 4=Paranoid). */
+  redundancyLevel?: number;
+}
+
+const EC_LEVEL_LABELS = ['None', 'Medium', 'Strong', 'Insane', 'Paranoid'] as const;
+
+function formatRedundancyLevel(level?: number): string | null {
+  if (level === undefined || level === null || Number.isNaN(level)) return null;
+  const n = Math.max(0, Math.min(4, Math.floor(level)));
+  return EC_LEVEL_LABELS[n] ?? String(n);
 }
 
 interface UploadHistory {
@@ -600,6 +610,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Is Webpage',
       'Is Folder',
       'Associated Domains', // New column
+      'EC Level',
       'Full Link',
     ];
 
@@ -614,6 +625,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       record.isWebpageUpload ? 'Yes' : 'No',
       record.isFolderUpload ? 'Yes' : 'No',
       record.associatedDomains?.join(', ') || '', // New field
+      formatRedundancyLevel(record.redundancyLevel) ?? '',
       getReferenceUrl(record),
     ]);
 
@@ -676,8 +688,15 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               isWebpage,
               isFolder,
               associatedDomainsStr,
-              fullLink,
+              maybeEcOrLink,
+              maybeLink,
             ] = fields;
+
+            // New exports: …, Domains, EC Level, Full Link
+            // Older exports: …, Domains, Full Link
+            const hasEcColumn = fields.length >= 11;
+            const ecLevelRaw = hasEcColumn ? maybeEcOrLink : undefined;
+            const fullLink = hasEcColumn ? maybeLink : maybeEcOrLink;
 
             // Skip if reference + stampId combination already exists (prevent duplicates)
             const key = `${reference}_${stampId}`;
@@ -734,6 +753,23 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   .map(d => d.trim())
                   .filter(d => d);
               }
+
+              if (ecLevelRaw) {
+                const named = EC_LEVEL_LABELS.findIndex(
+                  l => l.toLowerCase() === ecLevelRaw.toLowerCase()
+                );
+                if (named >= 0) {
+                  record.redundancyLevel = named;
+                } else {
+                  const n = Number(ecLevelRaw);
+                  if (!Number.isNaN(n) && n >= 0 && n <= 4) {
+                    record.redundancyLevel = n;
+                  }
+                }
+              }
+
+              // fullLink is ignored on import — we rebuild URLs from reference.
+              void fullLink;
 
               newRecords.push(record);
 
@@ -1269,6 +1305,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     )}
                     {record.fileSize && (
                       <span className={styles.fileSize}>{formatFileSize(record.fileSize)}</span>
+                    )}
+                    {formatRedundancyLevel(record.redundancyLevel) && (
+                      <span
+                        className={styles.ecLevel}
+                        title={`Erasure coding level used for this upload (${record.redundancyLevel})`}
+                      >
+                        EC: {formatRedundancyLevel(record.redundancyLevel)}
+                      </span>
                     )}
                   </div>
                 </div>

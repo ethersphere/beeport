@@ -1,0 +1,102 @@
+{
+  "name": "swarm-core",
+  "version": "0.0.1-vendored",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./bytes": {
+      "import": {
+        "types": "./dist/bytes/index.d.ts",
+        "default": "./dist/bytes/index.js"
+      },
+      "require": {
+        "types": "./dist/bytes/index.d.cts",
+        "default": "./dist/bytes/index.cjs"
+      }
+    },
+    "./crypto": {
+      "import": {
+        "types": "./dist/crypto/index.d.ts",
+        "default": "./dist/crypto/index.js"
+      },
+      "require": {
+        "types": "./dist/crypto/index.d.cts",
+        "default": "./dist/crypto/index.cjs"
+      }
+    },
+    "./chunk": {
+      "import": {
+        "types": "./dist/chunk/index.d.ts",
+        "default": "./dist/chunk/index.js"
+      },
+      "require": {
+        "types": "./dist/chunk/index.d.cts",
+        "default": "./dist/chunk/index.cjs"
+      }
+    },
+    "./mantaray": {
+      "import": {
+        "types": "./dist/mantaray/index.d.ts",
+        "default": "./dist/mantaray/index.js"
+      },
+      "require": {
+        "types": "./dist/mantaray/index.d.cts",
+        "default": "./dist/mantaray/index.cjs"
+      }
+    },
+    "./erasure-coding": {
+      "import": {
+        "types": "./dist/erasure-coding/index.d.ts",
+        "default": "./dist/erasure-coding/index.js"
+      },
+      "require": {
+        "types": "./dist/erasure-coding/index.d.cts",
+        "default": "./dist/erasure-coding/index.cjs"
+      }
+    },
+    "./encryption": {
+      "import": {
+        "types": "./dist/encryption/index.d.ts",
+        "default": "./dist/encryption/index.js"
+      },
+      "require": {
+        "types": "./dist/encryption/index.d.cts",
+        "default": "./dist/encryption/index.cjs"
+      }
+    },
+    "./stamper": {
+      "import": {
+        "types": "./dist/stamper/index.d.ts",
+        "default": "./dist/stamper/index.js"
+      },
+      "require": {
+        "types": "./dist/stamper/index.d.cts",
+        "default": "./dist/stamper/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0"
+  }
+}

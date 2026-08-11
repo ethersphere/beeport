@@ -121,6 +121,8 @@ export interface NFTCollectionUploadParams {
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
+  /** Swarm erasure-coding level 0–4 forwarded to collection uploads. */
+  redundancyLevel?: number;
   /** Optional abort signal. */
   abortSignal?: AbortSignal;
 }
@@ -153,6 +155,7 @@ export async function processNFTCollectionClientSide(
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
+    redundancyLevel = 0,
     abortSignal,
   } = params;
 
@@ -231,6 +234,7 @@ export async function processNFTCollectionClientSide(
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
+    redundancyLevel,
     abortSignal,
   });
 
@@ -300,6 +304,7 @@ export async function processNFTCollectionClientSide(
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
+    redundancyLevel,
     abortSignal,
   });
 

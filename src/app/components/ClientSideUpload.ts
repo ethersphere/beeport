@@ -58,6 +58,11 @@ export type UploadTransportListener = (
 import { DEFAULT_BEE_API_URL } from './constants';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
+import {
+  approxChunkCountWithRedundancy,
+  streamFileThroughErasureTree,
+  streamUint8ThroughErasureTree,
+} from './ErasureCodedBmt';
 
 /**
  * Maximum number of concurrent in-flight POST /chunks requests.
@@ -309,6 +314,12 @@ export interface ClientSideUploadParams {
    * Default 32 (or `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS`).
    */
   streamSocketCount?: number;
+  /**
+   * Swarm erasure-coding level 0–4 (None…Paranoid). Applied client-side while
+   * building the chunk tree so both HTTP and WebSocket transports upload the
+   * same data+parity CACs. Default 0.
+   */
+  redundancyLevel?: number;
   /** Optional concurrency override. */
   concurrency?: number;
   /** Optional abort signal. */
@@ -413,11 +424,13 @@ export async function uploadFileClientSide(
     onUploadTransport,
     chunkTransport = 'auto',
     streamSocketCount,
+    redundancyLevel = 0,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
 
   const progressOut = throttleUploadProgress(onProgress);
+  const ecLevel = Math.max(0, Math.min(4, Math.floor(redundancyLevel)));
 
   if (!file) throw new Error('No file provided');
   if (!batchId) throw new Error('No batchId provided');
@@ -469,7 +482,7 @@ export async function uploadFileClientSide(
   let chunksUploaded = 0;
   let retryCount = 0;
   let detectedHttpProtocol: string | undefined;
-  const totalChunksApprox = approxChunkCount(file.size);
+  const totalChunksApprox = approxChunkCountWithRedundancy(file.size, ecLevel);
 
   // ── Timing / speed-test instrumentation (TEMP — easy revert) ─────────────
   // Logs phase markers + a periodic in-flight sampler so we can A/B different
@@ -809,19 +822,27 @@ export async function uploadFileClientSide(
       });
     }
 
-    bmtClient = await BmtWorkerClient.open();
-    if (bmtClient.runsInWorker) {
-      mark('BMT worker active');
+    if (ecLevel === 0) {
+      bmtClient = await BmtWorkerClient.open();
+      if (bmtClient.runsInWorker) {
+        mark('BMT worker active');
+      }
     }
 
-    // ── Chunk file → BMT MerkleTree → onChunk → upload ──────────────────────
-    onStatus?.('Chunking and stamping file…');
-    const fileRootChunk = await bmtClient.streamFileThroughMerkleTree(
-      file,
-      onChunk,
-      abortSignal
+    // ── Chunk file → BMT MerkleTree (or EC tree) → onChunk → upload ────────
+    onStatus?.(
+      ecLevel > 0
+        ? `Chunking with erasure coding (level ${ecLevel})…`
+        : 'Chunking and stamping file…'
     );
-    mark('BMT producer done (all chunks enqueued)', { uploaded: chunksUploaded });
+    const fileRootChunk =
+      ecLevel > 0
+        ? await streamFileThroughErasureTree(file, ecLevel, onChunk, abortSignal)
+        : await bmtClient!.streamFileThroughMerkleTree(file, onChunk, abortSignal);
+    mark('BMT producer done (all chunks enqueued)', {
+      uploaded: chunksUploaded,
+      redundancyLevel: ecLevel,
+    });
     await queue.drain();
 
     // Surface any chunk-task failure now — silently returning a reference for
@@ -1312,13 +1333,8 @@ async function waitForStampReady(
 
 // ─── Misc helpers ─────────────────────────────────────────────────────────────
 
-function approxChunkCount(byteSize: number): number {
-  // Leaf chunks for the file payload …
-  const leaves = Math.ceil(byteSize / 4096);
-  // … plus an over-estimate of intermediate BMT chunks (≈ leaves / 128 fanout)
-  const intermediate = Math.ceil(leaves / 128);
-  // … plus a small constant for manifest chunks (typically 1-3).
-  return leaves + intermediate + 4;
+function approxChunkCount(byteSize: number, redundancyLevel = 0): number {
+  return approxChunkCountWithRedundancy(byteSize, redundancyLevel);
 }
 
 function stripHex(value: string): string {
@@ -1665,6 +1681,8 @@ interface UploadCtx {
   openBmtClient: () => Promise<void>;
   closeBmtClient: () => void;
   onUploadTransport?: UploadTransportListener;
+  /** 0–4 Swarm redundancy level for file trees (client-side EC). */
+  redundancyLevel: number;
 }
 
 async function createUploadContext(opts: {
@@ -1681,6 +1699,7 @@ async function createUploadContext(opts: {
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
+  redundancyLevel?: number;
 }): Promise<UploadCtx> {
   const {
     batchId,
@@ -1693,8 +1712,10 @@ async function createUploadContext(opts: {
     chunkTransport = 'auto',
     streamSocketCount,
     totalBytes = 0,
+    redundancyLevel = 0,
   } = opts;
   const progressOut = throttleUploadProgress(onProgress);
+  const ecLevel = Math.max(0, Math.min(4, Math.floor(redundancyLevel)));
 
   if (!batchId) throw new Error('No batchId provided');
   if (!hotKey) throw new Error('No hot key provided');
@@ -1754,6 +1775,7 @@ async function createUploadContext(opts: {
     openBmtClient: async () => {},
     closeBmtClient: () => {},
     onUploadTransport: opts.onUploadTransport,
+    redundancyLevel: ecLevel,
   };
 
   ctx.closeUploadSession = () => {
@@ -1791,6 +1813,7 @@ async function createUploadContext(opts: {
     });
   };
   ctx.openBmtClient = async () => {
+    if (ctx.redundancyLevel > 0) return;
     if (ctx.bmtClient) return;
     ctx.bmtClient = await BmtWorkerClient.open();
   };
@@ -1934,15 +1957,23 @@ async function streamFileThroughCtx(
   file: File,
   ctx: UploadCtx
 ): Promise<{ rootChunk: Chunk; chunkCount: number }> {
-  if (!ctx.bmtClient) {
-    throw new Error('BMT client not opened');
-  }
   const before = ctx.chunksUploaded;
-  const fileRootChunk = await ctx.bmtClient.streamFileThroughMerkleTree(
-    file,
-    ctx.onChunk,
-    ctx.abortSignal
-  );
+  const fileRootChunk =
+    ctx.redundancyLevel > 0
+      ? await streamFileThroughErasureTree(
+          file,
+          ctx.redundancyLevel,
+          ctx.onChunk,
+          ctx.abortSignal
+        )
+      : await (() => {
+          if (!ctx.bmtClient) throw new Error('BMT client not opened');
+          return ctx.bmtClient.streamFileThroughMerkleTree(
+            file,
+            ctx.onChunk,
+            ctx.abortSignal
+          );
+        })();
   await ctx.queue.drain();
   if (ctx.firstError) {
     ctx.persistState(true);
@@ -1958,15 +1989,23 @@ async function streamBytesThroughCtx(
   bytes: Uint8Array,
   ctx: UploadCtx
 ): Promise<{ rootChunk: Chunk; chunkCount: number }> {
-  if (!ctx.bmtClient) {
-    throw new Error('BMT client not opened');
-  }
   const before = ctx.chunksUploaded;
-  const rootChunk = await ctx.bmtClient.streamBytesThroughMerkleTree(
-    bytes,
-    ctx.onChunk,
-    ctx.abortSignal
-  );
+  const rootChunk =
+    ctx.redundancyLevel > 0
+      ? await streamUint8ThroughErasureTree(
+          bytes,
+          ctx.redundancyLevel,
+          ctx.onChunk,
+          ctx.abortSignal
+        )
+      : await (() => {
+          if (!ctx.bmtClient) throw new Error('BMT client not opened');
+          return ctx.bmtClient.streamBytesThroughMerkleTree(
+            bytes,
+            ctx.onChunk,
+            ctx.abortSignal
+          );
+        })();
   await ctx.queue.drain();
   if (ctx.firstError) {
     ctx.persistState(true);
@@ -2074,6 +2113,8 @@ export interface MultiFileUploadParams {
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
+  /** Swarm erasure-coding level 0–4 for each file tree. Default 0. */
+  redundancyLevel?: number;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -2123,6 +2164,7 @@ export async function uploadMultipleFilesClientSide(
     onUploadTransport,
     chunkTransport = 'auto',
     streamSocketCount,
+    redundancyLevel = 0,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -2138,11 +2180,12 @@ export async function uploadMultipleFilesClientSide(
     concurrency,
     abortSignal,
     onProgress: undefined,
-    totalChunksApprox: approxChunkCount(totalBytes),
+    totalChunksApprox: approxChunkCount(totalBytes, redundancyLevel),
     totalBytes,
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
+    redundancyLevel,
   });
 
   try {
@@ -2271,6 +2314,8 @@ export interface CollectionUploadParams {
   onUploadTransport?: UploadTransportListener;
   chunkTransport?: ChunkTransportMode;
   streamSocketCount?: number;
+  /** Swarm erasure-coding level 0–4 for each file tree. Default 0. */
+  redundancyLevel?: number;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -2306,6 +2351,7 @@ export async function uploadFilesAsCollectionClientSide(
     onUploadTransport,
     chunkTransport = 'auto',
     streamSocketCount,
+    redundancyLevel = 0,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -2333,11 +2379,12 @@ export async function uploadFilesAsCollectionClientSide(
     concurrency,
     abortSignal,
     onProgress,
-    totalChunksApprox: approxChunkCount(totalBytes),
+    totalChunksApprox: approxChunkCount(totalBytes, redundancyLevel),
     totalBytes,
     onUploadTransport,
     chunkTransport,
     streamSocketCount,
+    redundancyLevel,
   });
 
   try {

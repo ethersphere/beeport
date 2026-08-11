@@ -28,6 +28,7 @@ import {
 } from './constants';
 
 import HelpSection from './HelpSection';
+import ErasureCodingDropdown from './ErasureCodingDropdown';
 import StampListSection from './StampListSection';
 import UploadHistorySection from './UploadHistorySection';
 import SearchableChainDropdown from './SearchableChainDropdown';
@@ -218,6 +219,8 @@ const SwapComponent: React.FC = () => {
   );
   /** Live socket count reported once a stream session opens. */
   const [liveStreamSocketCount, setLiveStreamSocketCount] = useState(0);
+  /** Client-side Swarm erasure coding level (0=none … 4=paranoid). */
+  const [redundancyLevel, setRedundancyLevel] = useState<number>(0);
   const [showStampList, setShowStampList] = useState(false);
 
   // Upload-mode toggles brought back from 1.1.x but reimplemented over the
@@ -1259,7 +1262,8 @@ const SwapComponent: React.FC = () => {
     filename?: string,
     isWebpageUpload?: boolean,
     fileSize?: number,
-    isFolderUpload?: boolean
+    isFolderUpload?: boolean,
+    redundancyLevel?: number
   ) => {
     if (!address) return;
 
@@ -1276,6 +1280,7 @@ const SwapComponent: React.FC = () => {
       isWebpageUpload,
       fileSize,
       isFolderUpload,
+      ...(redundancyLevel !== undefined ? { redundancyLevel } : {}),
     });
 
     history[address] = addressHistory;
@@ -1423,6 +1428,7 @@ const SwapComponent: React.FC = () => {
         isWebsite: false,
         onUploadTransport: handleUploadTransport,
         streamSocketCount,
+        redundancyLevel,
       };
 
       const result = await uploadFileClientSide({
@@ -1525,7 +1531,9 @@ const SwapComponent: React.FC = () => {
           Date.now() + 30 * 24 * 60 * 60 * 1000,
           file.name,
           false,
-          file.size
+          file.size,
+          false,
+          redundancyLevel
         );
       } catch (err) {
         console.warn('Self-custody post-upload bookkeeping failed:', err);
@@ -1752,6 +1760,7 @@ const SwapComponent: React.FC = () => {
         onUploadTransport: handleUploadTransport,
         chunkTransport: chunkTransportMode,
         streamSocketCount,
+        redundancyLevel,
       });
 
       setMultiFileResults(result.results);
@@ -1768,7 +1777,16 @@ const SwapComponent: React.FC = () => {
           if (r.success && r.reference) {
             const refHex = r.reference.startsWith('0x') ? r.reference.slice(2) : r.reference;
             const file = files.find(f => f.name === r.filename);
-            saveUploadReference(refHex, postageBatchId, expiryDate, r.filename, false, file?.size);
+            saveUploadReference(
+              refHex,
+              postageBatchId,
+              expiryDate,
+              r.filename,
+              false,
+              file?.size,
+              false,
+              redundancyLevel
+            );
           }
         }
       } catch (err) {
@@ -1880,6 +1898,7 @@ const SwapComponent: React.FC = () => {
         onUploadTransport: handleUploadTransport,
         chunkTransport: chunkTransportMode,
         streamSocketCount,
+        redundancyLevel,
       });
 
       setUploadProgress(100);
@@ -1915,7 +1934,8 @@ const SwapComponent: React.FC = () => {
             folderName,
             true, // isWebpageUpload — folder/website uploads serve via index.html
             totalBytes,
-            true // isFolderUpload — flagged so the history UI shows the folder icon
+            true, // isFolderUpload — flagged so the history UI shows the folder icon
+            redundancyLevel
           );
         }
       } catch (err) {
@@ -2006,6 +2026,7 @@ const SwapComponent: React.FC = () => {
         onUploadTransport: handleUploadTransport,
         chunkTransport: chunkTransportMode,
         streamSocketCount,
+        redundancyLevel,
       });
 
       setNftCollectionResult(result);
@@ -2032,7 +2053,8 @@ const SwapComponent: React.FC = () => {
           `${zipFile.name} — images`,
           false,
           zipFile.size,
-          true
+          true,
+          redundancyLevel
         );
         saveUploadReference(
           metadataRefHex,
@@ -2041,7 +2063,8 @@ const SwapComponent: React.FC = () => {
           `${zipFile.name} — metadata`,
           false,
           undefined,
-          true
+          true,
+          redundancyLevel
         );
       } catch (err) {
         console.warn('Failed to record NFT references in upload history:', err);
@@ -2948,6 +2971,28 @@ const SwapComponent: React.FC = () => {
                         </label>
                       )}
                     </div>
+
+                    {((!isMultipleFiles && selectedFile) ||
+                      (isMultipleFiles && selectedFiles.length > 0) ||
+                      (isFolderUpload && selectedFiles.length > 0) ||
+                      (isNFTCollection && selectedFile)) && (
+                      <div className={styles.dropdownWrapper}>
+                        <label className={styles.dropdownLabel}>
+                          Erasure Coding
+                          <span
+                            className={styles.tooltip}
+                            title="Client-side erasure coding: parity chunks are built in your browser and uploaded with the same HTTP or WebSocket transport. Higher levels use more stamp capacity but tolerate more chunk loss. Downloaders use normal Bee retrieval."
+                          >
+                            ?
+                          </span>
+                        </label>
+                        <ErasureCodingDropdown
+                          selectedLevel={redundancyLevel}
+                          onLevelChange={setRedundancyLevel}
+                          disabled={uploadStep === 'uploading'}
+                        />
+                      </div>
+                    )}
 
                     <div className={styles.fileInputWrapper}>
                       <input
