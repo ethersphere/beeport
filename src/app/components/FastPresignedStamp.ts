@@ -230,6 +230,40 @@ type StreamAckWaiter = {
 };
 
 /**
+ * Default number of parallel `/chunks/stream` WebSockets.
+ * One Bee connection processes chunks roughly sequentially; striping across
+ * N sockets unlocks N concurrent server-side consumers on the same node.
+ * Override with `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` or session `streamSocketCount`.
+ */
+export const DEFAULT_CHUNK_STREAM_SOCKETS = 32;
+
+/**
+ * Ack window per stream socket. Total stream capacity ≈ sockets × this.
+ * Kept separate from the outer AsyncQueue so logs stay unambiguous.
+ * 32×16 = 512 in-flight — best measured avg cps on beeport.xyz in A/B
+ * (beat 768 and 1024, which inflated ack latency).
+ */
+export const STREAM_IN_FLIGHT_PER_SOCKET = 16;
+
+export function resolveChunkStreamSocketCount(override?: number): number {
+  if (typeof override === 'number' && Number.isFinite(override)) {
+    return Math.max(1, Math.min(32, Math.floor(override)));
+  }
+  if (typeof process !== 'undefined') {
+    const raw = process.env.NEXT_PUBLIC_CHUNK_STREAM_SOCKETS;
+    if (raw) {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n)) return Math.max(1, Math.min(32, n));
+    }
+  }
+  return DEFAULT_CHUNK_STREAM_SOCKETS;
+}
+
+export function streamPoolTargetInFlight(socketCount: number): number {
+  return Math.max(1, socketCount) * STREAM_IN_FLIGHT_PER_SOCKET;
+}
+
+/**
  * Bee v2.8.1+ WebSocket chunk stream in per-chunk stamp mode (no batch-id
  * header on the connection). Each binary message is `stamp[113] || chunk`.
  */
@@ -242,6 +276,15 @@ export class PresignedChunkStreamClient {
   private readonly slotWaiters: Array<() => void> = [];
 
   constructor(readonly maxInFlight = 64) {}
+
+  /** Chunks waiting for an ack on this socket (for least-busy pool dispatch). */
+  get inFlight(): number {
+    return this.pendingAcks;
+  }
+
+  get isOpen(): boolean {
+    return !!this.ws && this.ws.readyState === WebSocket.OPEN && !this.closed;
+  }
 
   private releaseSlot(): void {
     this.pendingAcks = Math.max(0, this.pendingAcks - 1);
@@ -455,41 +498,202 @@ export class PresignedChunkStreamClient {
   }
 }
 
-export type ChunkUploadTransport = 'http' | 'websocket';
+/**
+ * Stripe chunk uploads across N independent `/chunks/stream` WebSockets to
+ * the same Bee node. Each socket has its own ack FIFO, so Bee's ordered
+ * empty-frame acks stay correct without protocol changes.
+ *
+ * Opens the first socket immediately so chunk uploads can start, then fills
+ * the remaining sockets in the background (browsers serialize many concurrent
+ * WebSocket handshakes to one host, which otherwise stalls TTFB for ~seconds
+ * at high socket counts).
+ */
+export class PresignedChunkStreamPool {
+  private sockets: PresignedChunkStreamClient[] = [];
+  private closed = false;
+  readonly targetSocketCount: number;
+  readonly perSocketInFlight: number;
+  readonly targetInFlight: number;
 
-/** Upload session — tries WebSocket stream first, falls back to HTTP POST. */
-export class PresignedChunkUploadSession {
-  readonly transport: ChunkUploadTransport;
-  private stream: PresignedChunkStreamClient | null = null;
-
-  private constructor(
-    readonly beeApiBase: string,
-    transport: ChunkUploadTransport,
-    stream: PresignedChunkStreamClient | null
-  ) {
-    this.transport = transport;
-    this.stream = stream;
+  private constructor(targetSocketCount: number, perSocketInFlight: number) {
+    this.targetSocketCount = targetSocketCount;
+    this.perSocketInFlight = perSocketInFlight;
+    this.targetInFlight = streamPoolTargetInFlight(targetSocketCount);
   }
 
   static async open(
     beeApiBase: string,
-    opts?: { abortSignal?: AbortSignal; preferStream?: boolean; connectTimeoutMs?: number }
+    opts?: {
+      abortSignal?: AbortSignal;
+      timeoutMs?: number;
+      socketCount?: number;
+    }
+  ): Promise<PresignedChunkStreamPool | null> {
+    if (typeof WebSocket === 'undefined') return null;
+
+    const wanted = resolveChunkStreamSocketCount(opts?.socketCount);
+    const perSocketInFlight = STREAM_IN_FLIGHT_PER_SOCKET;
+    const pool = new PresignedChunkStreamPool(wanted, perSocketInFlight);
+    const connectOpts = {
+      abortSignal: opts?.abortSignal,
+      timeoutMs: opts?.timeoutMs ?? 8_000,
+    };
+
+    const connectOne = async (): Promise<PresignedChunkStreamClient | null> => {
+      const client = new PresignedChunkStreamClient(perSocketInFlight);
+      const ok = await client.connect(beeApiBase, connectOpts);
+      if (!ok) {
+        client.close();
+        return null;
+      }
+      return client;
+    };
+
+    // First socket is required — without it we cannot stream at all.
+    const first = await connectOne();
+    if (!first) {
+      pool.close();
+      return null;
+    }
+    pool.sockets = [first];
+    console.info(
+      `[ChunkStream] ready: 1/${wanted} WebSocket stream(s) live ` +
+        `(${perSocketInFlight} in-flight per socket; target total ≈ ${pool.targetInFlight}). ` +
+        `Opening remaining sockets in background…`
+    );
+
+    if (wanted > 1) {
+      void (async () => {
+        const rest = await Promise.all(
+          Array.from({ length: wanted - 1 }, () => connectOne())
+        );
+        if (pool.closed) {
+          for (const s of rest) s?.close();
+          return;
+        }
+        for (const s of rest) {
+          if (s) pool.sockets.push(s);
+        }
+        console.info(
+          `[ChunkStream] pool filled: ${pool.liveSocketCount}/${wanted} WebSocket streams ` +
+            `(${perSocketInFlight} in-flight/socket, capacity ≈ ${pool.liveSocketCount * perSocketInFlight})`
+        );
+      })();
+    }
+
+    return pool;
+  }
+
+  get liveSocketCount(): number {
+    return this.sockets.filter(s => s.isOpen).length;
+  }
+
+  private pickSocket(): PresignedChunkStreamClient {
+    let best: PresignedChunkStreamClient | null = null;
+    for (const s of this.sockets) {
+      if (!s.isOpen) continue;
+      if (!best || s.inFlight < best.inFlight) best = s;
+    }
+    if (!best) {
+      throw new ChunkUploadHttpError('No live WebSocket stream sockets');
+    }
+    return best;
+  }
+
+  async upload(
+    chunkBytes: Uint8Array,
+    envelope: EnvelopeWithBatchId,
+    opts: { abortSignal?: AbortSignal; timeoutMs: number }
+  ): Promise<void> {
+    if (this.closed) throw new ChunkUploadHttpError('WebSocket stream pool closed');
+    return this.pickSocket().upload(chunkBytes, envelope, opts);
+  }
+
+  close(): void {
+    this.closed = true;
+    for (const s of this.sockets) s.close();
+    this.sockets = [];
+  }
+}
+
+export type ChunkUploadTransport = 'http' | 'websocket';
+
+export type ChunkUploadTransportInfo = {
+  transport: ChunkUploadTransport;
+  /** Live WebSocket count when transport is `websocket`; otherwise 0. */
+  streamSocketCount: number;
+};
+
+/** Upload session — tries WebSocket stream first, falls back to HTTP POST. */
+export class PresignedChunkUploadSession {
+  readonly transport: ChunkUploadTransport;
+  /** How many `/chunks/stream` sockets are live right now (0 for HTTP). */
+  readonly streamSocketCount: number;
+  /** Target sockets requested for the pool (0 for HTTP). */
+  readonly targetStreamSocketCount: number;
+  /** Outer-queue concurrency that can fully feed the stream pool. */
+  readonly targetInFlight: number;
+  private stream: PresignedChunkStreamPool | null = null;
+
+  private constructor(
+    readonly beeApiBase: string,
+    transport: ChunkUploadTransport,
+    stream: PresignedChunkStreamPool | null
+  ) {
+    this.transport = transport;
+    this.stream = stream;
+    this.streamSocketCount = stream?.liveSocketCount ?? 0;
+    this.targetStreamSocketCount = stream?.targetSocketCount ?? 0;
+    this.targetInFlight = stream?.targetInFlight ?? 0;
+  }
+
+  static async open(
+    beeApiBase: string,
+    opts?: {
+      abortSignal?: AbortSignal;
+      /** @deprecated Prefer `transportMode`. */
+      preferStream?: boolean;
+      /** `auto` tries WebSocket first; `http` / `websocket` force one transport. */
+      transportMode?: 'auto' | 'http' | 'websocket';
+      /** Parallel `/chunks/stream` sockets (default {@link DEFAULT_CHUNK_STREAM_SOCKETS}). */
+      streamSocketCount?: number;
+      connectTimeoutMs?: number;
+    }
   ): Promise<PresignedChunkUploadSession> {
-    const preferStream =
-      opts?.preferStream ??
-      (typeof process !== 'undefined' &&
+    const transportMode =
+      opts?.transportMode ??
+      (opts?.preferStream === false
+        ? 'http'
+        : opts?.preferStream === true
+          ? 'auto'
+          : 'auto');
+
+    if (transportMode === 'http') {
+      return new PresignedChunkUploadSession(beeApiBase, 'http', null);
+    }
+
+    const tryStream =
+      transportMode === 'websocket' ||
+      (transportMode === 'auto' &&
+        typeof process !== 'undefined' &&
         process.env.NEXT_PUBLIC_PREFER_CHUNK_STREAM !== 'false');
 
-    if (preferStream && typeof WebSocket !== 'undefined') {
-      const stream = new PresignedChunkStreamClient();
-      const ok = await stream.connect(beeApiBase, {
+    if (tryStream && typeof WebSocket !== 'undefined') {
+      const pool = await PresignedChunkStreamPool.open(beeApiBase, {
         abortSignal: opts?.abortSignal,
         timeoutMs: opts?.connectTimeoutMs ?? 8_000,
+        socketCount: opts?.streamSocketCount,
       });
-      if (ok) {
-        return new PresignedChunkUploadSession(beeApiBase, 'websocket', stream);
+      if (pool) {
+        return new PresignedChunkUploadSession(beeApiBase, 'websocket', pool);
       }
-      stream.close();
+      if (transportMode === 'websocket') {
+        throw new Error(
+          'WebSocket chunk stream unavailable — gateway may not support /chunks/stream (Bee 2.8.1+).'
+        );
+      }
+    } else if (transportMode === 'websocket') {
+      throw new Error('WebSocket is not available in this environment.');
     }
 
     return new PresignedChunkUploadSession(beeApiBase, 'http', null);

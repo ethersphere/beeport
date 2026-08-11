@@ -65,9 +65,11 @@ The post-ramp target is **`HTTP2_TARGET_CONCURRENCY`**. It must stay **at or und
 
 - **CAC (default):** parallel `POST {bee}/chunks` with `swarm-postage-stamp` header.
 - **CAC (Bee v2.8.1+):** when the gateway accepts it, `PresignedChunkUploadSession` opens
-  `wss://…/chunks/stream` in per-chunk stamp mode (no batch-id header; each binary message is
-  `stamp[113] || chunk`). Falls back to HTTP automatically. Disable with
-  `NEXT_PUBLIC_PREFER_CHUNK_STREAM=false`.
+  N parallel `wss://…/chunks/stream` sockets (default **32**, see `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS`
+  / UI “Stream sockets”) and stripes chunks across them with least-busy dispatch. Each socket
+  allows **16** in-flight acks (≈512 total with the default pool). The first socket opens
+  immediately; the rest fill in the background so TTFB stays low. Falls back to HTTP
+  automatically. Disable with `NEXT_PUBLIC_PREFER_CHUNK_STREAM=false`.
 - **Issuer-state SOC:** `uploadSocPresignedFetch` — `POST {bee}/soc/{ownerHex}/{identifierHex}?sig={socSigHex}`, body = inner CAC only (same as bee-js `uploadSingleOwnerChunk`).
 - Request bodies are **copies** (`new Uint8Array(...)`) so the POST cannot race under extreme parallelism.
 - **`keepalive`** is not used on these POSTs (some browsers mishandle many parallel keepalive uploads).
@@ -78,6 +80,7 @@ The post-ramp target is **`HTTP2_TARGET_CONCURRENCY`**. It must stay **at or und
 | -------- | ------ |
 | `NEXT_PUBLIC_ASSUME_HTTP2_UPLOAD=true` | Assume HTTP/2 for any `https:` Bee API URL when `nextHopProtocol` is hidden (requires `Timing-Allow-Origin` on `/chunks` for a definitive `h2` readout). |
 | `NEXT_PUBLIC_PREFER_CHUNK_STREAM=false` | Force HTTP `POST /chunks` even when WebSocket `/chunks/stream` is available. |
+| `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS=32` | Number of parallel `/chunks/stream` WebSockets (1–32). UI can override. ~16 in-flight acks per socket. |
 
 ## Bee gateway API (v2.8.1+)
 

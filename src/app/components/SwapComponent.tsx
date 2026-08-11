@@ -81,7 +81,10 @@ import {
   StampNotReadyError,
   type MultiFileResult,
   type ChunkUploadTransport,
+  type ChunkTransportMode,
+  type ClientSideUploadResult,
 } from './ClientSideUpload';
+import { DEFAULT_CHUNK_STREAM_SOCKETS } from './FastPresignedStamp';
 import {
   extractArchiveToEntries,
   buildSwarmIndexHtml,
@@ -92,6 +95,36 @@ import {
   type NFTCollectionUploadResult,
 } from './NFTCollectionClientSide';
 import { generateAndUpdateNonce, fetchNodeWalletAddress, formatDateEU } from './utils';
+type TransportBenchmarkRun = {
+  transport: ChunkUploadTransport;
+  elapsedMs: number;
+  averageChunksPerSecond: number;
+  retryCount: number;
+  effectiveConcurrency: number;
+  detectedHttpProtocol?: string;
+};
+
+const CHUNK_TRANSPORT_STORAGE_KEY = 'beeport-chunk-transport-mode';
+const CHUNK_STREAM_SOCKETS_STORAGE_KEY = 'beeport-chunk-stream-sockets';
+
+function loadChunkTransportMode(): ChunkTransportMode {
+  if (typeof window === 'undefined') return 'auto';
+  const stored = window.localStorage.getItem(CHUNK_TRANSPORT_STORAGE_KEY);
+  if (stored === 'auto' || stored === 'http' || stored === 'websocket') {
+    return stored;
+  }
+  return 'auto';
+}
+
+function loadStreamSocketCount(): number {
+  if (typeof window === 'undefined') return DEFAULT_CHUNK_STREAM_SOCKETS;
+  const stored = window.localStorage.getItem(CHUNK_STREAM_SOCKETS_STORAGE_KEY);
+  if (stored) {
+    const n = Number.parseInt(stored, 10);
+    if (Number.isFinite(n)) return Math.max(1, Math.min(32, n));
+  }
+  return DEFAULT_CHUNK_STREAM_SOCKETS;
+}
 import { useTokenManagement } from './TokenUtils';
 import { useBeeNodeHealth } from './BeeNodeHealth';
 
@@ -179,6 +212,20 @@ const SwapComponent: React.FC = () => {
   /** Live chunk transport once an upload session opens (`http` or `websocket`). */
   const [chunkUploadTransport, setChunkUploadTransport] =
     useState<ChunkUploadTransport | null>(null);
+  /** User-selected chunk transport (`auto` tries WebSocket first). */
+  const [chunkTransportMode, setChunkTransportMode] =
+    useState<ChunkTransportMode>(() => loadChunkTransportMode());
+  /** Parallel `/chunks/stream` sockets when using WebSocket transport. */
+  const [streamSocketCount, setStreamSocketCount] = useState(() =>
+    loadStreamSocketCount()
+  );
+  /** Live socket count reported once a stream session opens. */
+  const [liveStreamSocketCount, setLiveStreamSocketCount] = useState(0);
+  /** Run HTTP then WebSocket back-to-back and compare wall-clock speed. */
+  const [compareChunkTransports, setCompareChunkTransports] = useState(false);
+  const [transportBenchmarkResults, setTransportBenchmarkResults] = useState<
+    TransportBenchmarkRun[] | null
+  >(null);
   const [showStampList, setShowStampList] = useState(false);
 
   // Upload-mode toggles brought back from 1.1.x but reimplemented over the
@@ -257,9 +304,48 @@ const SwapComponent: React.FC = () => {
     uploadStep === 'ready' || uploadStep === 'uploading'
   );
 
-  const handleUploadTransport = useCallback((transport: ChunkUploadTransport) => {
-    setChunkUploadTransport(transport);
-  }, []);
+  const handleUploadTransport = useCallback(
+    (transport: ChunkUploadTransport, info?: { streamSocketCount: number }) => {
+      setChunkUploadTransport(transport);
+      setLiveStreamSocketCount(
+        transport === 'websocket' ? (info?.streamSocketCount ?? 0) : 0
+      );
+    },
+    []
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(CHUNK_TRANSPORT_STORAGE_KEY, chunkTransportMode);
+  }, [chunkTransportMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      CHUNK_STREAM_SOCKETS_STORAGE_KEY,
+      String(streamSocketCount)
+    );
+  }, [streamSocketCount]);
+
+  const handleChunkTransportModeChange = (mode: ChunkTransportMode) => {
+    setChunkTransportMode(mode);
+    if (mode !== 'auto') {
+      setCompareChunkTransports(false);
+    }
+  };
+
+  const handleStreamSocketCountChange = (raw: string) => {
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return;
+    setStreamSocketCount(Math.max(1, Math.min(32, n)));
+  };
+
+  const toBenchmarkRun = (result: ClientSideUploadResult): TransportBenchmarkRun => ({
+    transport: result.uploadTransport ?? 'http',
+    elapsedMs: result.elapsedMs,
+    averageChunksPerSecond: result.averageChunksPerSecond,
+    retryCount: result.retryCount,
+    effectiveConcurrency: result.effectiveConcurrency,
+    detectedHttpProtocol: result.detectedHttpProtocol,
+  });
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -1310,6 +1396,8 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
     setChunkUploadTransport(null);
+    setLiveStreamSocketCount(0);
+    setTransportBenchmarkResults(null);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setStatusMessage({ step: 'Uploading', message: 'Preparing upload…' });
@@ -1382,24 +1470,77 @@ const SwapComponent: React.FC = () => {
       });
       setIsDistributing(false);
 
-      const result = await uploadFileClientSide({
+      const uploadParamsBase = {
         file,
         batchId: batchIdHex,
         hotKey: derived,
         depth: depthForUpload,
         beeApiUrl,
-        // Self-custody v1: every upload is a single file. The Mantaray manifest
-        // built by `uploadFileClientSide` exposes the file name as default; if
-        // the file is HTML the gateway will serve it as a webpage.
         isWebsite: false,
-        onProgress: (processed, total) => {
-          const pct = Math.min(99, Math.round((processed / Math.max(total, 1)) * 100));
-          setUploadProgress(pct);
-          if (pct >= 99) setIsDistributing(true);
-        },
-        onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
-      });
+        streamSocketCount,
+      };
+
+      let result: ClientSideUploadResult;
+
+      if (compareChunkTransports) {
+        setStatusMessage({
+          step: 'Uploading',
+          message: 'Benchmark 1/2 — uploading via HTTP POST /chunks…',
+        });
+
+        const httpResult = await uploadFileClientSide({
+          ...uploadParamsBase,
+          chunkTransport: 'http',
+          onProgress: (processed, total) => {
+            const pct = Math.min(45, Math.round((processed / Math.max(total, 1)) * 45));
+            setUploadProgress(pct);
+          },
+          onStatus: msg =>
+            setStatusMessage({
+              step: 'Uploading',
+              message: `Benchmark 1/2 (HTTP): ${msg}`,
+            }),
+        });
+
+        setChunkUploadTransport(null);
+        setStatusMessage({
+          step: 'Uploading',
+          message: 'Benchmark 2/2 — uploading via WebSocket stream…',
+        });
+
+        const wsResult = await uploadFileClientSide({
+          ...uploadParamsBase,
+          chunkTransport: 'websocket',
+          skipChunkDedup: true,
+          onProgress: (processed, total) => {
+            const pct = 45 + Math.min(54, Math.round((processed / Math.max(total, 1)) * 54));
+            setUploadProgress(pct);
+            if (pct >= 99) setIsDistributing(true);
+          },
+          onStatus: msg =>
+            setStatusMessage({
+              step: 'Uploading',
+              message: `Benchmark 2/2 (WebSocket): ${msg}`,
+            }),
+        });
+
+        const benchmarkRuns = [toBenchmarkRun(httpResult), toBenchmarkRun(wsResult)];
+        setTransportBenchmarkResults(benchmarkRuns);
+        result = wsResult;
+        console.log('📊 Chunk transport benchmark', benchmarkRuns);
+      } else {
+        result = await uploadFileClientSide({
+          ...uploadParamsBase,
+          chunkTransport: chunkTransportMode,
+          onProgress: (processed, total) => {
+            const pct = Math.min(99, Math.round((processed / Math.max(total, 1)) * 100));
+            setUploadProgress(pct);
+            if (pct >= 99) setIsDistributing(true);
+          },
+          onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
+        });
+      }
 
       setUploadProgress(100);
       const refHex = result.reference.startsWith('0x')
@@ -1674,6 +1815,7 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
     setChunkUploadTransport(null);
+    setLiveStreamSocketCount(0);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setMultiFileResults([]);
@@ -1714,6 +1856,8 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
+        chunkTransport: chunkTransportMode,
+        streamSocketCount,
       });
 
       setMultiFileResults(result.results);
@@ -1793,6 +1937,7 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
     setChunkUploadTransport(null);
+    setLiveStreamSocketCount(0);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setStatusMessage({ step: 'Uploading', message: 'Preparing collection upload…' });
@@ -1839,6 +1984,8 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
+        chunkTransport: chunkTransportMode,
+        streamSocketCount,
       });
 
       setUploadProgress(100);
@@ -1931,6 +2078,7 @@ const SwapComponent: React.FC = () => {
     setShowOverlay(true);
     setUploadStep('uploading');
     setChunkUploadTransport(null);
+    setLiveStreamSocketCount(0);
     setIsNewStampCreated(false);
     setUploadProgress(0);
     setNftCollectionResult(null);
@@ -1962,6 +2110,8 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
+        chunkTransport: chunkTransportMode,
+        streamSocketCount,
       });
 
       setNftCollectionResult(result);
@@ -2668,12 +2818,12 @@ const SwapComponent: React.FC = () => {
                             }`}
                             title={
                               chunkUploadTransport === 'websocket'
-                                ? 'Chunks upload over wss://…/chunks/stream (Bee 2.8.1+).'
+                                ? `Chunks upload over ${liveStreamSocketCount || streamSocketCount} parallel wss://…/chunks/stream connection(s) (Bee 2.8.1+).`
                                 : 'Chunks upload via parallel HTTP POST /chunks (WebSocket unavailable or disabled).'
                             }
                           >
                             {chunkUploadTransport === 'websocket'
-                              ? 'WebSocket stream'
+                              ? `WebSocket ×${liveStreamSocketCount || streamSocketCount}`
                               : 'HTTP chunks'}
                           </span>
                         ) : (
@@ -2857,6 +3007,78 @@ const SwapComponent: React.FC = () => {
                       >
                         Multiple files in a folder (one hash, served as a website)
                       </label>
+                    </div>
+
+                    <div className={styles.transportSelector}>
+                      <span className={styles.transportSelectorLabel}>Chunk transport</span>
+                      <div className={styles.transportSelectorOptions}>
+                        {(
+                          [
+                            ['auto', 'Auto (WebSocket if available)'],
+                            ['websocket', 'WebSocket stream'],
+                            ['http', 'HTTP POST /chunks'],
+                          ] as const
+                        ).map(([mode, label]) => (
+                          <label
+                            key={mode}
+                            className={`${styles.transportOption} ${
+                              chunkTransportMode === mode ? styles.transportOptionActive : ''
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="chunk-transport"
+                              value={mode}
+                              checked={chunkTransportMode === mode}
+                              onChange={() => handleChunkTransportModeChange(mode)}
+                              disabled={
+                                uploadStep === 'uploading' ||
+                                (compareChunkTransports && mode !== 'auto')
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      {chunkTransportMode !== 'http' && (
+                        <label className={styles.streamSocketRow}>
+                          <span>Stream sockets</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={32}
+                            value={streamSocketCount}
+                            onChange={e => handleStreamSocketCountChange(e.target.value)}
+                            disabled={uploadStep === 'uploading'}
+                            className={styles.streamSocketInput}
+                            title="Number of parallel WebSocket /chunks/stream connections to the same Bee node. Start at 8; raise toward 16–32 if it scales."
+                          />
+                        </label>
+                      )}
+                      {!isMultipleFiles && !isFolderUpload && !isNFTCollection && (
+                        <div className={styles.checkboxWrapper}>
+                          <input
+                            type="checkbox"
+                            id="compare-chunk-transports"
+                            checked={compareChunkTransports}
+                            onChange={e => {
+                              setCompareChunkTransports(e.target.checked);
+                              if (e.target.checked) {
+                                setChunkTransportMode('auto');
+                              }
+                            }}
+                            className={styles.checkbox}
+                            disabled={uploadStep === 'uploading'}
+                          />
+                          <label
+                            htmlFor="compare-chunk-transports"
+                            className={styles.checkboxLabel}
+                            title="Uploads the same file twice — HTTP first, then WebSocket — and shows side-by-side timing. Uses extra postage slots on the second run."
+                          >
+                            Compare HTTP vs WebSocket (same file, 2× upload)
+                          </label>
+                        </div>
+                      )}
                     </div>
 
                     <div className={styles.fileInputWrapper}>
@@ -3088,6 +3310,48 @@ const SwapComponent: React.FC = () => {
                       ? 'NFT Collection Uploaded Successfully!'
                       : 'Upload Successful!'}
                 </h3>
+
+                {transportBenchmarkResults && transportBenchmarkResults.length === 2 && (
+                  <div className={styles.transportBenchmark}>
+                    <h4 className={styles.transportBenchmarkTitle}>Transport benchmark</h4>
+                    <table className={styles.transportBenchmarkTable}>
+                      <thead>
+                        <tr>
+                          <th>Transport</th>
+                          <th>Time</th>
+                          <th>Chunks/s</th>
+                          <th>Retries</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transportBenchmarkResults.map(run => {
+                          const fastest = transportBenchmarkResults.reduce((a, b) =>
+                            a.elapsedMs <= b.elapsedMs ? a : b
+                          );
+                          const isFastest = run.transport === fastest.transport;
+                          return (
+                            <tr
+                              key={run.transport}
+                              className={isFastest ? styles.transportBenchmarkWinner : undefined}
+                            >
+                              <td>
+                                {run.transport === 'websocket' ? 'WebSocket stream' : 'HTTP POST'}
+                                {isFastest ? ' ✓' : ''}
+                              </td>
+                              <td>{(run.elapsedMs / 1000).toFixed(2)}s</td>
+                              <td>{run.averageChunksPerSecond.toFixed(1)}</td>
+                              <td>{run.retryCount}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <p className={styles.transportBenchmarkNote}>
+                      Second run re-uploaded all chunks (dedup skipped) so network timing is
+                      comparable. Both runs include local BMT hashing and stamping.
+                    </p>
+                  </div>
+                )}
 
                 {/* Multi-file: list each file with its own reference. */}
                 {multiFileResults.length > 0 ? (

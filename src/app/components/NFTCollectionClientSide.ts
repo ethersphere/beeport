@@ -31,9 +31,10 @@
 import JSZip from 'jszip';
 import {
   uploadFilesAsCollectionClientSide,
-  type ChunkUploadTransport,
+  type ChunkTransportMode,
   type CollectionEntry,
   type CollectionUploadResult,
+  type UploadTransportListener,
 } from './ClientSideUpload';
 import type { DerivedHotKey } from './ClientStamping';
 
@@ -54,7 +55,9 @@ export interface NFTCollectionUploadParams {
   onProgress?: (percent: number, stage: string) => void;
   /** Optional status string callback for the UI. */
   onStatus?: (message: string) => void;
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  chunkTransport?: ChunkTransportMode;
+  streamSocketCount?: number;
   /** Optional abort signal. */
   abortSignal?: AbortSignal;
 }
@@ -85,6 +88,8 @@ export async function processNFTCollectionClientSide(
     onProgress,
     onStatus,
     onUploadTransport,
+    chunkTransport,
+    streamSocketCount,
     abortSignal,
   } = params;
 
@@ -151,6 +156,8 @@ export async function processNFTCollectionClientSide(
     },
     onStatus,
     onUploadTransport,
+    chunkTransport,
+    streamSocketCount,
     abortSignal,
   });
 
@@ -218,6 +225,8 @@ export async function processNFTCollectionClientSide(
     },
     onStatus,
     onUploadTransport,
+    chunkTransport,
+    streamSocketCount,
     abortSignal,
   });
 

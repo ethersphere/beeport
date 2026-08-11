@@ -46,9 +46,15 @@ import {
   createPresignedStamper,
   PresignedChunkUploadSession,
   uploadChunkPresignedFetch,
+  STREAM_IN_FLIGHT_PER_SOCKET,
   type StampSignerPool,
   type ChunkUploadTransport,
 } from './FastPresignedStamp';
+
+export type UploadTransportListener = (
+  transport: ChunkUploadTransport,
+  info?: { streamSocketCount: number }
+) => void;
 import { DEFAULT_BEE_API_URL } from './constants';
 import { saveIssuerStateToSOC } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
@@ -233,6 +239,9 @@ const STAMP_WARN_UTILIZATION = 0.8;
 
 export type { ChunkUploadTransport };
 
+/** How to reach the Bee gateway for chunk uploads. */
+export type ChunkTransportMode = 'auto' | 'http' | 'websocket';
+
 export interface ClientSideUploadParams {
   file: File;
   /** 32-byte hex (with or without 0x) batch id, on-chain owner = hot key. */
@@ -250,7 +259,22 @@ export interface ClientSideUploadParams {
   /** Optional status string callback for the UI. */
   onStatus?: (message: string) => void;
   /** Fired once chunk transport is chosen (WebSocket stream or HTTP POST). */
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  /**
+   * Chunk transport selection. Default `auto` tries WebSocket first (Bee 2.8.1+),
+   * falling back to parallel HTTP POST /chunks.
+   */
+  chunkTransport?: ChunkTransportMode;
+  /**
+   * Parallel `/chunks/stream` WebSockets when using the stream transport.
+   * Default 8 (or `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS`).
+   */
+  streamSocketCount?: number;
+  /**
+   * Re-upload every chunk even if this browser already stamped it for the batch.
+   * Benchmark-only — burns postage slots but gives a fair transport comparison.
+   */
+  skipChunkDedup?: boolean;
   /** Optional concurrency override. */
   concurrency?: number;
   /** Optional abort signal. */
@@ -353,6 +377,9 @@ export async function uploadFileClientSide(
     onProgress,
     onStatus,
     onUploadTransport,
+    chunkTransport = 'auto',
+    streamSocketCount,
+    skipChunkDedup = false,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -501,7 +528,9 @@ export async function uploadFileClientSide(
   // cache; the IndexedDB `stampedAddrs` store is the durable write-side.
   // Successful uploads append via {@link StampedAddrWriteBatcher} so we batch
   // many chunk addresses into one transaction instead of one `put` per chunk.
+  mark('loading stamped-address dedup set');
   const stampedAddrs = await loadStampedAddresses(cleanBatchId);
+  mark('dedup set loaded', { entries: stampedAddrs.size });
   const addrBatcher = new StampedAddrWriteBatcher(cleanBatchId);
   let dedupSkipCount = 0;
 
@@ -552,7 +581,7 @@ export async function uploadFileClientSide(
     // its end). Counts toward `chunksUploaded` so the progress bar still
     // advances normally.
     const addrHex = chunkAddressHex(chunk.hash());
-    if (stampedAddrs.has(addrHex)) {
+    if (!skipChunkDedup && stampedAddrs.has(addrHex)) {
       chunksUploaded++;
       dedupSkipCount++;
       progressOut?.(chunksUploaded, totalChunksApprox);
@@ -709,11 +738,38 @@ export async function uploadFileClientSide(
       mark('readiness probe accepted');
     }
 
-    uploadSession = await PresignedChunkUploadSession.open(beeApiUrl, { abortSignal });
+    mark('opening chunk transport', {
+      mode: chunkTransport,
+      streamSockets: streamSocketCount ?? 'default',
+    });
+    uploadSession = await PresignedChunkUploadSession.open(beeApiUrl, {
+      abortSignal,
+      transportMode: chunkTransport,
+      streamSocketCount,
+    });
     uploadTransport = uploadSession.transport;
-    onUploadTransport?.(uploadTransport);
+    onUploadTransport?.(uploadTransport, {
+      streamSocketCount: uploadSession.streamSocketCount,
+    });
     if (uploadTransport === 'websocket') {
-      mark('using WebSocket /chunks/stream');
+      // Feed the stream pool: outer queue was sized for HTTP (~96/128) and
+      // otherwise starves high socket counts (running=96 while sockets idle).
+      const streamConc = Math.max(queue.concurrency, uploadSession.targetInFlight);
+      if (streamConc > queue.concurrency) {
+        mark('raising queue concurrency for stream pool', {
+          from: queue.concurrency,
+          to: streamConc,
+          sockets: uploadSession.targetStreamSocketCount,
+          perSocket: STREAM_IN_FLIGHT_PER_SOCKET,
+        });
+        queue.concurrency = streamConc;
+        queue.capacity = streamConc * 2;
+      }
+      mark('using WebSocket /chunks/stream', {
+        liveSockets: uploadSession.streamSocketCount,
+        targetSockets: uploadSession.targetStreamSocketCount,
+        queueConc: queue.concurrency,
+      });
     }
 
     bmtClient = await BmtWorkerClient.open();
@@ -1571,7 +1627,8 @@ interface UploadCtx {
   bmtClient: BmtWorkerClient | null;
   openBmtClient: () => Promise<void>;
   closeBmtClient: () => void;
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  skipChunkDedup: boolean;
 }
 
 async function createUploadContext(opts: {
@@ -1583,9 +1640,23 @@ async function createUploadContext(opts: {
   abortSignal?: AbortSignal;
   onProgress?: (processed: number, total: number) => void;
   totalChunksApprox: number;
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  chunkTransport?: ChunkTransportMode;
+  streamSocketCount?: number;
+  skipChunkDedup?: boolean;
 }): Promise<UploadCtx> {
-  const { batchId, hotKey, depth, beeApiUrl, concurrency, abortSignal, onProgress } = opts;
+  const {
+    batchId,
+    hotKey,
+    depth,
+    beeApiUrl,
+    concurrency,
+    abortSignal,
+    onProgress,
+    chunkTransport = 'auto',
+    streamSocketCount,
+    skipChunkDedup = false,
+  } = opts;
   const progressOut = throttleUploadProgress(onProgress);
 
   if (!batchId) throw new Error('No batchId provided');
@@ -1646,6 +1717,7 @@ async function createUploadContext(opts: {
     openBmtClient: async () => {},
     closeBmtClient: () => {},
     onUploadTransport: opts.onUploadTransport,
+    skipChunkDedup,
   };
 
   ctx.closeUploadSession = () => {
@@ -1656,8 +1728,26 @@ async function createUploadContext(opts: {
     if (ctx.uploadSession) return;
     ctx.uploadSession = await PresignedChunkUploadSession.open(ctx.beeApiUrl, {
       abortSignal: ctx.abortSignal,
+      transportMode: chunkTransport,
+      streamSocketCount,
     });
-    ctx.onUploadTransport?.(ctx.uploadSession.transport);
+    if (ctx.uploadSession.transport === 'websocket') {
+      const streamConc = Math.max(
+        ctx.queue.concurrency,
+        ctx.uploadSession.targetInFlight
+      );
+      if (streamConc > ctx.queue.concurrency) {
+        console.info(
+          `[ClientSideUpload] stream queue concurrency ${ctx.queue.concurrency} → ${streamConc} ` +
+            `(${ctx.uploadSession.targetStreamSocketCount} sockets × ${STREAM_IN_FLIGHT_PER_SOCKET})`
+        );
+        ctx.queue.concurrency = streamConc;
+        ctx.queue.capacity = streamConc * 2;
+      }
+    }
+    ctx.onUploadTransport?.(ctx.uploadSession.transport, {
+      streamSocketCount: ctx.uploadSession.streamSocketCount,
+    });
   };
   ctx.openBmtClient = async () => {
     if (ctx.bmtClient) return;
@@ -1729,7 +1819,7 @@ async function createUploadContext(opts: {
     // for nothing — Bee dedups by chunk hash on its end. Counts toward
     // `chunksUploaded` so progress still advances normally.
     const addrHex = chunkAddressHex(chunk.hash());
-    if (ctx.stampedAddrs.has(addrHex)) {
+    if (!ctx.skipChunkDedup && ctx.stampedAddrs.has(addrHex)) {
       ctx.chunksUploaded++;
       ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
       return;
@@ -1940,7 +2030,9 @@ export interface MultiFileUploadParams {
     fileProgress: { processed: number; total: number }
   ) => void;
   onStatus?: (message: string) => void;
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  chunkTransport?: ChunkTransportMode;
+  streamSocketCount?: number;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -1988,6 +2080,8 @@ export async function uploadMultipleFilesClientSide(
     onProgress,
     onStatus,
     onUploadTransport,
+    chunkTransport = 'auto',
+    streamSocketCount,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -2005,6 +2099,8 @@ export async function uploadMultipleFilesClientSide(
     onProgress: undefined,
     totalChunksApprox: approxChunkCount(totalBytes),
     onUploadTransport,
+    chunkTransport,
+    streamSocketCount,
   });
 
   try {
@@ -2130,7 +2226,9 @@ export interface CollectionUploadParams {
   };
   onProgress?: (processed: number, total: number) => void;
   onStatus?: (message: string) => void;
-  onUploadTransport?: (transport: ChunkUploadTransport) => void;
+  onUploadTransport?: UploadTransportListener;
+  chunkTransport?: ChunkTransportMode;
+  streamSocketCount?: number;
   concurrency?: number;
   abortSignal?: AbortSignal;
 }
@@ -2164,6 +2262,8 @@ export async function uploadFilesAsCollectionClientSide(
     onProgress,
     onStatus,
     onUploadTransport,
+    chunkTransport = 'auto',
+    streamSocketCount,
     concurrency = DEFAULT_CONCURRENCY,
     abortSignal,
   } = params;
@@ -2193,6 +2293,8 @@ export async function uploadFilesAsCollectionClientSide(
     onProgress,
     totalChunksApprox: approxChunkCount(totalBytes),
     onUploadTransport,
+    chunkTransport,
+    streamSocketCount,
   });
 
   try {
