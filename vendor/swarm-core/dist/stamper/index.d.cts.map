@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/stamper/index.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,eAAe,EACf,sBAAsB,EACtB,iCAAiC,EACjC,wBAAwB,EACxB,aAAa,GACd,MAAM,eAAe,CAAA;AACtB,OAAO,EAAE,+BAA+B,EAAE,YAAY,EAAE,MAAM,cAAc,CAAA;AAC5E,YAAY,EAAE,QAAQ,EAAE,mBAAmB,EAAE,MAAM,cAAc,CAAA;AACjE,OAAO,EAAE,KAAK,EAAE,OAAO,EAAE,MAAM,cAAc,CAAA"}

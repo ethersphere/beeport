@@ -46,6 +46,8 @@ next-env.d.ts
 cache/
 artifacts/
 dist/
+!vendor/swarm-core/dist/
+!vendor/swarm-core/dist/**
 misc/registry_data_2.json
 
 # test site

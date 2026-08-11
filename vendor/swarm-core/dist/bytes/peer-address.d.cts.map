@@ -1,0 +1,1 @@
+{"version":3,"file":"peer-address.d.ts","sourceRoot":"","sources":["../../src/bytes/peer-address.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,KAAK,EAAE,MAAM,YAAY,CAAA;AAElC;;GAEG;AACH,qBAAa,WAAY,SAAQ,KAAK;IACpC,MAAM,CAAC,QAAQ,CAAC,MAAM,MAAK;IAE3B,YAAY,KAAK,EAAE,UAAU,GAAG,MAAM,GAAG,KAAK,EAE7C;CACF"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"eth-address.d.ts","sourceRoot":"","sources":["../../src/bytes/eth-address.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,KAAK,EAAE,MAAM,YAAY,CAAA;AAElC;;GAEG;AACH,qBAAa,UAAW,SAAQ,KAAK;IACnC,MAAM,CAAC,QAAQ,CAAC,MAAM,MAAK;IAE3B,YAAY,KAAK,EAAE,UAAU,GAAG,MAAM,GAAG,KAAK,EAE7C;IAED;;OAEG;IACI,UAAU,IAAI,MAAM,CAE1B;CACF"}
