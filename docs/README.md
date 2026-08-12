@@ -39,10 +39,6 @@ Documentation for uploading to Swarm with **Beeport** (self-custody: your browse
 - [Client-side postage stamping](./swip-XXXX-client-side-postage-stamping.md) — pattern Beeport ships today (mode α)
 - [Streamed postage stamp signing](./swip-XXXX-streamed-postage-stamp-signing.md) — gateway-assisted signing (not implemented here)
 
-## Developer / ops
-
-- [Testing expiry migration](./testing-expiry-migration.md) — upload-history expiry date migration QA
-
 ## Quick start
 
 1. Connect an EVM wallet (any chain; bridge to xBZZ on Gnosis via LI.FI when buying storage).
