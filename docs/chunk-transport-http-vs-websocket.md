@@ -2,7 +2,7 @@
 
 How Beeport sends **presigned CAC chunks** to a Bee gateway, why both transports exist, how **Auto** chooses between them, and what we measured on `beeport.xyz`.
 
-Related code: `FastPresignedStamp.ts` (`PresignedChunkUploadSession`, `PresignedChunkStreamPool`), `ClientSideUpload.ts` (`resolveSessionTransportMode`), upload UI in `SwapComponent.tsx`.
+Related code: `FastPresignedStamp.ts` (`PresignedChunkUploadSession`, `PresignedChunkStreamPool`), `ClientSideUpload.ts` (`resolveSessionTransportMode`). The upload UI always uses **Auto** (no manual HTTP/WS switch); the live badge during upload still shows which transport was chosen.
 
 ## Summary
 
@@ -80,25 +80,16 @@ Empirical A/B on `beeport.xyz` (same app build, transport forced in the UI):
 Default cutover: **50 MB** (`AUTO_CHUNK_STREAM_MIN_BYTES` / `NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB`).
 
 ```text
-Auto + size < 50 MB  →  force HTTP
-Auto + size ≥ 50 MB  →  try WebSocket pool, fall back to HTTP if connect fails
-UI “HTTP” / “WebSocket”  →  force that transport (WebSocket errors if unavailable)
+size < 50 MB  →  HTTP
+size ≥ 50 MB  →  try WebSocket pool, fall back to HTTP if connect fails
+NEXT_PUBLIC_PREFER_CHUNK_STREAM=false  →  HTTP for all sizes
 ```
 
 Multi-file / folder / NFT collection Auto decisions use **total payload bytes** for that upload session.
 
 ## Configuration
 
-### Upload UI (`SwapComponent`)
-
-| Control | Effect |
-| ------- | ------ |
-| **Auto (HTTP if small, WebSocket if ≥50MB)** | Size-based selection above |
-| **WebSocket stream** | Always open the stream pool (needs Bee ≥ 2.8.1) |
-| **HTTP POST /chunks** | Always parallel HTTP |
-| **Stream sockets** (1–32) | Pool size when stream is used; persisted in `localStorage` |
-
-Live badge shows `HTTP chunks` or `WebSocket ×N` once the session opens.
+The upload UI always uses Auto. A live badge shows `HTTP chunks` or `WebSocket ×N` once the session opens.
 
 ### Environment
 
@@ -106,7 +97,7 @@ Live badge shows `HTTP chunks` or `WebSocket ×N` once the session opens.
 | -------- | ------- | ------ |
 | `NEXT_PUBLIC_PREFER_CHUNK_STREAM` | try stream when Auto/large | Set `false` to disable stream globally (HTTP only) |
 | `NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB` | `50` | Auto: stream only if payload ≥ this many MB |
-| `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` | `32` | Default pool size (UI can override 1–32) |
+| `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` | `32` | Stream pool size |
 | `NEXT_PUBLIC_ASSUME_HTTP2_UPLOAD` | host-dependent | Ramp HTTP concurrency when `nextHopProtocol` is hidden |
 
 ### Code constants (`FastPresignedStamp.ts` / `ClientSideUpload.ts`)

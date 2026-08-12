@@ -13,31 +13,31 @@ const erasureCodingOptions: DropdownOption[] = [
     value: 0,
     label: 'None (Default)',
     icon: '🔓',
-    description: 'No erasure coding — standard storage',
+    description: 'No erasure coding - standard storage',
   },
   {
     value: 1,
     label: 'Medium',
     icon: '🛡️',
-    description: 'Basic protection — ~8% more storage (large files)',
+    description: 'Basic protection - ~25% more storage',
   },
   {
     value: 2,
     label: 'Strong',
     icon: '🔒',
-    description: 'Enhanced protection — ~20% more storage',
+    description: 'Enhanced protection - ~50% more storage',
   },
   {
     value: 3,
     label: 'Insane',
     icon: '🔐',
-    description: 'High protection — ~32% more storage',
+    description: 'High protection - ~100% more storage',
   },
   {
     value: 4,
     label: 'Paranoid',
     icon: '🏰',
-    description: 'Maximum protection — ~237% more storage',
+    description: 'Maximum protection - ~200% more storage',
   },
 ];
 

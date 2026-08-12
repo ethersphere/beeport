@@ -43,7 +43,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
   // Find selected option
   const selectedOption = options.find(option => option.value === selectedValue);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside (capture so we run before overlay handlers)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -52,13 +52,14 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside, true);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, []);
 
-  const toggleDropdown = () => {
+  const toggleDropdown = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!disabled && !isLoading && options.length > 0) {
       setIsOpen(!isOpen);
       if (!isOpen) {
@@ -67,7 +68,8 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
     }
   };
 
-  const handleOptionSelect = (value: string | number) => {
+  const handleOptionSelect = (value: string | number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     onSelect(value);
     setIsOpen(false);
     setSearchTerm('');
@@ -103,7 +105,12 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
   };
 
   return (
-    <div className={`${styles.dropdownContainer} ${className}`} ref={dropdownRef}>
+    <div
+      className={`${styles.dropdownContainer} ${className}`}
+      ref={dropdownRef}
+      onClick={e => e.stopPropagation()}
+      onMouseDown={e => e.stopPropagation()}
+    >
       <div
         className={`${styles.dropdownButton} ${isOpen ? styles.open : ''} ${
           !disabled && !isLoading && options.length > 0 ? styles.clickable : ''
@@ -139,7 +146,7 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
                   className={`${styles.option} ${
                     option.value === selectedValue ? styles.selected : ''
                   }`}
-                  onClick={() => handleOptionSelect(option.value)}
+                  onClick={e => handleOptionSelect(option.value, e)}
                 >
                   {showIcons && option.icon && (
                     <span className={styles.optionIcon}>{option.icon}</span>

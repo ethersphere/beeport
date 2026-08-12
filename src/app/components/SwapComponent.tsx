@@ -81,9 +81,7 @@ import {
   StampNotReadyError,
   type MultiFileResult,
   type ChunkUploadTransport,
-  type ChunkTransportMode,
 } from './ClientSideUpload';
-import { DEFAULT_CHUNK_STREAM_SOCKETS } from './FastPresignedStamp';
 import {
   extractArchiveToEntries,
   buildSwarmIndexHtml,
@@ -94,28 +92,6 @@ import {
   type NFTCollectionUploadResult,
 } from './NFTCollectionClientSide';
 import { generateAndUpdateNonce, fetchNodeWalletAddress, formatDateEU } from './utils';
-
-const CHUNK_TRANSPORT_STORAGE_KEY = 'beeport-chunk-transport-mode';
-const CHUNK_STREAM_SOCKETS_STORAGE_KEY = 'beeport-chunk-stream-sockets';
-
-function loadChunkTransportMode(): ChunkTransportMode {
-  if (typeof window === 'undefined') return 'auto';
-  const stored = window.localStorage.getItem(CHUNK_TRANSPORT_STORAGE_KEY);
-  if (stored === 'auto' || stored === 'http' || stored === 'websocket') {
-    return stored;
-  }
-  return 'auto';
-}
-
-function loadStreamSocketCount(): number {
-  if (typeof window === 'undefined') return DEFAULT_CHUNK_STREAM_SOCKETS;
-  const stored = window.localStorage.getItem(CHUNK_STREAM_SOCKETS_STORAGE_KEY);
-  if (stored) {
-    const n = Number.parseInt(stored, 10);
-    if (Number.isFinite(n)) return Math.max(1, Math.min(32, n));
-  }
-  return DEFAULT_CHUNK_STREAM_SOCKETS;
-}
 import { useTokenManagement } from './TokenUtils';
 import { useBeeNodeHealth } from './BeeNodeHealth';
 
@@ -210,13 +186,6 @@ const SwapComponent: React.FC = () => {
   /** Live chunk transport once an upload session opens (`http` or `websocket`). */
   const [chunkUploadTransport, setChunkUploadTransport] =
     useState<ChunkUploadTransport | null>(null);
-  /** User-selected chunk transport (`auto` tries WebSocket first). */
-  const [chunkTransportMode, setChunkTransportMode] =
-    useState<ChunkTransportMode>(() => loadChunkTransportMode());
-  /** Parallel `/chunks/stream` sockets when using WebSocket transport. */
-  const [streamSocketCount, setStreamSocketCount] = useState(() =>
-    loadStreamSocketCount()
-  );
   /** Live socket count reported once a stream session opens. */
   const [liveStreamSocketCount, setLiveStreamSocketCount] = useState(0);
   /** Client-side Swarm erasure coding level (0=none … 4=paranoid). */
@@ -308,27 +277,6 @@ const SwapComponent: React.FC = () => {
     },
     []
   );
-
-  useEffect(() => {
-    window.localStorage.setItem(CHUNK_TRANSPORT_STORAGE_KEY, chunkTransportMode);
-  }, [chunkTransportMode]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      CHUNK_STREAM_SOCKETS_STORAGE_KEY,
-      String(streamSocketCount)
-    );
-  }, [streamSocketCount]);
-
-  const handleChunkTransportModeChange = (mode: ChunkTransportMode) => {
-    setChunkTransportMode(mode);
-  };
-
-  const handleStreamSocketCountChange = (raw: string) => {
-    const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n)) return;
-    setStreamSocketCount(Math.max(1, Math.min(32, n)));
-  };
 
   const [swarmConfig, setSwarmConfig] = useState(DEFAULT_SWARM_CONFIG);
 
@@ -1427,13 +1375,11 @@ const SwapComponent: React.FC = () => {
         beeApiUrl,
         isWebsite: false,
         onUploadTransport: handleUploadTransport,
-        streamSocketCount,
         redundancyLevel,
       };
 
       const result = await uploadFileClientSide({
         ...uploadParamsBase,
-        chunkTransport: chunkTransportMode,
         onProgress: (processed, total) => {
           const pct = Math.min(99, Math.round((processed / Math.max(total, 1)) * 100));
           setUploadProgress(pct);
@@ -1758,8 +1704,6 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
-        chunkTransport: chunkTransportMode,
-        streamSocketCount,
         redundancyLevel,
       });
 
@@ -1896,8 +1840,6 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
-        chunkTransport: chunkTransportMode,
-        streamSocketCount,
         redundancyLevel,
       });
 
@@ -2024,8 +1966,6 @@ const SwapComponent: React.FC = () => {
         },
         onStatus: msg => setStatusMessage({ step: 'Uploading', message: msg }),
         onUploadTransport: handleUploadTransport,
-        chunkTransport: chunkTransportMode,
-        streamSocketCount,
         redundancyLevel,
       });
 
@@ -2637,7 +2577,16 @@ const SwapComponent: React.FC = () => {
           Upload / History / Help during a long upload unmounted the UI while
           chunk POSTs continued in the background. */}
       {(isLoading || (showOverlay && uploadStep !== 'idle')) && (
-        <div className={styles.overlay} onClick={dismissStatusOverlay}>
+        <div
+          className={styles.overlay}
+          onClick={() => {
+            // During file pick / upload, only the × button dismisses — clicking the
+            // dimmed backdrop (e.g. to close the erasure-coding menu) must not
+            // dump the user back to the home screen.
+            if (uploadStep === 'ready' || uploadStep === 'uploading') return;
+            dismissStatusOverlay();
+          }}
+        >
           <div
             className={`${styles.statusBox} ${statusMessage.isSuccess ? styles.success : ''}`}
             onClick={e => e.stopPropagation()}
@@ -2735,12 +2684,12 @@ const SwapComponent: React.FC = () => {
                             }`}
                             title={
                               chunkUploadTransport === 'websocket'
-                                ? `Chunks upload over ${liveStreamSocketCount || streamSocketCount} parallel wss://…/chunks/stream connection(s) (Bee 2.8.1+).`
-                                : 'Chunks upload via parallel HTTP POST /chunks (WebSocket unavailable or disabled).'
+                                ? `Chunks upload over ${liveStreamSocketCount || 'several'} parallel wss://…/chunks/stream connection(s) (Bee 2.8.1+). Auto picks WebSocket for larger files.`
+                                : 'Chunks upload via parallel HTTP POST /chunks. Auto picks HTTP for smaller files.'
                             }
                           >
                             {chunkUploadTransport === 'websocket'
-                              ? `WebSocket ×${liveStreamSocketCount || streamSocketCount}`
+                              ? `WebSocket ×${liveStreamSocketCount || '…'}`
                               : 'HTTP chunks'}
                           </span>
                         ) : (
@@ -2927,73 +2876,6 @@ const SwapComponent: React.FC = () => {
                       </label>
                     </div>
 
-                    <div className={styles.transportSelector}>
-                      <span className={styles.transportSelectorLabel}>Chunk transport</span>
-                      <div className={styles.transportSelectorOptions}>
-                        {(
-                          [
-                            ['auto', 'Auto (HTTP if small, WebSocket if ≥50MB)'],
-                            ['websocket', 'WebSocket stream'],
-                            ['http', 'HTTP POST /chunks'],
-                          ] as const
-                        ).map(([mode, label]) => (
-                          <label
-                            key={mode}
-                            className={`${styles.transportOption} ${
-                              chunkTransportMode === mode ? styles.transportOptionActive : ''
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="chunk-transport"
-                              value={mode}
-                              checked={chunkTransportMode === mode}
-                              onChange={() => handleChunkTransportModeChange(mode)}
-                              disabled={uploadStep === 'uploading'}
-                            />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
-                      {chunkTransportMode !== 'http' && (
-                        <label className={styles.streamSocketRow}>
-                          <span>Stream sockets</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={32}
-                            value={streamSocketCount}
-                            onChange={e => handleStreamSocketCountChange(e.target.value)}
-                            disabled={uploadStep === 'uploading'}
-                            className={styles.streamSocketInput}
-                            title="Number of parallel WebSocket /chunks/stream connections to the same Bee node. Default 32."
-                          />
-                        </label>
-                      )}
-                    </div>
-
-                    {((!isMultipleFiles && selectedFile) ||
-                      (isMultipleFiles && selectedFiles.length > 0) ||
-                      (isFolderUpload && selectedFiles.length > 0) ||
-                      (isNFTCollection && selectedFile)) && (
-                      <div className={styles.dropdownWrapper}>
-                        <label className={styles.dropdownLabel}>
-                          Erasure Coding
-                          <span
-                            className={styles.tooltip}
-                            title="Client-side erasure coding: parity chunks are built in your browser and uploaded with the same HTTP or WebSocket transport. Higher levels use more stamp capacity but tolerate more chunk loss. Downloaders use normal Bee retrieval."
-                          >
-                            ?
-                          </span>
-                        </label>
-                        <ErasureCodingDropdown
-                          selectedLevel={redundancyLevel}
-                          onLevelChange={setRedundancyLevel}
-                          disabled={uploadStep === 'uploading'}
-                        />
-                      </div>
-                    )}
-
                     <div className={styles.fileInputWrapper}>
                       <input
                         type="file"
@@ -3074,6 +2956,28 @@ const SwapComponent: React.FC = () => {
                             {FILE_SIZE_CONFIG.maximumFileGB}GB. Pick smaller / fewer files.
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {((!isMultipleFiles && selectedFile) ||
+                      (isMultipleFiles && selectedFiles.length > 0) ||
+                      (isFolderUpload && selectedFiles.length > 0) ||
+                      (isNFTCollection && selectedFile)) && (
+                      <div className={styles.dropdownWrapper}>
+                        <label className={styles.dropdownLabel}>
+                          Erasure Coding
+                          <span
+                            className={styles.tooltip}
+                            title="Erasure coding provides data protection against loss. Higher levels use more storage space but offer better protection against chunk unavailability."
+                          >
+                            ?
+                          </span>
+                        </label>
+                        <ErasureCodingDropdown
+                          selectedLevel={redundancyLevel}
+                          onLevelChange={setRedundancyLevel}
+                          disabled={uploadStep === 'uploading'}
+                        />
                       </div>
                     )}
 
