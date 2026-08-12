@@ -293,9 +293,29 @@ state.** Old data stays intact.
    - AES key       = `SHA-256("beeport.issuerState.aes-key.v1" ||
      hotKeyPrivateKey)`. Without the wallet, no decrypting.
 
-   On a different browser, click the gear button on the stamp list. We
-   re-derive the hot key (one wallet signature), download the SOC for
-   each locally-stored batch, decrypt, apply the delta, and write the
+   **Restore is automatic.** Every upload path resolves its starting
+   state through `resolveStamperStateForUpload` (`ClientSideUpload.ts`)
+   before constructing a Stamper:
+
+   - **No local state** (fresh browser/device): the SOC is fetched,
+     decrypted and written into IndexedDB before the first chunk is
+     stamped. If the SOC *read fails* (gateway unreachable), the upload
+     is **aborted** rather than started from blank counters — only a
+     confirmed "no SOC exists" (batch never uploaded to) proceeds blank.
+   - **Local state exists**: a one-chunk probe compares the SOC's
+     `savedAt` against the `beeport.socSavedAt.<batchId>` marker (the
+     newest SOC this browser wrote or absorbed). A newer SOC means
+     another device uploaded since; the remote state is fetched and
+     **merged by element-wise max** of the bucket counters — max covers
+     every slot index either device allocated, so future stamps can't
+     collide with either device's chunks. If the probe itself fails, the
+     upload proceeds on local state (local is authoritative for this
+     browser's own history).
+
+   The gear button on the stamp list does the same restore manually for
+   every batch missing local state — useful to see utilization without
+   starting an upload. Both paths re-derive the hot key from one wallet
+   signature, download the SOC, decrypt, apply the delta, and write the
    reconstructed post-save buckets into IndexedDB. See
    `IssuerStateSOC.ts`.
 
@@ -346,12 +366,20 @@ unavailable. (4) is the worst case.
 
 ### Operational rule of thumb
 
-- **Never switch browser profiles mid-batch.** Pick one browser per batch
-  and stick with it.
+- **Switching browsers/devices between uploads is fine.** The upload
+  path auto-restores (or merges) issuer state from the Swarm SOC, so a
+  batch used on a laptop yesterday works from a desktop today — same
+  wallet, one signature.
+- **Do not upload to the same batch from two devices at the same time.**
+  Slot indices are allocated sequentially per bucket, so two devices
+  stamping concurrently from the same synced state allocate the *same*
+  slots and collide. The post-hoc merge fixes the counters for future
+  uploads but can't un-collide chunks stamped during the overlap.
 - **Do not rely on incognito mode** for the upload step — storage for that profile is wiped on exit.
-- **Backups (option 3) only matter if you plan to keep adding files to
-  this batch** over a long period from multiple devices. For one-shot
-  uploads, no recovery story is needed.
+- **The SOC backup is only seeded by a successful upload.** A batch that
+  has never completed an upload has no SOC yet; losing local state
+  before the first upload completes just means starting from blank
+  counters (which is correct at that point).
 
 The hot key, by contrast, requires no backup at all because it's
 deterministic from the wallet signature (see "How a returning user

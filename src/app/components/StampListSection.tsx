@@ -40,6 +40,7 @@ import {
   computeBucketStatsVisualization,
   clearStamperState,
   clearStampedAddresses,
+  setLastSyncedSocSavedAt,
   BUCKET_HEAT_STRIP_COLS,
   type StampUsageStats,
   type BucketStatsVisualization,
@@ -408,6 +409,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           // while we were waiting.
           if (!(await loadStamperState(ev.batchId))) {
             await saveStamperState(ev.batchId, result.state);
+            // Baseline for the pre-upload staleness probe: local state now
+            // incorporates the SOC written at `savedAt`.
+            setLastSyncedSocSavedAt(ev.batchId, result.savedAt);
             restored++;
           }
         } catch (err) {

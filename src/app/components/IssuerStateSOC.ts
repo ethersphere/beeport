@@ -271,6 +271,50 @@ export async function saveIssuerStateToSOC(params: {
   };
 }
 
+/**
+ * Fetch ONLY the issuer-state SOC chunk and return its embedded `savedAt`
+ * timestamp (unix ms), without downloading or decrypting the state blob.
+ * Returns `null` when no SOC exists for `(hotKey, batchId)`.
+ *
+ * Used as a cheap pre-upload staleness probe: one chunk read tells us
+ * whether another device has written newer issuer state than what this
+ * browser last synced.
+ */
+export async function peekIssuerStateSocSavedAt(params: {
+  bee: Bee;
+  hotKey: DerivedHotKey;
+  batchId: string;
+}): Promise<number | null> {
+  const { bee, hotKey, batchId } = params;
+
+  const cleanBatchId = stripHex(batchId);
+  if (!/^[0-9a-fA-F]{64}$/.test(cleanBatchId)) {
+    throw new Error(`Invalid batchId for SOC peek: ${batchId}`);
+  }
+
+  const ownerAddress = new EthAddress(hotKey.address);
+  const identifierBytes = computeIssuerStateIdentifier(cleanBatchId);
+  const reader = bee.makeSOCReader(ownerAddress);
+  let soc;
+  try {
+    soc = await reader.download(new Identifier(identifierBytes));
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
+
+  const payload = soc.payload.toUint8Array();
+  if (payload.length < SOC_PAYLOAD_HEADER_LEN) {
+    throw new Error(`Issuer-state SOC has truncated header (len=${payload.length})`);
+  }
+  const version = payload[0];
+  if (version !== 1 && version !== 2) {
+    throw new Error(`Issuer-state SOC has unsupported version ${version}`);
+  }
+  const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  return Number(dv.getBigUint64(33, false));
+}
+
 export interface LoadIssuerStateResult {
   /** Reconstructed post-save stamper state (blob state + delta for v2; blob state alone for v1). */
   state: PersistedStamperState;

@@ -207,10 +207,86 @@ export async function clearStamperState(batchId: string): Promise<void> {
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(stamperStorageKey(batchId));
+      localStorage.removeItem(socSyncStorageKey(batchId));
     }
   } catch {
     // ignore
   }
+}
+
+// ─── SOC sync marker ──────────────────────────────────────────────────────────
+//
+// Tracks the `savedAt` of the newest issuer-state SOC that this browser's
+// local state is known to incorporate (either because we wrote that SOC
+// ourselves, or because we restored/merged from it). Before an upload that
+// runs on non-empty local state, the pipeline peeks at the SOC on Swarm: a
+// `savedAt` NEWER than this marker means another device has uploaded to the
+// batch since we last synced, and our counters under-count — see
+// `resolveStamperStateForUpload` in ClientSideUpload.ts.
+//
+// Stored in localStorage (a single small number per batch) rather than IDB:
+// it's written at most once per upload and read once per upload, so none of
+// the quota/latency reasons that moved the bucket counters to IDB apply.
+
+const socSyncStorageKey = (batchId: string) =>
+  `beeport.socSavedAt.${stripHex(batchId).toLowerCase()}`;
+
+/**
+ * `savedAt` (unix ms) of the last issuer-state SOC this browser wrote or
+ * absorbed for `batchId`, or `null` if unknown (never synced, or state
+ * predates this marker).
+ */
+export function getLastSyncedSocSavedAt(batchId: string): number | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(socSyncStorageKey(batchId));
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Record that local state now incorporates the SOC written at `savedAt`. */
+export function setLastSyncedSocSavedAt(batchId: string, savedAt: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(socSyncStorageKey(batchId), String(savedAt));
+  } catch {
+    // ignore — marker is an optimisation; worst case we re-merge next upload
+  }
+}
+
+/**
+ * Merge two stamper states for the same batch by taking the element-wise
+ * MAX of the bucket counters.
+ *
+ * Why max is the correct merge: within a bucket, slot indices are allocated
+ * sequentially from 0, so a counter value `c` means "indices [0, c) are
+ * (possibly) used". Whatever histories produced the two states, every index
+ * either device ever allocated is below its own counter — so `max(a, b)`
+ * covers the union of used indices, and future allocations starting from the
+ * merged counters can never collide with a previously stored chunk. (Any
+ * collisions the two diverged histories already caused are in the past and
+ * not recoverable here.)
+ *
+ * Both states must be at the same depth — caller checks.
+ */
+export function mergeStamperStates(
+  a: PersistedStamperState,
+  b: PersistedStamperState
+): PersistedStamperState {
+  if (a.depth !== b.depth) {
+    throw new Error(
+      `Cannot merge stamper states at different depths (${a.depth} vs ${b.depth})`
+    );
+  }
+  const buckets = new Uint32Array(a.buckets.length);
+  for (let i = 0; i < buckets.length; i++) {
+    buckets[i] = Math.max(a.buckets[i], b.buckets[i]);
+  }
+  return { buckets, depth: a.depth };
 }
 
 // ─── Per-batch chunk-address dedup ────────────────────────────────────────────
