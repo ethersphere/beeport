@@ -106,7 +106,23 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const { TAG, SHA } = process.env
-            await github.rest.git.createRef({ ...context.repo, ref: `refs/tags/${TAG}`, sha: SHA })
-            await github.rest.repos.createRelease({ ...context.repo, tag_name: TAG, name: TAG, generate_release_notes: true })
+            const { owner, repo } = context.repo
+            // Safe to re-run this job if createRelease failed after the tag was created:
+            // an existing tag is accepted only at the approved SHA, and the release is created only if missing.
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${TAG}`, sha: SHA })
+            } catch (e) {
+              if (e.status !== 422) throw e
+              const { data: t } = await github.rest.git.getRef({ owner, repo, ref: `tags/${TAG}` })
+              if (t.object.sha !== SHA) {
+                return core.setFailed(`tag ${TAG} already exists at ${t.object.sha}, not at the approved ${SHA}`)
+              }
+            }
+            try {
+              await github.rest.repos.getReleaseByTag({ owner, repo, tag: TAG })
+            } catch (e) {
+              if (e.status !== 404) throw e
+              await github.rest.repos.createRelease({ owner, repo, tag_name: TAG, name: TAG, generate_release_notes: true })
+            }
             core.summary.addHeading(`Tagged ${TAG} at ${SHA.slice(0, 12)}`)
             await core.summary.write()
