@@ -411,6 +411,18 @@ export function saveSelfCustodyBatch(
 }
 
 /**
+ * True when this browser recorded creating `batchId` (under any wallet).
+ * Used as evidence that a batch with no issuer-state SOC really is unused.
+ */
+export function isBatchCreatedInThisBrowser(batchId: string): boolean {
+  const id = (batchId.startsWith('0x') ? batchId : `0x${batchId}`).toLowerCase();
+  const store = loadStore();
+  return Object.values(store).some(
+    list => Array.isArray(list) && list.some(b => b?.batchId?.toLowerCase() === id)
+  );
+}
+
+/**
  * Return all self-custody batches saved under `walletAddress`, newest first.
  */
 export function getSelfCustodyBatches(walletAddress: string): StoredSelfCustodyBatch[] {

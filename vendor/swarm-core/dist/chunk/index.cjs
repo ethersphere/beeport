@@ -1229,7 +1229,7 @@ var ChunkSplitter = class _ChunkSplitter {
     }
   }
   async elevate(level) {
-    this.counters[level] = (this.counters[level] + 1) % (4096 / this.refSize);
+    this.counters[level] = (this.counters[level] + 1) % this.maxShards; // beeport patch: wrap at batch size (EC maxShards), not 4096/refSize
     if (!this.pending[level]) this.pending[level] = [];
     await this.sealParities(level);
     const originalSpan = this.chunks[level].span;
@@ -1302,6 +1302,15 @@ var ChunkSplitter = class _ChunkSplitter {
       await this.elevate(level + 1);
       await this.flushBatch(level + 1);
       this.chunks[level + 1] = this.chunks[level];
+      // beeport patch: the carried node's pending children (data entries that
+      // still need parity + emission) and parity flag move up with it.
+      this.pendingEntries[level + 1] = [
+        ...this.pendingEntries[level + 1] ?? [],
+        ...this.pendingEntries[level] ?? []
+      ];
+      this.pendingEntries[level] = [];
+      this.hasParity[level + 1] = this.hasParity[level] ?? false;
+      this.hasParity[level] = false;
       return this.finalize(level + 1);
     }
     await this.elevate(level);

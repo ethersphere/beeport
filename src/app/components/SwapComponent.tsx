@@ -73,6 +73,7 @@ import {
   markSelfCustodyBatchToppedUp,
 } from './SelfCustodyBatch';
 import { waitForGatewayBatchSync } from './GatewayChainSync';
+import { fetchBatchFromContract } from './PostageContract';
 import { STAMPS_REGISTRY_V2_ADDRESS, STAMPS_REGISTRY_V2_ABI } from './constants';
 import {
   uploadFileClientSide,
@@ -961,6 +962,11 @@ const SwapComponent: React.FC = () => {
         return;
       }
 
+      if (isTopUp) {
+        // Top-up mode without the original batch info: never buy a new batch.
+        throw new Error('Top-up batch details are not loaded — nothing was charged.');
+      }
+
       // ── New batch path ──────────────────────────────────────────────────────
       const initialBalancePerChunk = BigInt(updatedConfig.swarmBatchInitialBalance);
       const depth = parseInt(updatedConfig.swarmBatchDepth, 10);
@@ -1122,6 +1128,21 @@ const SwapComponent: React.FC = () => {
       return;
     }
 
+    // A top-up must never fall through to the new-batch path. Without the
+    // original batch's depth we cannot price or execute the top-up.
+    if (isTopUp && topUpBatchId && !originalStampInfo) {
+      setStatusMessage({
+        step: 'Error',
+        message: 'Could not load the batch to top up',
+        error:
+          'The batch details are not available yet (gateway and chain lookup failed). ' +
+          'Nothing was charged. Reload the page and try again.',
+        isError: true,
+      });
+      setShowOverlay(true);
+      return;
+    }
+
     // Reset the timer when starting a new transaction
     resetTimer();
 
@@ -1278,8 +1299,31 @@ const SwapComponent: React.FC = () => {
     return getTotalFileSize() > maxSizeBytes;
   };
 
-  const depthForUpload =
-    isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+  /**
+   * Resolve the real depth of the batch an upload targets. The stamper's
+   * maxSlot depends on it, so it must come from the batch itself — never from
+   * leftover top-up state or the buy form. Order: Postage Stamp contract →
+   * locally stored batch entry → top-up info for the same batch → selected
+   * depth (set by the stamp list from the batch's own depth).
+   */
+  const resolveUploadDepth = async (batchIdHex: string): Promise<number> => {
+    const id = batchIdHex.toLowerCase();
+    try {
+      const onChain = await fetchBatchFromContract(getGnosisPublicClient().client as any, id);
+      if (onChain.exists) return onChain.depth;
+    } catch (err) {
+      console.warn('[upload] On-chain depth lookup failed, using local data:', err);
+    }
+    const stored = address
+      ? getSelfCustodyBatches(address).find(b => b.batchId.toLowerCase() === id)
+      : undefined;
+    if (stored) return stored.depth;
+    const topUpId = topUpBatchId?.toLowerCase();
+    if (isTopUp && originalStampInfo && topUpId && (topUpId === id || `0x${topUpId}` === id)) {
+      return originalStampInfo.depth;
+    }
+    return selectedDepth;
+  };
 
   /**
    * Self-custody upload path (SWIP §Client-side stamping, mode α).
@@ -1305,9 +1349,7 @@ const SwapComponent: React.FC = () => {
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
-      const depthForUpload = isTopUp && originalStampInfo
-        ? originalStampInfo.depth
-        : selectedDepth;
+      const depthForUpload = await resolveUploadDepth(batchIdHex);
 
       // Self-custody batches are owned by the hot key on-chain — Bee's
       // `/stamps/:id` endpoint always 404s here, so the legacy "poll until
@@ -1674,8 +1716,7 @@ const SwapComponent: React.FC = () => {
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
-      const depthForUpload =
-        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+      const depthForUpload = await resolveUploadDepth(batchIdHex);
 
       setStatusMessage({
         step: 'Uploading',
@@ -1803,8 +1844,7 @@ const SwapComponent: React.FC = () => {
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
-      const depthForUpload =
-        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+      const depthForUpload = await resolveUploadDepth(batchIdHex);
 
       // Inject a generated index.html if the user hasn't supplied one. The
       // listing is the same Swarm-styled page the legacy folder upload
@@ -1945,8 +1985,7 @@ const SwapComponent: React.FC = () => {
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
-      const depthForUpload =
-        isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
+      const depthForUpload = await resolveUploadDepth(batchIdHex);
 
       setStatusMessage({
         step: 'Uploading',
@@ -2236,7 +2275,31 @@ const SwapComponent: React.FC = () => {
     // Only fetch if we have a topUpBatchId and we're in top-up mode
     if (topUpBatchId && isTopUp) {
       const getStampInfo = async () => {
-        const stampInfo = await fetchStampInfoForComponent(topUpBatchId);
+        let stampInfo = await fetchStampInfoForComponent(topUpBatchId);
+        if (!stampInfo) {
+          // Gateway down / not indexed yet: fall back to the Postage Stamp
+          // contract so a top-up never silently degrades into a new-batch buy.
+          try {
+            const onChain = await fetchBatchFromContract(
+              getGnosisPublicClient().client as any,
+              topUpBatchId
+            );
+            if (onChain.exists) {
+              stampInfo = {
+                batchID: onChain.batchId.slice(2),
+                utilization: 0,
+                usable: true,
+                depth: onChain.depth,
+                amount: onChain.normalisedBalance.toString(),
+                bucketDepth: onChain.bucketDepth,
+                exists: true,
+                batchTTL: 0,
+              };
+            }
+          } catch (err) {
+            console.warn('On-chain lookup for top-up batch failed:', err);
+          }
+        }
         if (stampInfo) {
           console.log('Fetched original stamp info:', stampInfo);
           setOriginalStampInfo(stampInfo);
@@ -2481,7 +2544,8 @@ const SwapComponent: React.FC = () => {
                   liquidityError ||
                   aggregatorDown ||
                   insufficientFunds ||
-                  isPriceEstimating)
+                  isPriceEstimating ||
+                  (isTopUp && !originalStampInfo))
               }
               onClick={!hasMounted || !isConnected ? handleGetStarted : handleSwap}
             >
@@ -2501,6 +2565,8 @@ const SwapComponent: React.FC = () => {
                 "Cannot Swap - Can't Find Route"
               ) : insufficientFunds ? (
                 'Insufficient Balance'
+              ) : isTopUp && !originalStampInfo ? (
+                'Loading Batch…'
               ) : isTopUp ? (
                 'Top Up Batch'
               ) : (
@@ -2947,7 +3013,7 @@ const SwapComponent: React.FC = () => {
                             ⚠️ Large file detected ({'>'}2GB). Self-custody upload chunks +
                             stamps locally — keep this tab open and your wallet unlocked
                             throughout. Aborting in the middle is safe (the chunks are
-                            idempotent), but the upload won't resume from where it stopped.
+                            idempotent), but the upload won&apos;t resume from where it stopped.
                           </div>
                         )}
                         {exceedsMaximumUploadSize() && (

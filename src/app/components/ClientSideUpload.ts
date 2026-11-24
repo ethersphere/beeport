@@ -34,9 +34,7 @@ import { AsyncQueue, type Chunk } from 'cafe-utility';
 import {
   loadStamperState,
   saveStamperState,
-  clearStamperState,
   loadStampedAddresses,
-  clearStampedAddresses,
   chunkAddressHex,
   StampedAddrWriteBatcher,
   getLastSyncedSocSavedAt,
@@ -66,6 +64,8 @@ import {
   peekIssuerStateSocSavedAt,
 } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
+import { isBatchCreatedInThisBrowser } from './SelfCustodyBatch';
+import { acquireBatchUploadLock } from './BatchUploadLock';
 import {
   approxChunkCountWithRedundancy,
   streamFileThroughErasureTree,
@@ -402,6 +402,10 @@ export interface ProjectedStampCapacity {
   message?: string;
 }
 
+/** Extra reads of a missing issuer-state SOC before treating it as absent. */
+const SOC_NOT_FOUND_RETRIES = 2;
+const SOC_NOT_FOUND_RETRY_DELAY_MS = 2_000;
+
 /**
  * Resolve the stamper state to start an upload from, reconciling the local
  * IndexedDB copy with the issuer-state SOC on Swarm. This is the multi-device
@@ -415,18 +419,20 @@ export interface ProjectedStampCapacity {
  *     read fails we ABORT the upload rather than risk starting from blank
  *     counters — re-allocating used `(bucket, index)` slots makes Bee evict
  *     the previously stored chunks (newer stamp timestamp wins), which is
- *     silent data loss. Only a confirmed "no SOC exists" (the batch has never
- *     been uploaded to) proceeds from blank.
+ *     silent data loss. A 404 (checked by HTTP status, retried) proceeds
+ *     from blank only when this browser created the batch; otherwise the
+ *     upload is aborted, because SOC saves are best-effort and a missing SOC
+ *     does not prove the batch is unused.
  *
- *  2. **Local state exists and the SOC is not newer than our sync marker**
+ *  2. **Local state exists and the SOC's savedAt equals our sync marker**
  *     (the overwhelmingly common single-device case): use local state. The
  *     probe is one SOC chunk read; if it fails we proceed on local state —
  *     local is authoritative for everything this browser did, and blocking
  *     every upload on a flaky probe would hurt more than the rare stale case
  *     it protects against.
  *
- *  3. **Local state exists but the SOC is newer than what we last synced**:
- *     another device uploaded to this batch since. Merge by element-wise MAX
+ *  3. **Local state exists and the SOC's savedAt differs from our marker**
+ *     (or we have no marker): another device may have uploaded since. Merge by element-wise MAX
  *     of the bucket counters (see {@link mergeStamperStates} for why max is
  *     exactly right) so future allocations can't collide with either
  *     device's chunks.
@@ -451,7 +457,13 @@ async function resolveStamperStateForUpload(args: {
     onStatus?.('No local batch state — checking Swarm for issuer state…');
     let restored;
     try {
+      // A 404 can also mean "not retrievable yet" (a SOC another device just
+      // wrote), so retry it a few times before believing it.
       restored = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
+      for (let i = 0; !restored && i < SOC_NOT_FOUND_RETRIES; i++) {
+        await new Promise(r => setTimeout(r, SOC_NOT_FOUND_RETRY_DELAY_MS));
+        restored = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
@@ -463,9 +475,18 @@ async function resolveStamperStateForUpload(args: {
       );
     }
     if (!restored) {
-      // Confirmed: no SOC was ever written → the batch has never completed an
-      // upload anywhere. Blank counters are correct.
-      return null;
+      // No SOC on Swarm. That alone does not prove the batch is unused: SOC
+      // saves are best-effort and can fail after a successful upload. Start
+      // from blank only with positive evidence — this browser created the
+      // batch (the common "buy, then upload" path).
+      if (isBatchCreatedInThisBrowser(cleanBatchId)) return null;
+      throw new Error(
+        `No saved state for this stamp was found on Swarm, and this browser did ` +
+          `not create it. If it was used from another device, uploading from ` +
+          `here with blank counters could overwrite those files. Upload once ` +
+          `from the device that used this stamp (that saves its state to ` +
+          `Swarm), then try again here.`
+      );
     }
     await saveStamperState(cleanBatchId, restored.state);
     setLastSyncedSocSavedAt(cleanBatchId, restored.savedAt);
@@ -479,11 +500,10 @@ async function resolveStamperStateForUpload(args: {
   }
 
   // ── Cases 2/3: local state exists — staleness probe ──────────────────────
-  // Skip when the marker is missing: local state predating the marker (or a
-  // batch whose SOC was never written) has nothing to compare against. The
-  // marker gets seeded by this upload's own SOC save.
+  // A missing marker (state from before markers existed, or every SOC save
+  // here failed) is treated as "never synced": any SOC found is merged.
+  // The max-merge is idempotent, so merging our own state again is harmless.
   const lastSynced = getLastSyncedSocSavedAt(cleanBatchId);
-  if (lastSynced === null) return persisted;
 
   let remoteSavedAt: number | null = null;
   try {
@@ -501,7 +521,10 @@ async function resolveStamperStateForUpload(args: {
     );
     return persisted;
   }
-  if (remoteSavedAt === null || remoteSavedAt <= lastSynced) return persisted;
+  // Compare for equality, not order: the marker holds the exact savedAt this
+  // browser last wrote or absorbed, so ANY other value means another writer.
+  // Ordering would break when device clocks differ.
+  if (remoteSavedAt === null || remoteSavedAt === lastSynced) return persisted;
 
   // ── Case 3: another device wrote newer state — merge ─────────────────────
   onStatus?.('Batch was used on another device — merging its state…');
@@ -519,14 +542,15 @@ async function resolveStamperStateForUpload(args: {
         `device's chunks aren't overwritten — retry in a moment.`
     );
   }
-  if (!remote) return persisted; // SOC vanished between peek and read — treat as no news
-  if (remote.state.depth !== persisted.depth) {
-    console.warn(
-      `[ClientSideUpload] Remote SOC state depth ${remote.state.depth} != local ` +
-        `${persisted.depth} — ignoring remote state (local depth policy applies downstream).`
+  if (!remote) {
+    // The probe proved a newer SOC exists, so local state under-counts.
+    throw new Error(
+      `This batch was used on another device, but its state disappeared from ` +
+        `Swarm between two reads. Aborting so the other device's chunks aren't ` +
+        `overwritten — retry in a moment.`
     );
-    return persisted;
   }
+  // Depth differences are fine: counters merge exactly (see mergeStamperStates).
   const merged = mergeStamperStates(persisted, remote.state);
   await saveStamperState(cleanBatchId, merged);
   setLastSyncedSocSavedAt(cleanBatchId, remote.savedAt);
@@ -535,6 +559,26 @@ async function resolveStamperStateForUpload(args: {
       `(remote savedAt=${new Date(remote.savedAt).toISOString()})`
   );
   return merged;
+}
+
+/**
+ * Build the Stamper for an upload: persisted counters (if any) at the batch's
+ * real depth. Never discards counters — see the depth note in
+ * {@link uploadFileClientSide}.
+ */
+function createStamperForBatch(
+  cleanBatchId: string,
+  depth: number,
+  persisted: PersistedStamperState | null
+): Stamper {
+  if (!persisted) return createPresignedStamper(cleanBatchId, depth);
+  if (persisted.depth !== depth) {
+    console.warn(
+      `[ClientSideUpload] Local issuer state was saved at depth ${persisted.depth}; ` +
+        `batch depth is ${depth}. Keeping the counters and using depth ${depth}.`
+    );
+  }
+  return createPresignedStamper(cleanBatchId, depth, new Uint32Array(persisted.buckets));
 }
 
 /**
@@ -552,7 +596,7 @@ async function resolveStamperStateForUpload(args: {
  * `usable` boolean does NOT apply to self-custody batches; that endpoint
  * 404s for batches the gateway didn't issue.
  */
-export async function uploadFileClientSide(
+async function uploadFileClientSideUnlocked(
   params: ClientSideUploadParams
 ): Promise<ClientSideUploadResult> {
   const {
@@ -597,36 +641,19 @@ export async function uploadFileClientSide(
   // restores from the Swarm SOC when this browser has no local state, and
   // merges when another device wrote newer state since our last sync.
   //
-  // Depth-mismatch handling: if the persisted state was built at a different
-  // depth than the on-chain batch (typically because a previous upload ran
-  // with the wrong `selectedDepth`), we cannot trust ANY of the saved bucket
-  // counters — Bee was validating against a different `maxSlot` than our
-  // local Stamper, so some `cnt` values we counted as consumed were in fact
-  // rejected by Bee, and others we counted as fresh may collide with Bee's
-  // record. The safe move is to discard the bad state, clear the matching
-  // chunk-dedup set (which would otherwise skip uploads we can't prove ever
-  // landed), and start a fresh `fromBlank`.
+  // Depth-mismatch handling: the counters record which (bucket, cnt) slots
+  // were handed out, and that does not depend on depth. Keeping them is
+  // always safe; resetting them would re-issue used slots, and Bee would
+  // evict the chunks stored there (newer stamp wins). So we keep the counters
+  // and only take maxSlot from `depth`, which the caller resolves from the
+  // batch itself (on-chain first).
   const persisted = await resolveStamperStateForUpload({
     bee,
     hotKey,
     cleanBatchId,
     onStatus,
   });
-  let stamper: Stamper;
-  if (persisted && persisted.depth !== depth) {
-    console.error(
-      `[ClientSideUpload] Refusing persisted issuer state at depth ${persisted.depth} ` +
-        `for batch at depth ${depth}. Clearing local state and starting fresh — ` +
-        `the saved counters were diverging from what Bee accepts.`
-    );
-    await clearStamperState(cleanBatchId);
-    await clearStampedAddresses(cleanBatchId);
-    stamper = createPresignedStamper(cleanBatchId, depth);
-  } else if (persisted) {
-    stamper = createPresignedStamper(cleanBatchId, persisted.depth, persisted.buckets);
-  } else {
-    stamper = createPresignedStamper(cleanBatchId, depth);
-  }
+  const stamper = createStamperForBatch(cleanBatchId, depth, persisted);
 
   // ── Diagnostics ──────────────────────────────────────────────────────────
   const startedAt = performance.now();
@@ -700,6 +727,13 @@ export async function uploadFileClientSide(
   // saveStamperState is now async (IDB-backed). Fire-and-forget the write —
   // it's a 256 KB structured-clone put on a separate transaction; latency
   // doesn't block the chunk pipeline. Errors are logged inside saveStamperState.
+  const persistStateNow = async (): Promise<void> => {
+    lastStatePersistAt = Date.now();
+    await saveStamperState(cleanBatchId, {
+      buckets: stamper.getState(),
+      depth: stamper.depth,
+    });
+  };
   const maybePersistState = (force = false) => {
     const now = Date.now();
     if (!force && now - lastStatePersistAt < STATE_PERSIST_MIN_INTERVAL_MS) {
@@ -1092,9 +1126,9 @@ export async function uploadFileClientSide(
           stamper,
           abortSignal,
         });
-        // Persist again — the SOC save itself consumed slots that we want
-        // reflected in localStorage so future uploads don't re-allocate them.
-        maybePersistState(true);
+        // Persist again — the SOC save itself consumed slots that future
+        // uploads must not re-allocate. Await it before the marker below.
+        await persistStateNow();
         // Local state now incorporates everything the SOC describes — record
         // its savedAt so the pre-upload staleness probe has a baseline.
         setLastSyncedSocSavedAt(cleanBatchId, soc.savedAt);
@@ -1118,6 +1152,8 @@ export async function uploadFileClientSide(
           detail,
           err
         );
+        // A failed save may still have used slots; never re-issue them.
+        await persistStateNow();
         return undefined;
       } finally {
         removeBeforeUnloadListener();
@@ -1159,19 +1195,37 @@ export async function uploadFileClientSide(
     stopSampler();
     mark('FAILED', { error: err instanceof Error ? err.message : String(err) });
     removeBeforeUnloadListener();
+    // Order matters: the counters must be saved BEFORE the dedup entries.
+    // A dedup entry without the matching counter would let a retry hand the
+    // same slot to another chunk (Bee evicts the old one) while the dedup set
+    // skips re-sending it — a "successful" retry with missing chunks.
+    // Let in-flight chunk tasks settle first so every slot they took is in
+    // the counters we save (bounded; their own timeouts end them).
+    await settleQueue(queue);
+    await saveStamperState(cleanBatchId, {
+      buckets: stamper.getState(),
+      depth: stamper.depth,
+    });
     await addrBatcher.flush().catch(() => {});
     throw err;
   } finally {
     bmtClient?.terminate();
     uploadSession?.close();
-    if (issuerStateSocPromise) {
-      void issuerStateSocPromise.finally(() => {
-        stampPool?.terminate();
-      });
-    } else {
-      stampPool?.terminate();
-    }
+    // The signer pool belongs to the hot-key session (shared by every upload
+    // in this tab), so it is NOT terminated here — HotKeySession.destroy()
+    // owns its lifetime.
   }
+}
+
+/**
+ * Wait for a queue's running tasks after a failure, with an upper bound so a
+ * stuck request can't hang error reporting.
+ */
+async function settleQueue(queue: AsyncQueue, maxWaitMs = 20_000): Promise<void> {
+  await Promise.race([
+    queue.drain().catch(() => {}),
+    new Promise<void>(resolve => setTimeout(resolve, maxWaitMs)),
+  ]);
 }
 
 // ─── Pre-flight capacity check ───────────────────────────────────────────────
@@ -1497,7 +1551,10 @@ function stripHex(value: string): string {
 
 function isRetryable(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /network|timeout|fetch|ECONN|ETIMEDOUT|stalled|429|5\d\d/i.test(msg);
+  if (/aborted/i.test(msg) && !/timeout/i.test(msg)) return false; // user abort
+  // WebSocket drops are transient: the pool retires the bad socket and the
+  // retry goes to another (or a freshly reconnected) socket.
+  return /network|timeout|fetch|ECONN|ETIMEDOUT|stalled|websocket|429|5\d\d/i.test(msg);
 }
 
 /**
@@ -1892,15 +1949,7 @@ async function createUploadContext(opts: {
     cleanBatchId,
     onStatus,
   });
-  const stamper = persisted
-    ? createPresignedStamper(cleanBatchId, persisted.depth, persisted.buckets)
-    : createPresignedStamper(cleanBatchId, depth);
-
-  if (persisted && persisted.depth !== depth) {
-    console.warn(
-      `Stamper state depth mismatch (${persisted.depth} vs ${depth}); using persisted state`
-    );
-  }
+  const stamper = createStamperForBatch(cleanBatchId, depth, persisted);
 
   const queue = new AsyncQueue(concurrency, concurrency * 2);
 
@@ -2217,13 +2266,24 @@ async function maybeSaveIssuerStateToSOC(
       stamper: ctx.stamper,
       abortSignal: ctx.abortSignal,
     });
-    ctx.persistState(true);
+    // Persist the slots the save consumed BEFORE recording the marker, so the
+    // marker never claims more than IndexedDB holds.
+    await saveStamperState(ctx.cleanBatchId, {
+      buckets: ctx.stamper.getState(),
+      depth: ctx.stamper.depth,
+    });
     // Local state now incorporates everything the SOC describes — record its
     // savedAt so the pre-upload staleness probe has a baseline.
     setLastSyncedSocSavedAt(ctx.cleanBatchId, soc.savedAt);
     return soc;
   } catch (err) {
     console.warn('Failed to save issuer state to SOC (upload itself succeeded):', err);
+    // A failed save may still have used slots (blob chunks, or a SOC POST
+    // that landed but timed out). Persist them so they are never re-issued.
+    await saveStamperState(ctx.cleanBatchId, {
+      buckets: ctx.stamper.getState(),
+      depth: ctx.stamper.depth,
+    });
     return undefined;
   }
 }
@@ -2314,7 +2374,7 @@ export interface MultiFileUploadResult {
  * If a file fails, partial results are still returned and localStorage
  * stamper state remains current so the next run resumes cleanly.
  */
-export async function uploadMultipleFilesClientSide(
+async function uploadMultipleFilesClientSideUnlocked(
   params: MultiFileUploadParams
 ): Promise<MultiFileUploadResult> {
   const {
@@ -2437,9 +2497,17 @@ export async function uploadMultipleFilesClientSide(
       uploadTransport: ctx.uploadSession?.transport ?? 'http',
     };
   } finally {
+    // Counters before dedup entries (see uploadFileClientSide's catch). On a
+    // failure the producer can reject before the queue drained, so let the
+    // running tasks settle and save the counters explicitly.
+    await settleQueue(ctx.queue);
+    await saveStamperState(ctx.cleanBatchId, {
+      buckets: ctx.stamper.getState(),
+      depth: ctx.stamper.depth,
+    });
     ctx.closeUploadSession();
     ctx.closeBmtClient();
-    ctx.stampPool?.terminate();
+    // ctx.stampPool is the hot-key session's shared pool — not ours to close.
     await ctx.addrBatcher.flush().catch(() => {});
   }
 }
@@ -2501,7 +2569,7 @@ export interface CollectionUploadResult {
  * via `/bzz/<ref>/<filepath>` and (if `website` is set) `<ref>/` → the index
  * document.
  */
-export async function uploadFilesAsCollectionClientSide(
+async function uploadFilesAsCollectionClientSideUnlocked(
   params: CollectionUploadParams
 ): Promise<CollectionUploadResult> {
   const {
@@ -2616,9 +2684,63 @@ export async function uploadFilesAsCollectionClientSide(
       uploadTransport: ctx.uploadSession?.transport ?? 'http',
     };
   } finally {
+    // Counters before dedup entries (see uploadFileClientSide's catch). On a
+    // failure the producer can reject before the queue drained, so let the
+    // running tasks settle and save the counters explicitly.
+    await settleQueue(ctx.queue);
+    await saveStamperState(ctx.cleanBatchId, {
+      buckets: ctx.stamper.getState(),
+      depth: ctx.stamper.depth,
+    });
     ctx.closeUploadSession();
     ctx.closeBmtClient();
-    ctx.stampPool?.terminate();
+    // ctx.stampPool is the hot-key session's shared pool — not ours to close.
     await ctx.addrBatcher.flush().catch(() => {});
+  }
+}
+
+/**
+ * Upload a file to Swarm with client-side stamping. Holds the per-batch
+ * upload lock until the background issuer-state SOC save has settled.
+ * See {@link uploadFileClientSideUnlocked} for the pipeline.
+ */
+export async function uploadFileClientSide(
+  params: ClientSideUploadParams
+): Promise<ClientSideUploadResult> {
+  const release = await acquireBatchUploadLock(params.batchId);
+  let result: ClientSideUploadResult;
+  try {
+    result = await uploadFileClientSideUnlocked(params);
+  } catch (err) {
+    release();
+    throw err;
+  }
+  void Promise.resolve(result.issuerStateSocPromise)
+    .catch(() => undefined)
+    .finally(release);
+  return result;
+}
+
+/** Multi-file upload under the per-batch upload lock. */
+export async function uploadMultipleFilesClientSide(
+  params: MultiFileUploadParams
+): Promise<MultiFileUploadResult> {
+  const release = await acquireBatchUploadLock(params.batchId);
+  try {
+    return await uploadMultipleFilesClientSideUnlocked(params);
+  } finally {
+    release();
+  }
+}
+
+/** Collection upload under the per-batch upload lock. */
+export async function uploadFilesAsCollectionClientSide(
+  params: CollectionUploadParams
+): Promise<CollectionUploadResult> {
+  const release = await acquireBatchUploadLock(params.batchId);
+  try {
+    return await uploadFilesAsCollectionClientSideUnlocked(params);
+  } finally {
+    release();
   }
 }

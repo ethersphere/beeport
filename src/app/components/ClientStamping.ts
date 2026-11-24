@@ -177,15 +177,32 @@ export async function saveStamperState(
   const key = stripHex(batchId).toLowerCase();
   try {
     await withStore(STAMPER_STATE_STORE, 'readwrite', store => {
-      // Clone the bucket array so the in-memory Stamper (which keeps a
-      // mutable reference to its own state) and the IDB-stored snapshot
-      // can't accidentally alias each other after a `put`.
-      const record: StamperStateRecord = {
-        batchId: key,
-        buckets: new Uint32Array(state.buckets),
-        depth: state.depth,
+      // Read-merge-write in ONE transaction: counters only ever grow, so the
+      // stored record becomes the element-wise max of what is there and what
+      // we write. A late or out-of-order save (an older stamper's final
+      // flush, a second tab, a beforeunload put) can then never roll the
+      // counters back and re-issue used slots. Resets go through
+      // clearStamperState, not here.
+      //
+      // The new array is a fresh copy, so the in-memory Stamper (which keeps
+      // a mutable reference to its own state) never aliases the stored one.
+      const req = store.get(key);
+      req.onsuccess = () => {
+        const existing = req.result as StamperStateRecord | undefined;
+        const merged = existing?.buckets
+          ? mergeStamperStates(
+              { buckets: existing.buckets, depth: existing.depth },
+              state
+            )
+          : { buckets: new Uint32Array(state.buckets), depth: state.depth };
+        const record: StamperStateRecord = {
+          batchId: key,
+          buckets: merged.buckets,
+          // Keep the depth the caller saved with; the merge only decides counters.
+          depth: state.depth,
+        };
+        store.put(record);
       };
-      store.put(record);
     });
   } catch (err) {
     // IDB has effectively no practical quota for this volume, so a failure
@@ -277,16 +294,16 @@ export function mergeStamperStates(
   a: PersistedStamperState,
   b: PersistedStamperState
 ): PersistedStamperState {
-  if (a.depth !== b.depth) {
-    throw new Error(
-      `Cannot merge stamper states at different depths (${a.depth} vs ${b.depth})`
-    );
+  // Bucket counters are independent of depth: the bucket comes from the chunk
+  // address and `cnt` counts slots used in that bucket. A max-merge across
+  // depths is therefore still exact for "which slots were used". The depth
+  // only sets maxSlot, which the caller takes from the batch itself.
+  const len = Math.max(a.buckets.length, b.buckets.length);
+  const buckets = new Uint32Array(len);
+  for (let i = 0; i < len; i++) {
+    buckets[i] = Math.max(a.buckets[i] ?? 0, b.buckets[i] ?? 0);
   }
-  const buckets = new Uint32Array(a.buckets.length);
-  for (let i = 0; i < buckets.length; i++) {
-    buckets[i] = Math.max(a.buckets[i], b.buckets[i]);
-  }
-  return { buckets, depth: a.depth };
+  return { buckets, depth: Math.max(a.depth, b.depth) };
 }
 
 // ─── Per-batch chunk-address dedup ────────────────────────────────────────────

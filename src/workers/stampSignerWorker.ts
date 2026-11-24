@@ -26,7 +26,7 @@ async function signDigest(msgHash: Uint8Array): Promise<Uint8Array> {
   const signed = await secp.sign(msgHash, privKey, {
     der: false,
     recovered: true,
-    lowS: true,
+    canonical: true, // low-S (noble 1.7 option name; `lowS` is ignored)
   });
   const compact = signed[0] as Uint8Array;
   const recovery = signed[1] as number;

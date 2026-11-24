@@ -97,7 +97,7 @@ export async function signStampMsgHash(privKey: Uint8Array, msgHash: Uint8Array)
   const signed = await secp.sign(msgHash, privKey, {
     der: false,
     recovered: true,
-    lowS: true,
+    canonical: true, // low-S (noble 1.7 option name; `lowS` is ignored)
   });
   const compact = signed[0] as Uint8Array;
   const recovery = signed[1] as number;
@@ -313,6 +313,31 @@ export class PresignedChunkStreamClient {
     }
   }
 
+  /**
+   * Take this socket out of service: fail every waiter and close it. Used
+   * when the ack FIFO can no longer be trusted — a chunk that was already
+   * SENT stopped waiting (timeout or abort), so Bee's late ack for it would
+   * otherwise resolve the NEXT chunk's waiter and every later ack on this
+   * socket would be credited to the wrong chunk.
+   */
+  private poison(err: Error): void {
+    if (this.closed) return;
+    this.closed = true;
+    const ws = this.ws;
+    this.ws = null;
+    if (ws) {
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+    }
+    this.failAllWaiters(err);
+    try {
+      ws?.close();
+    } catch {
+      // ignore
+    }
+  }
+
   private attachHandlers(ws: WebSocket): void {
     ws.onmessage = (ev: MessageEvent) => {
       if (ev.data instanceof ArrayBuffer) {
@@ -334,18 +359,19 @@ export class PresignedChunkStreamClient {
         } catch {
           // keep raw string
         }
-        this.failAllWaiters(new ChunkUploadHttpError(detail, undefined, ev.data));
+        this.poison(new ChunkUploadHttpError(detail, undefined, ev.data));
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev: CloseEvent) => {
       if (!this.closed) {
-        this.failAllWaiters(new ChunkUploadHttpError('WebSocket closed unexpectedly'));
+        const why = ev?.reason ? `: ${ev.reason}` : ev?.code ? ` (code ${ev.code})` : '';
+        this.poison(new ChunkUploadHttpError(`WebSocket closed unexpectedly${why}`));
       }
     };
 
     ws.onerror = () => {
-      this.failAllWaiters(new ChunkUploadHttpError('WebSocket error'));
+      this.poison(new ChunkUploadHttpError('WebSocket error'));
     };
   }
 
@@ -424,6 +450,11 @@ export class PresignedChunkStreamClient {
     }
 
     await this.acquireSlot();
+    // The socket may have been poisoned while we waited for a slot.
+    if (this.closed || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.releaseSlot();
+      throw new ChunkUploadHttpError('WebSocket closed');
+    }
 
     const stamp = marshaledStampBytes(envelope);
     if (stamp.length !== STAMP_WIRE_LEN) {
@@ -437,13 +468,9 @@ export class PresignedChunkStreamClient {
 
     await new Promise<void>((resolve, reject) => {
       const onAbort = () => {
-        clearTimeout(timer);
-        const idx = this.ackWaiters.indexOf(waiter);
-        if (idx >= 0) {
-          this.ackWaiters.splice(idx, 1);
-          this.releaseSlot();
-        }
-        reject(new Error('Upload aborted'));
+        // The chunk is already on the wire; its ack will still arrive, so this
+        // socket's FIFO is no longer aligned. Retire the socket.
+        this.poison(new Error('Upload aborted'));
       };
 
       const waiter: StreamAckWaiter = {
@@ -461,12 +488,9 @@ export class PresignedChunkStreamClient {
       };
 
       const timer = setTimeout(() => {
-        const idx = this.ackWaiters.indexOf(waiter);
-        if (idx >= 0) {
-          this.ackWaiters.splice(idx, 1);
-          this.releaseSlot();
-        }
-        waiter.reject(new ChunkUploadHttpError('chunk stream ack timeout'));
+        // Retire the socket instead of dropping one waiter: see poison().
+        // This rejects this waiter too (it is in ackWaiters).
+        this.poison(new ChunkUploadHttpError('chunk stream ack timeout'));
       }, opts.timeoutMs);
       waiter.timer = timer;
 
@@ -482,7 +506,11 @@ export class PresignedChunkStreamClient {
         if (idx >= 0) this.ackWaiters.splice(idx, 1);
         this.releaseSlot();
         reject(err instanceof Error ? err : new Error(String(err)));
+        return;
       }
+      // An abort that fired while we awaited a slot never reaches the
+      // listener registered above; handle it now.
+      if (opts.abortSignal?.aborted) onAbort();
     });
   }
 
@@ -511,6 +539,9 @@ export class PresignedChunkStreamClient {
 export class PresignedChunkStreamPool {
   private sockets: PresignedChunkStreamClient[] = [];
   private closed = false;
+  /** Re-opens one socket when every socket was retired (see upload()). */
+  private reconnect: (() => Promise<PresignedChunkStreamClient | null>) | null = null;
+  private reconnectInFlight: Promise<PresignedChunkStreamClient | null> | null = null;
   readonly targetSocketCount: number;
   readonly perSocketInFlight: number;
   readonly targetInFlight: number;
@@ -556,6 +587,7 @@ export class PresignedChunkStreamPool {
       return null;
     }
     pool.sockets = [first];
+    pool.reconnect = connectOne;
     console.info(
       `[ChunkStream] ready: 1/${wanted} WebSocket stream(s) live ` +
         `(${perSocketInFlight} in-flight per socket; target total ≈ ${pool.targetInFlight}). ` +
@@ -588,16 +620,31 @@ export class PresignedChunkStreamPool {
     return this.sockets.filter(s => s.isOpen).length;
   }
 
-  private pickSocket(): PresignedChunkStreamClient {
+  private pickSocket(): PresignedChunkStreamClient | null {
     let best: PresignedChunkStreamClient | null = null;
     for (const s of this.sockets) {
       if (!s.isOpen) continue;
       if (!best || s.inFlight < best.inFlight) best = s;
     }
-    if (!best) {
-      throw new ChunkUploadHttpError('No live WebSocket stream sockets');
-    }
     return best;
+  }
+
+  /** Open one replacement socket (deduplicated across concurrent callers). */
+  private async replaceDeadSockets(): Promise<PresignedChunkStreamClient | null> {
+    if (!this.reconnect) return null;
+    if (!this.reconnectInFlight) {
+      this.reconnectInFlight = this.reconnect().finally(() => {
+        this.reconnectInFlight = null;
+      });
+    }
+    const s = await this.reconnectInFlight;
+    if (s && !this.closed && !this.sockets.includes(s)) {
+      this.sockets = this.sockets.filter(x => x.isOpen);
+      this.sockets.push(s);
+    } else if (s && this.closed) {
+      s.close();
+    }
+    return s && !this.closed ? s : null;
   }
 
   async upload(
@@ -606,7 +653,9 @@ export class PresignedChunkStreamPool {
     opts: { abortSignal?: AbortSignal; timeoutMs: number }
   ): Promise<void> {
     if (this.closed) throw new ChunkUploadHttpError('WebSocket stream pool closed');
-    return this.pickSocket().upload(chunkBytes, envelope, opts);
+    const socket = this.pickSocket() ?? (await this.replaceDeadSockets());
+    if (!socket) throw new ChunkUploadHttpError('No live WebSocket stream sockets');
+    return socket.upload(chunkBytes, envelope, opts);
   }
 
   close(): void {
@@ -747,7 +796,11 @@ export async function uploadChunkPresignedFetch(
   opts: { abortSignal?: AbortSignal; timeoutMs: number }
 ): Promise<void> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+  let timedOut = false;
+  const t = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, opts.timeoutMs);
   const signal = mergeAbortSignals(opts.abortSignal, ctrl.signal);
   try {
     // Own the bytes for the request body: avoids any edge case where a shared
@@ -791,6 +844,13 @@ export async function uploadChunkPresignedFetch(
       );
     }
     res.body?.cancel().catch(() => {});
+  } catch (err) {
+    // Our own timer aborted the request: report a retryable timeout instead
+    // of the browser's generic "signal is aborted without reason".
+    if (timedOut && !opts.abortSignal?.aborted) {
+      throw new ChunkUploadHttpError(`request timeout after ${opts.timeoutMs} ms`);
+    }
+    throw err;
   } finally {
     clearTimeout(t);
   }
@@ -822,7 +882,11 @@ export async function uploadSocPresignedFetch(
   opts: { abortSignal?: AbortSignal; timeoutMs: number }
 ): Promise<void> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+  let timedOut = false;
+  const t = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, opts.timeoutMs);
   const signal = mergeAbortSignals(opts.abortSignal, ctrl.signal);
   try {
     const body = new Uint8Array(chunkBytes);
@@ -863,6 +927,13 @@ export async function uploadSocPresignedFetch(
       );
     }
     res.body?.cancel().catch(() => {});
+  } catch (err) {
+    // Our own timer aborted the request: report a retryable timeout instead
+    // of the browser's generic "signal is aborted without reason".
+    if (timedOut && !opts.abortSignal?.aborted) {
+      throw new ChunkUploadHttpError(`request timeout after ${opts.timeoutMs} ms`);
+    }
+    throw err;
   } finally {
     clearTimeout(t);
   }

@@ -553,7 +553,14 @@ function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
+/**
+ * True only for an HTTP 404 from the gateway. Never matched on message text:
+ * a proxy page or an unrelated error that happens to contain "not found"
+ * must not be read as "no SOC exists" (that decision can start an upload
+ * from blank counters).
+ */
 function isNotFound(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /404|not\s*found|no\s+chunk|does\s+not\s+exist/i.test(msg);
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { status?: unknown; response?: { status?: unknown } };
+  return e.status === 404 || e.response?.status === 404;
 }
