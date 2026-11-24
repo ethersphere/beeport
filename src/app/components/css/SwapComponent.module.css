@@ -419,8 +419,12 @@
 
 .healthBannerDetail {
   flex: 1 1 100%;
+  min-width: 0;
   font-size: 12px;
   opacity: 0.85;
+  /* Long hex addresses in error text must wrap inside the card. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .healthBannerRetry {

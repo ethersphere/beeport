@@ -267,6 +267,33 @@ export function getLastSyncedSocSavedAt(batchId: string): number | null {
   }
 }
 
+const socIgnoreStorageKey = (batchId: string) =>
+  `beeport.socIgnoreUnreadable.${stripHex(batchId).toLowerCase()}`;
+
+/**
+ * `savedAt` of an unreadable issuer-state SOC that the user chose to ignore
+ * for `batchId`, or `null`. The override only matches that exact backup: a
+ * different (newer) backup on Swarm asks again.
+ */
+export function getIgnoredUnreadableSocSavedAt(batchId: string): number | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const n = Number(localStorage.getItem(socIgnoreStorageKey(batchId)));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setIgnoredUnreadableSocSavedAt(batchId: string, savedAt: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(socIgnoreStorageKey(batchId), String(savedAt));
+  } catch {
+    // ignore — the user is asked again on the next upload
+  }
+}
+
 /** Record that local state now incorporates the SOC written at `savedAt`. */
 export function setLastSyncedSocSavedAt(batchId: string, savedAt: number): void {
   if (typeof localStorage === 'undefined') return;

@@ -64,6 +64,7 @@ import {
   clearHotKeysExcept,
   hasActiveHotKey,
   getCachedHotKeyAddress,
+  setIgnoredUnreadableSocSavedAt,
   loadStampUsage,
   type DerivedHotKey,
 } from './ClientStamping';
@@ -85,6 +86,7 @@ import {
   uploadMultipleFilesClientSide,
   uploadFilesAsCollectionClientSide,
   StampNotReadyError,
+  UnreadableIssuerBackupError,
   type MultiFileResult,
   type ChunkUploadTransport,
 } from './ClientSideUpload';
@@ -1649,6 +1651,7 @@ const SwapComponent: React.FC = () => {
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
+        ignoreBackup: translated.ignoreBackup,
         isError: true,
       });
       // Keep the upload overlay open so the error banner is visible.
@@ -1682,6 +1685,7 @@ const SwapComponent: React.FC = () => {
     detail?: string;
     transient?: boolean;
     keepUploadFormOpen?: boolean;
+    ignoreBackup?: { batchId: string; savedAt: number };
   } => {
     if (err instanceof StampNotReadyError) {
       // The most common case for a freshly-created batch — the gateway's
@@ -1702,6 +1706,18 @@ const SwapComponent: React.FC = () => {
 
     const raw = err instanceof Error ? err.message : String(err);
     const lower = raw.toLowerCase();
+
+    // Raised BEFORE any chunk is sent (newer backup found but unreadable), so
+    // the file is NOT on the network yet — do not use the "already uploaded" text.
+    if (err instanceof UnreadableIssuerBackupError) {
+      return {
+        message: 'Upload stopped: stamp backup unreadable',
+        warning:
+          'A newer backup of this stamp exists on Swarm but this wallet key cannot read it. Nothing was uploaded. If no other device uses this stamp, ignore the backup and upload again.',
+        detail: raw,
+        ignoreBackup: { batchId: err.batchId, savedAt: err.remoteSavedAt },
+      };
+    }
 
     if (lower.includes('issuer-state') || lower.includes('soc issuer-state')) {
       return {
@@ -1873,6 +1889,7 @@ const SwapComponent: React.FC = () => {
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
+        ignoreBackup: translated.ignoreBackup,
         isError: true,
       });
       setUploadStep('ready');
@@ -2020,6 +2037,7 @@ const SwapComponent: React.FC = () => {
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
+        ignoreBackup: translated.ignoreBackup,
         isError: true,
       });
       setUploadStep('ready');
@@ -2143,6 +2161,7 @@ const SwapComponent: React.FC = () => {
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
+        ignoreBackup: translated.ignoreBackup,
         isError: true,
       });
       setUploadStep('ready');
@@ -2949,6 +2968,28 @@ const SwapComponent: React.FC = () => {
                       <div className={styles.healthBannerDetail}>
                         {statusMessage.warning}
                       </div>
+                    )}
+                    {statusMessage.ignoreBackup && (
+                      <button
+                        type="button"
+                        className={styles.healthBannerRetry}
+                        onClick={() => {
+                          const ig = statusMessage.ignoreBackup;
+                          if (!ig) return;
+                          if (
+                            !window.confirm(
+                              'Ignore the unreadable backup and use this browser\'s stamp state?\n\n' +
+                                'Only do this if no other device uploaded with this stamp. ' +
+                                'If one did, new uploads can overwrite its files.'
+                            )
+                          )
+                            return;
+                          setIgnoredUnreadableSocSavedAt(ig.batchId, ig.savedAt);
+                          setStatusMessage({ step: '', message: '' });
+                        }}
+                      >
+                        Ignore backup and continue
+                      </button>
                     )}
                   </div>
                 )}

@@ -40,6 +40,7 @@ import {
   StampedAddrWriteBatcher,
   getLastSyncedSocSavedAt,
   setLastSyncedSocSavedAt,
+  getIgnoredUnreadableSocSavedAt,
   mergeStamperStates,
   type DerivedHotKey,
   type PersistedStamperState,
@@ -63,6 +64,7 @@ import {
   saveIssuerStateToSOC,
   loadIssuerStateFromSOC,
   peekIssuerStateSocSavedAt,
+  IssuerStateDecryptError,
 } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
 import { isBatchCreatedInThisBrowser } from './SelfCustodyBatch';
@@ -442,6 +444,22 @@ const SOC_NOT_FOUND_RETRY_DELAY_MS = 2_000;
  * mismatches between the returned state and the on-chain batch depth remain
  * the caller's responsibility (policies differ per path).
  */
+/**
+ * A newer issuer-state backup exists on Swarm but cannot be decrypted with
+ * the current hot key. The UI offers to ignore that one backup (see
+ * `setIgnoredUnreadableSocSavedAt`); the next successful save replaces it.
+ */
+export class UnreadableIssuerBackupError extends Error {
+  readonly batchId: string;
+  readonly remoteSavedAt: number;
+  constructor(message: string, batchId: string, remoteSavedAt: number) {
+    super(message);
+    this.name = 'UnreadableIssuerBackupError';
+    this.batchId = batchId;
+    this.remoteSavedAt = remoteSavedAt;
+  }
+}
+
 async function resolveStamperStateForUpload(args: {
   bee: Bee;
   hotKey: DerivedHotKey;
@@ -534,13 +552,29 @@ async function resolveStamperStateForUpload(args: {
     remote = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof IssuerStateDecryptError) {
+      if (getIgnoredUnreadableSocSavedAt(cleanBatchId) === remoteSavedAt) {
+        // The user chose to ignore exactly this backup. Local counters stay
+        // authoritative; the SOC save after this upload replaces the backup.
+        console.warn(
+          `[ClientSideUpload] Ignoring unreadable issuer-state backup (savedAt=${remoteSavedAt}) by user choice.`
+        );
+        setLastSyncedSocSavedAt(cleanBatchId, remoteSavedAt);
+        return persisted;
+      }
+      throw new UnreadableIssuerBackupError(
+        `Issuer-state: newer backup found on Swarm but unreadable (${msg}). ` +
+          `Upload stopped so earlier chunks are not overwritten.`,
+        cleanBatchId,
+        remoteSavedAt
+      );
+    }
     // Unlike the probe, we now have positive evidence that our counters
     // under-count. Proceeding would allocate slots the other device already
     // used and overwrite its chunks.
     throw new Error(
-      `This batch was used on another device (newer state found on Swarm), ` +
-        `but the state could not be read (${msg}). Aborting so the other ` +
-        `device's chunks aren't overwritten — retry in a moment.`
+      `Issuer-state: newer backup found on Swarm but unreadable (${msg}). ` +
+        `Upload stopped so earlier chunks are not overwritten.`
     );
   }
   if (!remote) {

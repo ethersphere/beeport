@@ -8,6 +8,8 @@ export type ExecutionStatus = {
   reference?: string;
   filename?: string;
   warning?: string;
+  /** Set when the user may choose to ignore one unreadable stamp backup. */
+  ignoreBackup?: { batchId: string; savedAt: number };
 };
 
 export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';

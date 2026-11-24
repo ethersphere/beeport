@@ -335,6 +335,14 @@ export interface LoadIssuerStateResult {
  * (different wallet, bumped purpose string, etc.) that the caller wants to
  * see.
  */
+/** The backup chunk was read, but its blob did not decrypt with the current key. */
+export class IssuerStateDecryptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IssuerStateDecryptError';
+  }
+}
+
 export async function loadIssuerStateFromSOC(params: {
   bee: Bee;
   hotKey: DerivedHotKey;
@@ -423,9 +431,9 @@ export async function loadIssuerStateFromSOC(params: {
       await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ciphertext)
     );
   } catch (err) {
-    throw new Error(
-      `Failed to decrypt issuer-state SOC at ${expectedSocAddress.toHex()} ` +
-        '— wrong wallet or AES_KEY_PURPOSE bumped'
+    throw new IssuerStateDecryptError(
+      `Failed to decrypt issuer-state SOC ${expectedSocAddress.toHex().slice(0, 10)}… ` +
+        '(different wallet key or encryption purpose)'
     );
   }
   const plaintext = await gunzip(compressed);
