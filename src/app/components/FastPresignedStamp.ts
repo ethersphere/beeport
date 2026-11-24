@@ -996,9 +996,13 @@ export class StampSignerPool {
         // Webpack 5 only treats this as a worker entry if the `new URL(...)`
         // call is nested directly under `new Worker(...)` (same issue in Next
         // dev: otherwise `*.ts` is served as video/mp2t).
-        const w = new Worker(new URL('../../workers/stampSignerWorker.ts', import.meta.url), {
-          type: 'module',
-        });
+        const w = new Worker(
+          // Worker runtime public path, relative to the worker script itself
+          // (<prefix>/_next/static/chunks/), so any hosting prefix works.
+          /* webpackEntryOptions: { publicPath: "../../" } */
+          new URL('../../workers/stampSignerWorker.ts', import.meta.url),
+          { type: 'module' }
+        );
         const wait = new Promise<void>((resolve, reject) => {
           const to = setTimeout(() => reject(new Error('stamp worker ready timeout')), 15_000);
           const onMsg = (ev: MessageEvent) => {

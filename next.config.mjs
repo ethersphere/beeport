@@ -40,16 +40,11 @@ const config = {
       encoding: fileURLToPath(new URL('encoding', import.meta.url)),
     };
 
-    // Static export uses `assetPrefix: './'` so HTML can load assets from a
-    // relative base. Webpack workers resolve that relative to the worker
-    // script under `/_next/static/chunks/`, which doubles the path
-    // (`…/chunks/_next/static/chunks/…`), returns the SPA HTML shell
-    // (MIME text/html), and `importScripts` blows up. Absolute worker
-    // public path keeps BMT / stamp-signer workers loading correctly when
-    // the app is served from the site root (v2.beeport.xyz).
-    if (!isServer && !dev) {
-      config.output.workerPublicPath = '/_next/';
-    }
+    // Static export uses `assetPrefix: './'`, so a worker's own runtime would
+    // load extra script chunks from `./_next/` relative to the worker script
+    // (`<prefix>/_next/static/chunks/`) and double the path. The `new Worker`
+    // calls therefore pass `webpackEntryOptions: { publicPath: '../../' }`,
+    // which resolves to `<prefix>/_next/` for any hosting prefix.
 
     // Development-specific optimizations
     if (dev) {

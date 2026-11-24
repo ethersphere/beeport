@@ -103,9 +103,13 @@ export class BmtWorkerClient {
     }
 
     try {
-      const worker = new Worker(new URL('../../workers/bmtWorker.ts', import.meta.url), {
-        type: 'module',
-      });
+      const worker = new Worker(
+        // Worker runtime public path, relative to the worker script itself
+          // (<prefix>/_next/static/chunks/), so any hosting prefix works.
+        /* webpackEntryOptions: { publicPath: "../../" } */
+        new URL('../../workers/bmtWorker.ts', import.meta.url),
+        { type: 'module' }
+      );
       const client = new BmtWorkerClient(worker, false);
       await client.waitFor('ready', () => {
         worker.postMessage({ type: 'reset' });
