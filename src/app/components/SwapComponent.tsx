@@ -1663,6 +1663,28 @@ const SwapComponent: React.FC = () => {
   };
 
   /**
+   * Label for the upload button while no chunk has been sent yet (0%). Without
+   * this the button reads "Uploading... 0.0%" while the app is really waiting
+   * for the gateway to see a new stamp or syncing stamp state.
+   */
+  const uploadWaitLabel = (message: string, progress: number): string | null => {
+    if (progress > 0) return null;
+    const m = message.toLowerCase();
+    if (
+      m.includes('waiting for bee gateway') ||
+      m.includes('gateway syncing') ||
+      m.includes('verifying stamp readiness') ||
+      m.includes('recognize your new stamp')
+    ) {
+      return 'Waiting for storage to be usable...';
+    }
+    if (m.includes('another device') || m.includes('issuer state') || m.includes('swarm for')) {
+      return 'Syncing stamp state...';
+    }
+    return null;
+  };
+
+  /**
    * Translate the most common Bee gateway error messages into something an
    * end user can act on, instead of the bare `error: failed to push chunk:
    * stamp signature does not recover…` string Bee returns. Shared by every
@@ -3243,7 +3265,8 @@ const SwapComponent: React.FC = () => {
                           {statusMessage.step === 'Uploading'
                             ? isDistributing
                               ? 'Distributing file chunks...'
-                              : `Uploading... ${uploadProgress.toFixed(1)}%`
+                              : uploadWaitLabel(statusMessage.message, uploadProgress) ??
+                                `Uploading... ${uploadProgress.toFixed(1)}%`
                             : 'Processing...'}
                         </>
                       ) : isMultipleFiles ? (
