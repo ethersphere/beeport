@@ -262,6 +262,15 @@ export async function saveIssuerStateToSOC(params: {
     { abortSignal, timeoutMs: 60_000 }
   );
 
+  console.info('[IssuerStateSOC] saved', {
+    socAddress: soc.address.toHex(),
+    hotKeyAddress: hotKey.address,
+    keyFingerprint: await aesKeyFingerprint(aesKey),
+    blobRef: blobRef.toHex(),
+    savedAt,
+    blobBytesLength: blob.length,
+  });
+
   return {
     socAddress: `0x${soc.address.toHex()}` as `0x${string}`,
     blobReference: `0x${blobRef.toHex()}` as `0x${string}`,
@@ -335,6 +344,25 @@ export interface LoadIssuerStateResult {
  * (different wallet, bumped purpose string, etc.) that the caller wants to
  * see.
  */
+/**
+ * Short, non-secret fingerprint of an AES key: the first 4 bytes of AES-GCM
+ * over 16 zero bytes with a fixed all-zero IV. Real backups use random IVs, so
+ * this reveals nothing about them. Logged on save and on a failed load to tell
+ * "different key" from "damaged blob" when a restore fails.
+ */
+async function aesKeyFingerprint(key: CryptoKey): Promise<string> {
+  try {
+    const out = new Uint8Array(
+      await crypto.subtle.encrypt({ name: 'AES-GCM', iv: new Uint8Array(12) }, key, new Uint8Array(16))
+    );
+    return Array.from(out.slice(0, 4))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    return 'unavailable';
+  }
+}
+
 /** The backup chunk was read, but its blob did not decrypt with the current key. */
 export class IssuerStateDecryptError extends Error {
   constructor(message: string) {
@@ -431,6 +459,16 @@ export async function loadIssuerStateFromSOC(params: {
       await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ciphertext)
     );
   } catch (err) {
+    console.error('[IssuerStateSOC] decrypt failed', {
+      socAddress: expectedSocAddress.toHex(),
+      hotKeyAddress: hotKey.address,
+      keyFingerprint: await aesKeyFingerprint(aesKey),
+      blobRef: blobRef.toHex(),
+      savedAt,
+      payloadVersion: version,
+      blobBytesLength: blobBytes.length,
+      ivHex: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
+    });
     throw new IssuerStateDecryptError(
       `Failed to decrypt issuer-state SOC ${expectedSocAddress.toHex().slice(0, 10)}… ` +
         '(different wallet key or encryption purpose)'
