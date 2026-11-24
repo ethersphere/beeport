@@ -20,6 +20,8 @@ import {
 } from 'viem';
 import type { PublicClient, WalletClient } from 'viem';
 
+import { fetchBatchFromContract } from './PostageContract';
+
 import {
   GNOSIS_BZZ_ADDRESS,
   STAMPS_REGISTRY_V2_ABI,
@@ -359,6 +361,13 @@ export interface StoredSelfCustodyBatch {
    * Omitted on very old local entries only.
    */
   createdVia?: 'registry';
+  /**
+   * True when the row was rebuilt from the registry's `getWalletBatchIds`
+   * and this browser never created the batch. Such a batch can already hold
+   * stamped chunks from another device, so a missing issuer-state SOC must
+   * NOT be treated as "unused batch" (see {@link isBatchCreatedInThisBrowser}).
+   */
+  syncedFromChain?: boolean;
 }
 
 const STORE_KEY = 'beeport.selfCustodyBatches.v1';
@@ -418,7 +427,9 @@ export function isBatchCreatedInThisBrowser(batchId: string): boolean {
   const id = (batchId.startsWith('0x') ? batchId : `0x${batchId}`).toLowerCase();
   const store = loadStore();
   return Object.values(store).some(
-    list => Array.isArray(list) && list.some(b => b?.batchId?.toLowerCase() === id)
+    list =>
+      Array.isArray(list) &&
+      list.some(b => b?.batchId?.toLowerCase() === id && !b.syncedFromChain)
   );
 }
 
@@ -468,6 +479,132 @@ export function removeSelfCustodyBatch(walletAddress: string, batchId: string): 
   if (!list) return;
   store[key] = list.filter(b => b.batchId.toLowerCase() !== target);
   persistStore(store);
+}
+
+// ─── Pending purchases + on-chain reconcile ──────────────────────────────────
+//
+// A Relay one-shot buy can take longer than the UI waits, or the status poll
+// can fail, after the user has paid. We record the purchase BEFORE it starts,
+// so the batch can be found again from the chain later. `getWalletBatchIds`
+// then restores any batch whose local row is missing.
+
+const PENDING_KEY = 'beeport.pendingBatchPurchases.v1';
+/** A pending purchase that is still not on chain after this long is dropped. */
+const PENDING_MAX_AGE_SECONDS = 24 * 60 * 60;
+
+export interface PendingBatchPurchase {
+  batchId: `0x${string}`;
+  walletAddress: string;
+  hotKeyAddress: string;
+  depth: number;
+  bucketDepth: number;
+  totalAmount: string;
+  immutableFlag: boolean;
+  /** Unix seconds when the purchase started. */
+  timestamp: number;
+}
+
+function loadPending(): PendingBatchPurchase[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPending(list: PendingBatchPurchase[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+  } catch (err) {
+    console.warn('Failed to persist pending batch purchases:', err);
+  }
+}
+
+/** Record a purchase that is about to start. Idempotent by `batchId`. */
+export function savePendingBatchPurchase(p: PendingBatchPurchase): void {
+  const list = loadPending().filter(x => x.batchId.toLowerCase() !== p.batchId.toLowerCase());
+  list.push(p);
+  persistPending(list);
+}
+
+/** Forget a pending purchase (it succeeded, or it was reconciled). */
+export function removePendingBatchPurchase(batchId: string): void {
+  const id = batchId.toLowerCase();
+  persistPending(loadPending().filter(x => x.batchId.toLowerCase() !== id));
+}
+
+/**
+ * Bring the local batch list in line with the chain for one wallet:
+ *  1. every batch id in the registry's `getWalletBatchIds(wallet)` that has no
+ *     local row gets one (so a wiped browser, or a purchase whose status poll
+ *     failed, still shows the stamp);
+ *  2. pending purchases that landed are promoted; stale ones are dropped.
+ *
+ * Returns how many rows were added. Never throws on RPC failure.
+ */
+export async function reconcileWalletBatches(
+  walletAddress: string,
+  client: PublicClient
+): Promise<number> {
+  if (!walletAddress) return 0;
+  const wallet = walletAddress.toLowerCase();
+  let added = 0;
+  try {
+    const onChainIds = (await client.readContract({
+      address: STAMPS_REGISTRY_V2_ADDRESS as `0x${string}`,
+      abi: STAMPS_REGISTRY_V2_ABI,
+      functionName: 'getWalletBatchIds',
+      args: [walletAddress as `0x${string}`],
+    })) as readonly `0x${string}`[];
+
+    const known = new Set(getSelfCustodyBatches(walletAddress).map(b => b.batchId.toLowerCase()));
+    const pending = loadPending();
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    for (const rawId of onChainIds) {
+      const id = rawId.toLowerCase() as `0x${string}`;
+      if (known.has(id)) {
+        removePendingBatchPurchase(id);
+        continue;
+      }
+      const batch = await fetchBatchFromContract(client, id);
+      if (!batch.exists) continue; // expired and removed, nothing to show
+      const p = pending.find(x => x.batchId.toLowerCase() === id);
+      saveSelfCustodyBatch(walletAddress, {
+        batchId: id,
+        walletAddress: wallet,
+        hotKeyAddress: p?.hotKeyAddress ?? batch.owner,
+        depth: batch.depth,
+        bucketDepth: batch.bucketDepth,
+        totalAmount: p?.totalAmount ?? '0',
+        timestamp: p?.timestamp ?? nowSec,
+        immutableFlag: batch.immutable,
+        createdVia: 'registry',
+        // A purchase started in this browser is known to be fresh; anything
+        // else may carry stamps from another device.
+        syncedFromChain: p ? undefined : true,
+      });
+      removePendingBatchPurchase(id);
+      added++;
+    }
+
+    // Drop pending purchases that never reached the chain.
+    for (const p of pending) {
+      if (
+        p.walletAddress.toLowerCase() === wallet &&
+        nowSec - p.timestamp > PENDING_MAX_AGE_SECONDS
+      ) {
+        removePendingBatchPurchase(p.batchId);
+      }
+    }
+  } catch (err) {
+    console.warn('reconcileWalletBatches failed:', err);
+  }
+  return added;
 }
 
 // ─── Chain-indexed batch info shape ──────────────────────────────────────────

@@ -632,3 +632,26 @@ export const formatHash = (hash: string): string => {
   if (hash.length <= 12) return hash;
   return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
 };
+
+
+/**
+ * Per-chunk balance to pay for `days` of storage.
+ *
+ * The Postage Stamp contract rejects a new batch whose per-chunk balance is
+ * below `minimumValidityBlocks * lastPrice`, and the price can rise between
+ * the quote and the transaction. A 1-day batch pays exactly that minimum, so
+ * for new batches we keep a 5% margin above it. Longer durations are above
+ * the minimum already and are unchanged. Top-ups have no minimum.
+ */
+export function perChunkBalanceForDays(
+  price: bigint,
+  blocksPerDay: number,
+  days: number,
+  isNewBatch: boolean
+): bigint {
+  const perDay = price * BigInt(blocksPerDay);
+  const base = perDay * BigInt(days);
+  if (!isNewBatch) return base;
+  const floor = (perDay * 105n) / 100n;
+  return base > floor ? base : floor;
+}

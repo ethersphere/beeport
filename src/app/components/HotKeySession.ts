@@ -70,7 +70,10 @@ class HotKeySession implements DerivedHotKey {
   }
 
   isExpired(): boolean {
-    return Date.now() - this.lastActivityAt > HOT_KEY_IDLE_MS;
+    // Signing counts as activity, so a long upload is not cut off while the
+    // user does not touch the page.
+    const last = Math.max(this.lastActivityAt, this.stampPool.lastUsedAt);
+    return Date.now() - last > HOT_KEY_IDLE_MS;
   }
 
   signOwnerPayload(data: Uint8Array): Promise<Uint8Array> {
@@ -121,6 +124,8 @@ class HotKeySession implements DerivedHotKey {
 
 const hotKeyCache = new Map<string, HotKeySession>();
 let activityListenersAttached = false;
+/** How often idle sessions are dropped, so the key leaves worker memory without a new upload. */
+const IDLE_SWEEP_MS = 60_000;
 
 function attachActivityListeners(): void {
   if (activityListenersAttached || typeof window === 'undefined') return;
@@ -137,6 +142,7 @@ function attachActivityListeners(): void {
   window.addEventListener('mousedown', onActivity);
   window.addEventListener('keydown', onActivity);
   window.addEventListener('touchstart', onActivity, { passive: true });
+  window.setInterval(dropExpiredSessions, IDLE_SWEEP_MS);
 }
 
 function dropExpiredSessions(): void {
@@ -187,6 +193,22 @@ export function clearHotKey(walletAddress: string): void {
   const key = walletAddress.toLowerCase();
   const session = hotKeyCache.get(key);
   if (session) {
+    session.destroy();
+    hotKeyCache.delete(key);
+  }
+}
+
+/** True when a live (not idle-expired) session exists for this wallet. */
+export function hasActiveHotKey(walletAddress: string): boolean {
+  const session = hotKeyCache.get(walletAddress.toLowerCase());
+  return !!session && !session.isExpired();
+}
+
+/** Drop every session except the one for `keepWalletAddress` (all of them when omitted). */
+export function clearHotKeysExcept(keepWalletAddress?: string): void {
+  const keep = keepWalletAddress?.toLowerCase();
+  for (const [key, session] of hotKeyCache) {
+    if (key === keep) continue;
     session.destroy();
     hotKeyCache.delete(key);
   }

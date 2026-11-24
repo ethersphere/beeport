@@ -80,7 +80,7 @@ the self-custody flow.
 | Hot-key **session** | In-memory `HotKeySession` | Cleared after **15 min idle** (re-sign canonical message), tab close, or wallet change. |
 | SOC **AES key** | Main-thread `CryptoKey` per session | Derived from hot scalar once at unlock; used only for issuer-state blob encrypt/decrypt. |
 | Self-custody batch metadata | `localStorage["beeport.selfCustodyBatches.v1"]` | `{ batchId, walletAddress, hotKeyAddress, depth, totalAmount, … }`. Used by the stamp list when Bee can't tell us about foreign-owned batches. |
-| Stamper **issuer state** (bucket counters) | `IndexedDB["beeport"].stamperState[batchId]` | One `Uint32Array(65 536)` per batch, stored via structured clone (no JSON round-trip). Critical: re-use of `(bucket, cnt)` is rejected by Bee, so this MUST persist across sessions. Migrated automatically on first load from the legacy `localStorage["beeport.stamper.<batchId>"]` key. |
+| Stamper **issuer state** (bucket counters) | `IndexedDB["beeport"].stamperState[batchId]` | One `Uint32Array(65 536)` per batch, stored via structured clone (no JSON round-trip). Critical: when a `(bucket, cnt)` pair is used twice, Bee replaces the older chunk. This state MUST persist across sessions. Migrated automatically on first load from the legacy `localStorage["beeport.stamper.<batchId>"]` key. |
 | Per-batch chunk-address dedup set | `IndexedDB["beeport"].stampedAddrs` (composite key `[batchId, addrHex]`, `byBatch` index) | One record per chunk address ever stamped+accepted under the batch. Written incrementally — one tiny `put` per chunk — so re-uploading the same file is cheap and there's no quota pressure. Migrated automatically on first load from the legacy `localStorage["beeport.stamped.<batchId>"]` key. |
 | Wallet signature itself | nowhere | Discarded after `keccak256` produces the hot key. |
 
@@ -249,27 +249,21 @@ batch, i.e. the node that owns the batch. For self-custody, *we* are that
 issuer — the browser tab — and there's no central place to ask. The data
 is fundamentally local to whoever signed the stamps.
 
-### What actually happens to existing data on a fresh browser
+### What happens to existing data on a fresh browser
 
-This is the bit people get wrong, so spelling it out exhaustively:
+A wrong counter has a worse result than a failed upload. This section explains the result.
+A slot is one `(bucket, cnt)` pair. Each stamp uses one slot.
 
-- **Existing chunks on Swarm are never overwritten.** Chunks are
-  content-addressed by BMT hash; the network can't replace `X` with a
-  different `X'`.
-- **Re-uploading the same file content from a fresh browser succeeds**
-  with no error and no slot burn — the stamper deterministically
-  allocates the same `(bucket, cnt)` it allocated the first time,
-  produces the same stamp, and Bee sees an idempotent retry.
-- **Uploading a *new* file that maps any chunk into a bucket the
-  previous session had consumed will be rejected mid-upload by Bee.**
-  Concretely: the first chunk whose `(bucket, cnt)` collides with a slot
-  already burned for a different chunk hash is rejected by Bee, and
-  `uploadFileClientSide` aborts there.
-  The user sees a "stamp invalid: bucket counter mismatch" style error.
+- **A chunk address does not change.** The network derives the address from the BMT hash of the content. It cannot replace chunk `X` with a different chunk `X'`.
+- **An upload of the same file succeeds.** The stamper allocates the same slot as the first time. It makes the same stamp. Bee sees a repeat of the first upload.
+- **An upload of new content can evict older data.** A browser with an old counter reuses a slot that holds a different chunk.
+- **Bee accepts the new stamp when its timestamp is newer.** Bee moves the slot to the new chunk. The older chunk loses its stamp. The network can delete it, and the file that uses it can break.
+- **Bee rejects the new stamp when its timestamp is equal or older.** The upload then fails with an overwrite error.
 
-So "slot burn" really means: **you cannot reliably upload new content
-to a batch from a browser that doesn't have the up-to-date issuer
-state.** Old data stays intact.
+A stale browser makes stamps with new timestamps. Bee accepts them and replaces the older chunks.
+A browser without the current issuer state can silently damage older files in the same batch.
+Old data is safe only when the issuer state is current.
+The app protects the state in two ways. It restores the state from Swarm before each upload. It stops the upload when it cannot find the state, unless this browser created the batch.
 
 ### Recovery options (and what's actually shipped)
 

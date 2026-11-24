@@ -41,6 +41,7 @@ import {
   performWithRetry,
   toChecksumAddress,
   getGnosisPublicClient,
+  perChunkBalanceForDays,
   setGnosisRpcUrl,
   fetchCurrentPriceFromOracle,
   fetchStampInfo,
@@ -60,7 +61,8 @@ import {
 } from './RelayQuotes';
 import {
   deriveHotKey,
-  clearHotKey,
+  clearHotKeysExcept,
+  hasActiveHotKey,
   getCachedHotKeyAddress,
   loadStampUsage,
   type DerivedHotKey,
@@ -69,6 +71,9 @@ import {
   computeBatchId,
   topUpSelfCustodyBatchViaRegistry,
   saveSelfCustodyBatch,
+  savePendingBatchPurchase,
+  removePendingBatchPurchase,
+  reconcileWalletBatches,
   getSelfCustodyBatches,
   markSelfCustodyBatchToppedUp,
 } from './SelfCustodyBatch';
@@ -109,7 +114,9 @@ const isArchiveFile = (filename?: string): boolean => {
 function getFileReferenceUrl(beeApiUrl: string, reference: string, filename?: string): string {
   const base = beeApiUrl.endsWith('/') ? `${beeApiUrl}bzz/` : `${beeApiUrl}/bzz/`;
   const ref = reference.startsWith('0x') ? reference.slice(2) : reference;
-  if (filename && !isArchiveFile(filename)) return `${base}${ref}/${filename}`;
+  if (filename && !isArchiveFile(filename)) {
+    return `${base}${ref}/${encodeURIComponent(filename)}`;
+  }
   return `${base}${ref}/`;
 }
 
@@ -313,17 +320,17 @@ const SwapComponent: React.FC = () => {
   // We only persist the public address — the private key never leaves memory.
   useEffect(() => {
     if (!address) {
-      if (hotKey) clearHotKey(hotKey.address);
+      // Sessions are keyed by wallet address, not by hot-key address.
+      clearHotKeysExcept();
       setCachedHotKeyAddress(null);
       setHotKey(null);
       return;
     }
     const cached = getCachedHotKeyAddress(address);
     setCachedHotKeyAddress(cached);
-    if (hotKey && hotKey.address.toLowerCase() !== address.toLowerCase()) {
-      clearHotKey(hotKey.address);
-      setHotKey(null);
-    }
+    // Wallet switched: drop the sessions of every other wallet.
+    clearHotKeysExcept(address);
+    setHotKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
 
@@ -336,9 +343,7 @@ const SwapComponent: React.FC = () => {
     if (!walletClient || !address) {
       throw new Error('Wallet not connected — cannot derive hot key');
     }
-    const hadValidSession =
-      hotKey !== null && hotKey.address.toLowerCase() === address.toLowerCase();
-    if (!hadValidSession) {
+    if (!hasActiveHotKey(address)) {
       setStatusMessage({
         step: 'HotKey',
         message:
@@ -351,7 +356,7 @@ const SwapComponent: React.FC = () => {
     setHotKey(derived);
     setCachedHotKeyAddress(derived.address);
     return derived;
-  }, [hotKey, walletClient, address]);
+  }, [walletClient, address]);
 
   const { estimatedTime, setEstimatedTime, remainingTime, formatTime, resetTimer } =
     useTimer(statusMessage);
@@ -499,7 +504,12 @@ const SwapComponent: React.FC = () => {
           // will sign (bridge + executor runs `txs` against StampsRegistryV2),
           // so the displayed price equals what they'll actually pay.
           const calcInitialBalance = currentPrice
-            ? BigInt(currentPrice) * BigInt(validityBlocksPerDay) * BigInt(selectedDays || 1)
+            ? perChunkBalanceForDays(
+                BigInt(currentPrice),
+                validityBlocksPerDay,
+                selectedDays || 1,
+                !isTopUp
+              )
             : 0n;
           const calcDepth =
             isTopUp && originalStampInfo ? originalStampInfo.depth : selectedDepth;
@@ -750,9 +760,12 @@ const SwapComponent: React.FC = () => {
 
   const updateSwarmBatchInitialBalance = useCallback(() => {
     if (currentPrice !== null) {
-      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(validityBlocksPerDay);
-      const totalPricePerDuration =
-        BigInt(initialPaymentPerChunkPerDay) * BigInt(selectedDays || 1);
+      const totalPricePerDuration = perChunkBalanceForDays(
+        BigInt(currentPrice),
+        validityBlocksPerDay,
+        selectedDays || 1,
+        !isTopUp
+      );
 
       // Calculate total amount based on whether this is a top-up or new batch
       let depthToUse: number;
@@ -773,7 +786,14 @@ const SwapComponent: React.FC = () => {
         swarmBatchTotal: totalAmount.toString(),
       }));
     }
-  }, [currentPrice, selectedDays, isTopUp, originalStampInfo, selectedDepth]);
+  }, [
+    currentPrice,
+    selectedDays,
+    isTopUp,
+    originalStampInfo,
+    selectedDepth,
+    validityBlocksPerDay,
+  ]);
 
   // Move the useEffect that was causing declaration order issues
   useEffect(() => {
@@ -796,8 +816,12 @@ const SwapComponent: React.FC = () => {
 
   const calculateTotalAmount = () => {
     const price = currentPrice || 0n; // Use 0n as default if currentPrice is null
-    const initialPaymentPerChunkPerDay = price * BigInt(validityBlocksPerDay);
-    const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays || 1);
+    const totalPricePerDuration = perChunkBalanceForDays(
+      price,
+      validityBlocksPerDay,
+      selectedDays || 1,
+      !isTopUp
+    );
 
     // Use the appropriate depth based on whether this is a top-up
     let depthToUse: number;
@@ -979,6 +1003,20 @@ const SwapComponent: React.FC = () => {
       // needing to parse Relay's response or the multicaller's tx logs.
       const predictedBatchId = computeBatchId(STAMPS_REGISTRY_V2_ADDRESS, nonce);
 
+      // Record the purchase BEFORE paying. If the Relay status poll fails or
+      // times out after the user has paid, the batch can still be found again
+      // (see reconcileWalletBatches) instead of being lost.
+      savePendingBatchPurchase({
+        batchId: predictedBatchId as `0x${string}`,
+        walletAddress: address,
+        hotKeyAddress: derived.address,
+        depth,
+        bucketDepth,
+        totalAmount: updatedConfig.swarmBatchTotal as string,
+        immutableFlag: immutable_,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+
       let createBatchTxHash: `0x${string}` | undefined;
       // Block number at which the batch became visible on-chain. For the Relay
       // path we don't know which block the multicaller's tx mined in, so we
@@ -1073,6 +1111,17 @@ const SwapComponent: React.FC = () => {
           },
           verifyOnChainSuccess
         );
+
+        // Relay can report success before the verifier ever ran, which left
+        // the block number unset. The batch exists by now, so the current tip
+        // is a safe upper bound for the gateway-sync wait before uploads.
+        if (createBatchBlockNumber === undefined) {
+          try {
+            createBatchBlockNumber = await gnosisClient.getBlockNumber();
+          } catch (err) {
+            console.warn('Failed to snapshot Gnosis tip after Relay success:', err);
+          }
+        }
       }
 
       console.log('🔑 Self-custody batch created via registry', predictedBatchId);
@@ -1100,6 +1149,7 @@ const SwapComponent: React.FC = () => {
             : undefined,
         createdVia: 'registry',
       });
+      removePendingBatchPurchase(predictedBatchId);
 
       setStatusMessage({
         step: 'Complete',
@@ -1112,10 +1162,25 @@ const SwapComponent: React.FC = () => {
       setUploadStep('ready');
     } catch (err) {
       console.error('Self-custody buy failed:', err);
+      // The purchase may have landed even though the wait failed. Look on
+      // chain; a batch that exists is added to "Your Stamps".
+      let recovered = false;
+      try {
+        recovered =
+          (await reconcileWalletBatches(address, getGnosisPublicClient().client as any)) > 0;
+      } catch {
+        // best effort
+      }
       setStatusMessage({
         step: 'Error',
-        message: 'Self-custody batch creation failed',
-        error: err instanceof Error ? err.message : 'Unknown error',
+        message: recovered
+          ? 'The purchase finished on chain, but confirmation failed. Your stamp is now in Your Stamps.'
+          : 'Self-custody batch creation failed',
+        error:
+          (err instanceof Error ? err.message : 'Unknown error') +
+          (recovered
+            ? ''
+            : ' If you were charged, wait a few minutes and open Your Stamps: a purchase that finished on chain appears there.'),
         isError: true,
       });
       setIsLoading(false);
@@ -1152,8 +1217,12 @@ const SwapComponent: React.FC = () => {
     // IMPORTANT: Ensure the updatedConfig has the latest calculated values
     // This fixes the BZZ amount mismatch between price estimation and execution
     if (currentPrice !== null && selectedDays) {
-      const initialPaymentPerChunkPerDay = BigInt(currentPrice) * BigInt(validityBlocksPerDay);
-      const totalPricePerDuration = initialPaymentPerChunkPerDay * BigInt(selectedDays);
+      const totalPricePerDuration = perChunkBalanceForDays(
+        BigInt(currentPrice),
+        validityBlocksPerDay,
+        selectedDays,
+        !isTopUp
+      );
 
       // Calculate total amount based on whether this is a top-up or new batch
       let depthToUse: number;
@@ -2116,7 +2185,9 @@ const SwapComponent: React.FC = () => {
           // Strip the leading "<folderName>/" so paths inside the manifest
           // are relative to the folder root, not absolute. Matches what the
           // legacy folder upload produced.
-          const path = rel ? rel.replace(new RegExp(`^${folderName}/`), '') : f.name;
+          // Plain prefix check: a folder name can contain regex characters.
+          const prefix = `${folderName}/`;
+          const path = rel ? (rel.startsWith(prefix) ? rel.slice(prefix.length) : rel) : f.name;
           return { path, data: f as File };
         })
         .filter(e => e.path && !e.path.endsWith('/'));
@@ -3445,7 +3516,7 @@ const SwapComponent: React.FC = () => {
                         : `${beeApiUrl}/bzz/`;
                       const retrievalUrl =
                         statusMessage.filename && !isArchiveFile(statusMessage.filename)
-                          ? `${base}${statusMessage.reference}/${statusMessage.filename}`
+                          ? `${base}${statusMessage.reference}/${encodeURIComponent(statusMessage.filename)}`
                           : `${base}${statusMessage.reference}/`;
                       return (
                         <div className={styles.linkButtonsContainer}>

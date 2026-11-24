@@ -19,25 +19,25 @@ const erasureCodingOptions: DropdownOption[] = [
     value: 1,
     label: 'Medium',
     icon: '🛡️',
-    description: 'Basic protection - ~25% more storage',
+    description: 'Survives ~1% lost chunks - ~8% more storage',
   },
   {
     value: 2,
     label: 'Strong',
     icon: '🔒',
-    description: 'Enhanced protection - ~50% more storage',
+    description: 'Survives ~5% lost chunks - ~20% more storage',
   },
   {
     value: 3,
     label: 'Insane',
     icon: '🔐',
-    description: 'High protection - ~100% more storage',
+    description: 'Survives ~10% lost chunks - ~32% more storage',
   },
   {
     value: 4,
     label: 'Paranoid',
     icon: '🏰',
-    description: 'Maximum protection - ~200% more storage',
+    description: 'Survives ~50% lost chunks - ~230% more storage',
   },
 ];
 

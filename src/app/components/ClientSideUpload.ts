@@ -35,6 +35,7 @@ import {
   loadStamperState,
   saveStamperState,
   loadStampedAddresses,
+  rememberStampedAddress,
   chunkAddressHex,
   StampedAddrWriteBatcher,
   getLastSyncedSocSavedAt,
@@ -847,8 +848,7 @@ async function uploadFileClientSideUnlocked(
         chunksUploaded++;
         // Record the address only after Bee has accepted the chunk; we never
         // want to skip a future re-upload for a chunk we can't prove landed.
-        stampedAddrs.add(addrHex);
-        addrBatcher.add(addrHex);
+        rememberStampedAddress(stampedAddrs, addrBatcher, addrHex);
         maybePersistState();
         progressOut?.(chunksUploaded, totalChunksApprox);
         if (!firstChunkMarked) {
@@ -963,8 +963,7 @@ async function uploadFileClientSideUnlocked(
         abortSignal,
         onStatus
       );
-      stampedAddrs.add(probeAddrHex);
-      addrBatcher.add(probeAddrHex);
+      rememberStampedAddress(stampedAddrs, addrBatcher, probeAddrHex);
       maybePersistState(true);
       mark('readiness probe accepted');
     }
@@ -1376,7 +1375,12 @@ export async function uploadDataPresigned(
 
   // Larger blobs: stream through MerkleTree exactly like a file.
   let lastChunk: Chunk | null = null;
+  // MerkleTree.finalize() also hands the root to this callback, so remember
+  // what was sent and do not stamp the root a second time (that would burn
+  // a second bucket slot for the same chunk).
+  const sentAddrs = new Set<string>();
   const tree = new MerkleTree(async chunk => {
+    sentAddrs.add(chunkAddressHex(chunk.hash()));
     await uploadOneChunk(
       chunk,
       stamper,
@@ -1393,17 +1397,19 @@ export async function uploadDataPresigned(
     await tree.append(data.subarray(off, Math.min(off + 4096, data.length)));
   }
   lastChunk = await tree.finalize();
-  await uploadOneChunk(
-    lastChunk,
-    stamper,
-    bee.url,
-    issuer,
-    privKeyBytes,
-    stampPool,
-    abortSignal,
-    uploadSession
-  );
-  onUploaded();
+  if (!sentAddrs.has(chunkAddressHex(lastChunk.hash()))) {
+    await uploadOneChunk(
+      lastChunk,
+      stamper,
+      bee.url,
+      issuer,
+      privKeyBytes,
+      stampPool,
+      abortSignal,
+      uploadSession
+    );
+    onUploaded();
+  }
   return new Reference(lastChunk.hash());
 }
 
@@ -2072,8 +2078,7 @@ async function createUploadContext(opts: {
         ctx.abortSignal,
         onStatus
       );
-      ctx.stampedAddrs.add(probeAddrHex);
-      ctx.addrBatcher.add(probeAddrHex);
+      rememberStampedAddress(ctx.stampedAddrs, ctx.addrBatcher, probeAddrHex);
       ctx.persistState(true);
     })();
     try {
@@ -2119,8 +2124,7 @@ async function createUploadContext(opts: {
           timeoutMs: CHUNK_HTTP_TIMEOUT_MS,
         });
         ctx.chunksUploaded++;
-        ctx.stampedAddrs.add(addrHex);
-        ctx.addrBatcher.add(addrHex);
+        rememberStampedAddress(ctx.stampedAddrs, ctx.addrBatcher, addrHex);
         ctx.persistState();
         ctx.onProgress?.(ctx.chunksUploaded, ctx.totalChunksApprox);
         if (!uploadRampProbeDone && ctx.uploadSession?.transport !== 'websocket') {

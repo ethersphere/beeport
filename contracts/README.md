@@ -19,6 +19,13 @@ Verify:
 npm run verify:registry-v2
 ```
 
+#### Known limitation: `increaseBatchDepth`
+
+The deployed StampsRegistryV2 contains `increaseBatchDepth`. This function always reverts.
+The Postage Stamp contract accepts `increaseDepth` only from the batch owner.
+The batch owner is the hot key, not the registry.
+The app does not call this function. Do not call it. A new registry version must remove it.
+
 ### Legacy StampsRegistry (V1)
 
 The original registry (`createBatchRegistry`, mirrored `BatchInfo` storage) was **removed from this repository**. Historical bytecode and deployment artifacts may still exist under `deployments/gnosis/`. The **SushiSwapStampsRouter** still targets the **V1 interface** at whatever address you pass as `GNOSIS_STAMPS_REGISTRY` — it is **not** interchangeable with StampsRegistryV2 without a new router contract.

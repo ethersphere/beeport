@@ -35,7 +35,9 @@ export {
   HOT_KEY_PURPOSE,
   buildCanonicalDerivationMessage,
   clearHotKey,
+  clearHotKeysExcept,
   deriveHotKey,
+  hasActiveHotKey,
   touchHotKeySession,
   type DerivedHotKey,
 } from './HotKeySession';
@@ -386,6 +388,25 @@ function readLegacyStampedAddresses(batchId: string): string[] | null {
   }
 }
 
+/**
+ * Upper bound for the in-memory dedup set of one batch (about 130 bytes per
+ * entry in a JS Set, so roughly 200 MB at the limit). The set only avoids
+ * re-stamping chunks that were already sent; a chunk past the limit is simply
+ * stamped again, which costs one slot but never corrupts state. All entries
+ * are still written to IndexedDB.
+ */
+export const MAX_STAMPED_ADDRS_IN_MEMORY = 1_500_000;
+
+/** Record a successfully uploaded chunk: memory (bounded) and IndexedDB (all). */
+export function rememberStampedAddress(
+  set: Set<string>,
+  batcher: { add(addrHex: string): void },
+  addrHex: string
+): void {
+  if (set.size < MAX_STAMPED_ADDRS_IN_MEMORY) set.add(addrHex);
+  batcher.add(addrHex);
+}
+
 export async function loadStampedAddresses(batchId: string): Promise<Set<string>> {
   const key = stripHex(batchId).toLowerCase();
   const set = new Set<string>();
@@ -404,6 +425,10 @@ export async function loadStampedAddresses(batchId: string): Promise<Set<string>
           }
           const v = cursor.value as StampedAddrRecord;
           if (typeof v.addrHex === 'string') set.add(v.addrHex);
+          if (set.size >= MAX_STAMPED_ADDRS_IN_MEMORY) {
+            resolve();
+            return;
+          }
           cursor.continue();
         };
         cursorReq.onerror = () => reject(cursorReq.error);

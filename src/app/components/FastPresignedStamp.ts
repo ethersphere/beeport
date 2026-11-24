@@ -957,7 +957,12 @@ function defaultWorkerCount(): number {
  * every worker fails until we fall back (noisy console, uploads still work).
  */
 export class StampSignerPool {
-  private readonly privKeyBytes: Uint8Array;
+  /**
+   * Main-thread copy of the key, kept only until the workers report ready.
+   * It stays set only when no worker could start (main-thread fallback).
+   */
+  private privKeyBytes: Uint8Array | null;
+  private lastSignAt = Date.now();
   private readonly workers: Worker[] = [];
   private readonly pending = new Map<
     number,
@@ -977,6 +982,11 @@ export class StampSignerPool {
 
   whenReady(): Promise<void> {
     return this.ready;
+  }
+
+  /** Time (ms since epoch) of the last signing request; used to keep busy sessions alive. */
+  get lastUsedAt(): number {
+    return this.lastSignAt;
   }
 
   private async startWorkers(n: number, privateKey: Uint8Array): Promise<void> {
@@ -1011,6 +1021,8 @@ export class StampSignerPool {
         this.workers.push(w);
       }
       await Promise.all(readyWaits);
+      // Workers hold the key now. Drop the main-thread copy.
+      this.wipeMainThreadKey();
     } catch {
       this.useMainThread = true;
       for (const w of this.workers) {
@@ -1051,18 +1063,36 @@ export class StampSignerPool {
     rec.resolve(sig);
   }
 
+  private wipeMainThreadKey(): void {
+    if (this.privKeyBytes) {
+      this.privKeyBytes.fill(0);
+      this.privKeyBytes = null;
+    }
+  }
+
   async signMsgHash(msgHash: Uint8Array): Promise<Uint8Array> {
     await this.ready;
+    this.lastSignAt = Date.now();
     if (this.useMainThread || this.workers.length === 0) {
+      if (!this.privKeyBytes) throw new Error('stamp signer pool terminated');
       return signStampMsgHash(this.privKeyBytes, msgHash);
     }
     return this.postSign('sign', msgHash);
   }
 
-  /** SOC owner attestation — same digest path as bee-js `PrivateKey.sign`. */
+  /**
+   * SOC owner attestation. The digest is the same one bee-js `PrivateKey.sign`
+   * signs; a worker signs it, so the key stays out of the main thread.
+   */
   async signOwnerPayload(data: Uint8Array): Promise<Uint8Array> {
     await this.ready;
-    return signOwnerPayloadElliptic(this.privKeyBytes, data);
+    this.lastSignAt = Date.now();
+    if (this.useMainThread || this.workers.length === 0) {
+      if (!this.privKeyBytes) throw new Error('stamp signer pool terminated');
+      return signOwnerPayloadElliptic(this.privKeyBytes, data);
+    }
+    const digest = hexToBytes(keccak256(ownerSignPersonalMessage(data)));
+    return this.postSign('signOwner', digest);
   }
 
   private async postSign(type: 'sign' | 'signOwner', payload: Uint8Array): Promise<Uint8Array> {
@@ -1085,6 +1115,7 @@ export class StampSignerPool {
       }
     }
     this.workers.length = 0;
+    this.wipeMainThreadKey();
     for (const [, rec] of this.pending) {
       rec.reject(new Error('stamp signer pool terminated'));
     }

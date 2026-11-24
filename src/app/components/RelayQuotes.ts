@@ -652,6 +652,14 @@ const monitorRelayStatus = async (
         setStatusMessage({ step: stepId, message: friendly });
 
         if (inProgressCount >= maxInProgressAttempts) {
+          // Last chance: the fill may have landed while the status API lagged.
+          if (await tryVerify()) {
+            setStatusMessage({
+              step: stepId,
+              message: 'Cross-chain swap completed successfully',
+            });
+            return;
+          }
           throw new Error(
             `Relay is still '${status || 'unknown'}' after ${
               (maxInProgressAttempts * RELAY_STATUS_CHECK_INTERVAL_MS) / 1000
@@ -686,6 +694,13 @@ const monitorRelayStatus = async (
       attempts++;
 
       if (attempts >= maxAttempts) {
+        if (await tryVerify()) {
+          setStatusMessage({
+            step: stepId,
+            message: 'Cross-chain swap completed successfully',
+          });
+          return;
+        }
         throw new Error(`Status monitoring timed out for step ${stepId}`);
       }
 
@@ -693,6 +708,10 @@ const monitorRelayStatus = async (
     }
   }
 
+  if (await tryVerify()) {
+    setStatusMessage({ step: stepId, message: 'Cross-chain swap completed successfully' });
+    return;
+  }
   throw new Error(`Operation timed out for step ${stepId} after ${maxAttempts} attempts`);
 };
 

@@ -17,6 +17,7 @@ import { formatUnits } from 'viem';
 
 import {
   getSelfCustodyBatches,
+  reconcileWalletBatches,
   StoredSelfCustodyBatch,
   type ChainBatchInfo,
 } from './SelfCustodyBatch';
@@ -334,6 +335,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         return;
       }
       try {
+        // Pick up batches the registry lists for this wallet but the local
+        // store lacks (wiped browser, or a purchase whose status poll failed).
+        await reconcileWalletBatches(address, getGnosisPublicClient().client as any);
         const stored = getSelfCustodyBatches(address);
         console.log(`📊 Found ${stored.length} self-custody batches for wallet`);
         const events = await buildStampList(stored);
@@ -362,6 +366,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     setIsRefreshing(true);
     setStatusMessage('Reading batch state from the Postage Stamp contract…');
     try {
+      await reconcileWalletBatches(address, getGnosisPublicClient().client as any);
       const stored = getSelfCustodyBatches(address);
       const events = await buildStampList(stored);
       setStamps(events.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
