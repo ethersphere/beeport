@@ -45,6 +45,7 @@ import {
   Stamper,
 } from '@ethersphere/bee-js';
 import { Binary, type Chunk } from 'cafe-utility';
+import { ChunkJoiner } from 'swarm-core/chunk';
 import { keccak_256 } from '@noble/hashes/sha3';
 
 import type { DerivedHotKey, PersistedStamperState } from './ClientStamping';
@@ -444,8 +445,12 @@ export async function loadIssuerStateFromSOC(params: {
   }
 
   // Decrypt the pre-save state (S₀).
-  const blob = await bee.downloadData(blobRef);
-  const blobBytes = blob.toUint8Array();
+  // Read the blob chunk by chunk (`GET /chunks`), NOT with `bee.downloadData`
+  // (`GET /bytes`): the Beeport gateways serve their web app (HTML, status 200)
+  // for `/bytes`, which made every restore fail with a decrypt error.
+  const blobBytes = await ChunkJoiner.collect(blobRef.toUint8Array(), addr =>
+    bee.downloadChunk(addr)
+  );
   if (blobBytes.length < 12 + 16) {
     throw new Error(`Encrypted state blob is too short (${blobBytes.length} bytes)`);
   }
