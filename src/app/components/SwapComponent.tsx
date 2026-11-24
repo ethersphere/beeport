@@ -64,7 +64,7 @@ import {
   clearHotKeysExcept,
   hasActiveHotKey,
   getCachedHotKeyAddress,
-  setIgnoredUnreadableSocSavedAt,
+  setIgnoredUnreadableSocIndex,
   loadStampUsage,
   type DerivedHotKey,
 } from './ClientStamping';
@@ -1707,7 +1707,7 @@ const SwapComponent: React.FC = () => {
     detail?: string;
     transient?: boolean;
     keepUploadFormOpen?: boolean;
-    ignoreBackup?: { batchId: string; savedAt: number };
+    ignoreBackup?: { batchId: string; index: number };
   } => {
     if (err instanceof StampNotReadyError) {
       // The most common case for a freshly-created batch — the gateway's
@@ -1737,7 +1737,7 @@ const SwapComponent: React.FC = () => {
         warning:
           'A newer backup of this stamp exists on Swarm but this wallet key cannot read it. Nothing was uploaded. If no other device uses this stamp, ignore the backup and upload again.',
         detail: raw,
-        ignoreBackup: { batchId: err.batchId, savedAt: err.remoteSavedAt },
+        ignoreBackup: { batchId: err.batchId, index: err.remoteIndex },
       };
     }
 
@@ -3006,7 +3006,7 @@ const SwapComponent: React.FC = () => {
                             )
                           )
                             return;
-                          setIgnoredUnreadableSocSavedAt(ig.batchId, ig.savedAt);
+                          setIgnoredUnreadableSocIndex(ig.batchId, ig.index);
                           setStatusMessage({ step: '', message: '' });
                         }}
                       >

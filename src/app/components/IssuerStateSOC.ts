@@ -7,9 +7,11 @@
  *
  * Solution: after every successful upload we encrypt the stamper state, push
  * it to Swarm as a content-addressed blob, and write a Single Owner Chunk
- * pointing at that blob. The SOC is owned by our hot key and lives at a
- * deterministic address derived from the batchId — so any browser holding the
- * same wallet (and therefore the same hot key) can read it back.
+ * pointing at that blob. The SOC is owned by our hot key and lives at an
+ * address derived from the batchId and a save INDEX — so any browser holding
+ * the same wallet (and therefore the same hot key) can find the latest one.
+ * Each save writes index+1 and never overwrites an earlier backup (a chunk
+ * rewritten at the same address can be served stale by nodes and gateways).
  *
  * SOC payload layout v2:
  *
@@ -76,6 +78,8 @@ export interface SaveIssuerStateResult {
   blobReference: `0x${string}`;
   /** Unix-ms timestamp embedded in the SOC. */
   savedAt: number;
+  /** Backup index written (0 = first save for this batch). */
+  index: number;
   /** How many on-chain slots this save consumed (encrypted blob chunks + 1 SOC). */
   slotsConsumed: number;
   /** Number of distinct buckets touched by the save (= delta entry count). */
@@ -96,6 +100,11 @@ export async function saveIssuerStateToSOC(params: {
   batchId: string;
   stamper: Stamper;
   abortSignal?: AbortSignal;
+  /**
+   * Backup index to write. Omit to look up the latest on Swarm and write the
+   * next one. Callers pass `lastKnownIndex + 1` to skip that lookup.
+   */
+  index?: number;
 }): Promise<SaveIssuerStateResult> {
   const { bee, hotKey, batchId, stamper, abortSignal } = params;
 
@@ -147,7 +156,10 @@ export async function saveIssuerStateToSOC(params: {
   );
   const afterBlobBuckets = stamper.getState();
 
-  const socIdentifier = computeIssuerStateIdentifier(cleanBatchId);
+  const saveIndex =
+    params.index ??
+    (await findLatestIndex(bee, new EthAddress(hotKey.address), cleanBatchId)) + 1;
+  const socIdentifier = computeIssuerStateIdentifier(cleanBatchId, saveIndex);
 
   const baseBlobDelta = new Map<number, number>();
   for (let b = 0; b < 65536; b++) {
@@ -270,59 +282,92 @@ export async function saveIssuerStateToSOC(params: {
     blobRef: blobRef.toHex(),
     savedAt,
     blobBytesLength: blob.length,
+    index: saveIndex,
   });
 
   return {
     socAddress: `0x${soc.address.toHex()}` as `0x${string}`,
     blobReference: `0x${blobRef.toHex()}` as `0x${string}`,
     savedAt,
+    index: saveIndex,
     slotsConsumed: blobChunks + 1,
     deltaEntries: finalDelta.size,
   };
 }
 
-/**
- * Fetch ONLY the issuer-state SOC chunk and return its embedded `savedAt`
- * timestamp (unix ms), without downloading or decrypting the state blob.
- * Returns `null` when no SOC exists for `(hotKey, batchId)`.
- *
- * Used as a cheap pre-upload staleness probe: one chunk read tells us
- * whether another device has written newer issuer state than what this
- * browser last synced.
- */
-export async function peekIssuerStateSocSavedAt(params: {
-  bee: Bee;
-  hotKey: DerivedHotKey;
-  batchId: string;
-}): Promise<number | null> {
-  const { bee, hotKey, batchId } = params;
-
-  const cleanBatchId = stripHex(batchId);
-  if (!/^[0-9a-fA-F]{64}$/.test(cleanBatchId)) {
-    throw new Error(`Invalid batchId for SOC peek: ${batchId}`);
-  }
-
-  const ownerAddress = new EthAddress(hotKey.address);
-  const identifierBytes = computeIssuerStateIdentifier(cleanBatchId);
+/** Download the backup SOC chunk at `index`; `null` when it does not exist. */
+async function readSocPayloadAt(
+  bee: Bee,
+  ownerAddress: EthAddress,
+  cleanBatchId: string,
+  index: number
+): Promise<Uint8Array | null> {
   const reader = bee.makeSOCReader(ownerAddress);
-  let soc;
   try {
-    soc = await reader.download(new Identifier(identifierBytes));
+    const soc = await reader.download(
+      new Identifier(computeIssuerStateIdentifier(cleanBatchId, index))
+    );
+    return soc.payload.toUint8Array();
   } catch (err) {
     if (isNotFound(err)) return null;
     throw err;
   }
+}
 
-  const payload = soc.payload.toUint8Array();
-  if (payload.length < SOC_PAYLOAD_HEADER_LEN) {
-    throw new Error(`Issuer-state SOC has truncated header (len=${payload.length})`);
+/**
+ * Find the highest backup index that exists for `(hotKey, batchId)`; `-1` when
+ * none does. Backups are written at consecutive indexes, so existence is
+ * monotone: gallop upward from `hintIndex` (highest index this browser knows
+ * of; `-1` or omitted = start from scratch), then binary-search the gap.
+ *
+ * Up to date (the common case) costs ONE probe, which misses. A miss takes the
+ * gateway about 1 s. A fresh browser needs about 2·log2(n) probes for n saves.
+ */
+async function findLatestIndex(
+  bee: Bee,
+  ownerAddress: EthAddress,
+  cleanBatchId: string,
+  hintIndex?: number | null,
+  cache: Map<number, Uint8Array | null> = new Map()
+): Promise<number> {
+  const exists = async (i: number): Promise<boolean> => {
+    if (!cache.has(i)) cache.set(i, await readSocPayloadAt(bee, ownerAddress, cleanBatchId, i));
+    return cache.get(i) !== null;
+  };
+  let lo = hintIndex !== undefined && hintIndex !== null && hintIndex >= 0 ? hintIndex : -1;
+  let step = 1;
+  while (await exists(lo + step)) {
+    lo += step;
+    step *= 2;
   }
-  const version = payload[0];
-  if (version !== 1 && version !== 2) {
-    throw new Error(`Issuer-state SOC has unsupported version ${version}`);
+  let hi = lo + step; // known to be missing
+  while (hi - lo > 1) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (await exists(mid)) lo = mid;
+    else hi = mid;
   }
-  const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-  return Number(dv.getBigUint64(33, false));
+  return lo;
+}
+
+/**
+ * Cheap pre-upload staleness probe: the highest backup index on Swarm (`-1` =
+ * none), without downloading or decrypting any blob. Another device has
+ * written newer state when this is higher than the index this browser last
+ * wrote or absorbed.
+ */
+export async function peekLatestIssuerStateIndex(params: {
+  bee: Bee;
+  hotKey: DerivedHotKey;
+  batchId: string;
+  /** Highest index this browser already knows of (see {@link findLatestIndex}). */
+  hintIndex?: number | null;
+}): Promise<number> {
+  const { bee, hotKey, batchId, hintIndex } = params;
+  const cleanBatchId = stripHex(batchId);
+  if (!/^[0-9a-fA-F]{64}$/.test(cleanBatchId)) {
+    throw new Error(`Invalid batchId for SOC peek: ${batchId}`);
+  }
+  return findLatestIndex(bee, new EthAddress(hotKey.address), cleanBatchId, hintIndex);
 }
 
 export interface LoadIssuerStateResult {
@@ -330,6 +375,8 @@ export interface LoadIssuerStateResult {
   state: PersistedStamperState;
   /** unix-ms */
   savedAt: number;
+  /** Backup index this state was read from. */
+  index: number;
   socAddress: `0x${string}`;
   blobReference: `0x${string}`;
   /** SOC payload format version actually seen on disk. */
@@ -376,9 +423,12 @@ export async function loadIssuerStateFromSOC(params: {
   bee: Bee;
   hotKey: DerivedHotKey;
   batchId: string;
+  /** Read this exact backup index. Omit to read the latest one. */
+  index?: number;
+  /** Highest index already known (speeds up the latest-index lookup). */
+  hintIndex?: number | null;
 }): Promise<LoadIssuerStateResult | null> {
   const { bee, hotKey, batchId } = params;
-
   const cleanBatchId = stripHex(batchId);
   if (!/^[0-9a-fA-F]{64}$/.test(cleanBatchId)) {
     throw new Error(`Invalid batchId for SOC load: ${batchId}`);
@@ -387,22 +437,19 @@ export async function loadIssuerStateFromSOC(params: {
   // Compute the SOC's address client-side so we know exactly what we're
   // looking at if it 404s (helps debugging in the console).
   const ownerAddress = new EthAddress(hotKey.address);
-  const identifierBytes = computeIssuerStateIdentifier(cleanBatchId);
+  const cache = new Map<number, Uint8Array | null>();
+  const loadIndex =
+    params.index ??
+    (await findLatestIndex(bee, ownerAddress, cleanBatchId, params.hintIndex, cache));
+  if (loadIndex < 0) return null;
   const expectedSocAddress = bee.calculateSingleOwnerChunkAddress(
-    new Identifier(identifierBytes),
+    new Identifier(computeIssuerStateIdentifier(cleanBatchId, loadIndex)),
     ownerAddress
   );
 
-  const reader = bee.makeSOCReader(ownerAddress);
-  let soc;
-  try {
-    soc = await reader.download(new Identifier(identifierBytes));
-  } catch (err) {
-    if (isNotFound(err)) return null;
-    throw err;
-  }
-
-  const payload = soc.payload.toUint8Array();
+  const payload =
+    cache.get(loadIndex) ?? (await readSocPayloadAt(bee, ownerAddress, cleanBatchId, loadIndex));
+  if (!payload) return null;
   if (payload.length < SOC_PAYLOAD_HEADER_LEN) {
     throw new Error(
       `Issuer-state SOC at ${expectedSocAddress.toHex()} has truncated header (len=${payload.length})`
@@ -497,6 +544,7 @@ export async function loadIssuerStateFromSOC(params: {
   return {
     state: { buckets, depth: json.depth },
     savedAt,
+    index: loadIndex,
     socAddress: `0x${expectedSocAddress.toHex()}` as `0x${string}`,
     blobReference: `0x${blobRef.toHex()}` as `0x${string}`,
     payloadVersion: version,
@@ -553,17 +601,27 @@ function encodeSocPayloadV2(args: {
 // ─── Identifier / key derivation helpers ─────────────────────────────────────
 
 /**
- * Stable SOC identifier per batch:  keccak256(PURPOSE || batchIdBytes).
+ * SOC identifier for save number `index` of a batch.
  *
- * Embeds the batch id so ALL of a user's batches use distinct SOC slots and
- * we don't accidentally overwrite one batch's state with another's.
+ * Index 0 is the original per-batch identifier `keccak256(PURPOSE || batchId)`,
+ * so backups written before indexes existed stay readable as index 0. Higher
+ * indexes append a big-endian u32. Every save writes a NEW address: a chunk
+ * that is rewritten at the same address can be served stale by gateways and
+ * nodes, so a backup is never overwritten.
+ *
+ * The batch id is part of the hash, so each batch has its own chain.
  */
-export function computeIssuerStateIdentifier(batchId: string): Uint8Array {
+export function computeIssuerStateIdentifier(batchId: string, index = 0): Uint8Array {
+  if (!Number.isInteger(index) || index < 0 || index > 0xffffffff) {
+    throw new Error(`Invalid issuer-state index: ${index}`);
+  }
   const idBytes = hexToBytes(stripHex(batchId));
   const purpose = utf8.encode(PURPOSE);
-  const buf = new Uint8Array(purpose.length + idBytes.length);
+  const extra = index === 0 ? 0 : 4;
+  const buf = new Uint8Array(purpose.length + idBytes.length + extra);
   buf.set(purpose, 0);
   buf.set(idBytes, purpose.length);
+  if (extra) new DataView(buf.buffer).setUint32(purpose.length + idBytes.length, index, false);
   return keccak_256(buf);
 }
 

@@ -38,9 +38,9 @@ import {
   rememberStampedAddress,
   chunkAddressHex,
   StampedAddrWriteBatcher,
-  getLastSyncedSocSavedAt,
-  setLastSyncedSocSavedAt,
-  getIgnoredUnreadableSocSavedAt,
+  getLastSyncedSocIndex,
+  setLastSyncedSocIndex,
+  getIgnoredUnreadableSocIndex,
   mergeStamperStates,
   type DerivedHotKey,
   type PersistedStamperState,
@@ -63,7 +63,7 @@ import { DEFAULT_BEE_API_URL } from './constants';
 import {
   saveIssuerStateToSOC,
   loadIssuerStateFromSOC,
-  peekIssuerStateSocSavedAt,
+  peekLatestIssuerStateIndex,
   IssuerStateDecryptError,
 } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
@@ -445,18 +445,29 @@ const SOC_NOT_FOUND_RETRY_DELAY_MS = 2_000;
  * the caller's responsibility (policies differ per path).
  */
 /**
+ * Index to write for this browser's next backup: one after the last one it
+ * wrote or absorbed. `undefined` (marker unknown) makes the save look the
+ * latest index up on Swarm first.
+ */
+function nextSocIndex(cleanBatchId: string): number | undefined {
+  const last = getLastSyncedSocIndex(cleanBatchId);
+  return last === null ? undefined : last + 1;
+}
+
+/**
  * A newer issuer-state backup exists on Swarm but cannot be decrypted with
  * the current hot key. The UI offers to ignore that one backup (see
- * `setIgnoredUnreadableSocSavedAt`); the next successful save replaces it.
+ * `setIgnoredUnreadableSocIndex`); the next save is written after it.
  */
 export class UnreadableIssuerBackupError extends Error {
   readonly batchId: string;
-  readonly remoteSavedAt: number;
-  constructor(message: string, batchId: string, remoteSavedAt: number) {
+  /** Backup index (position in the chain of saves) that cannot be read. */
+  readonly remoteIndex: number;
+  constructor(message: string, batchId: string, remoteIndex: number) {
     super(message);
     this.name = 'UnreadableIssuerBackupError';
     this.batchId = batchId;
-    this.remoteSavedAt = remoteSavedAt;
+    this.remoteIndex = remoteIndex;
   }
 }
 
@@ -508,7 +519,7 @@ async function resolveStamperStateForUpload(args: {
       );
     }
     await saveStamperState(cleanBatchId, restored.state);
-    setLastSyncedSocSavedAt(cleanBatchId, restored.savedAt);
+    setLastSyncedSocIndex(cleanBatchId, restored.index);
     onStatus?.('Restored batch state from Swarm (batch was used on another device).');
     console.info(
       `[ClientSideUpload] Restored issuer state for ${cleanBatchId.slice(0, 10)}… ` +
@@ -519,17 +530,21 @@ async function resolveStamperStateForUpload(args: {
   }
 
   // ── Cases 2/3: local state exists — staleness probe ──────────────────────
-  // A missing marker (state from before markers existed, or every SOC save
-  // here failed) is treated as "never synced": any SOC found is merged.
-  // The max-merge is idempotent, so merging our own state again is harmless.
-  const lastSynced = getLastSyncedSocSavedAt(cleanBatchId);
+  // Backups are written at consecutive indexes (one new address per save), so
+  // "has another device written since our last sync?" is "does index
+  // lastSynced+1 exist?". A missing marker (state from before markers existed,
+  // or every backup save here failed) is treated as "never synced": any backup
+  // found is merged. The max-merge is idempotent, so merging our own state
+  // again is harmless.
+  const lastSynced = getLastSyncedSocIndex(cleanBatchId);
 
-  let remoteSavedAt: number | null = null;
+  let remoteIndex: number;
   try {
-    remoteSavedAt = await peekIssuerStateSocSavedAt({
+    remoteIndex = await peekLatestIssuerStateIndex({
       bee,
       hotKey,
       batchId: cleanBatchId,
+      hintIndex: lastSynced,
     });
   } catch (err) {
     // Best-effort probe: local state is authoritative for this browser's own
@@ -540,33 +555,40 @@ async function resolveStamperStateForUpload(args: {
     );
     return persisted;
   }
-  // Compare for equality, not order: the marker holds the exact savedAt this
-  // browser last wrote or absorbed, so ANY other value means another writer.
-  // Ordering would break when device clocks differ.
-  if (remoteSavedAt === null || remoteSavedAt === lastSynced) return persisted;
+  if (remoteIndex < 0) {
+    // No backup exists yet: the next save writes index 0.
+    if (lastSynced === null) setLastSyncedSocIndex(cleanBatchId, -1);
+    return persisted;
+  }
+  if (lastSynced !== null && remoteIndex === lastSynced) return persisted;
 
   // ── Case 3: another device wrote newer state — merge ─────────────────────
   onStatus?.('Batch was used on another device — merging its state…');
   let remote;
   try {
-    remote = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
+    remote = await loadIssuerStateFromSOC({
+      bee,
+      hotKey,
+      batchId: cleanBatchId,
+      index: remoteIndex,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof IssuerStateDecryptError) {
-      if (getIgnoredUnreadableSocSavedAt(cleanBatchId) === remoteSavedAt) {
+      if (getIgnoredUnreadableSocIndex(cleanBatchId) === remoteIndex) {
         // The user chose to ignore exactly this backup. Local counters stay
-        // authoritative; the SOC save after this upload replaces the backup.
+        // authoritative; the next save is written at the following index.
         console.warn(
-          `[ClientSideUpload] Ignoring unreadable issuer-state backup (savedAt=${remoteSavedAt}) by user choice.`
+          `[ClientSideUpload] Ignoring unreadable issuer-state backup (index ${remoteIndex}) by user choice.`
         );
-        setLastSyncedSocSavedAt(cleanBatchId, remoteSavedAt);
+        setLastSyncedSocIndex(cleanBatchId, remoteIndex);
         return persisted;
       }
       throw new UnreadableIssuerBackupError(
         `Issuer-state: newer backup found on Swarm but unreadable (${msg}). ` +
           `Upload stopped so earlier chunks are not overwritten.`,
         cleanBatchId,
-        remoteSavedAt
+        remoteIndex
       );
     }
     // Unlike the probe, we now have positive evidence that our counters
@@ -578,7 +600,7 @@ async function resolveStamperStateForUpload(args: {
     );
   }
   if (!remote) {
-    // The probe proved a newer SOC exists, so local state under-counts.
+    // The probe proved a newer backup exists, so local state under-counts.
     throw new Error(
       `This batch was used on another device, but its state disappeared from ` +
         `Swarm between two reads. Aborting so the other device's chunks aren't ` +
@@ -588,7 +610,7 @@ async function resolveStamperStateForUpload(args: {
   // Depth differences are fine: counters merge exactly (see mergeStamperStates).
   const merged = mergeStamperStates(persisted, remote.state);
   await saveStamperState(cleanBatchId, merged);
-  setLastSyncedSocSavedAt(cleanBatchId, remote.savedAt);
+  setLastSyncedSocIndex(cleanBatchId, remote.index);
   console.info(
     `[ClientSideUpload] Merged issuer state for ${cleanBatchId.slice(0, 10)}… ` +
       `(remote savedAt=${new Date(remote.savedAt).toISOString()})`
@@ -1158,13 +1180,14 @@ async function uploadFileClientSideUnlocked(
           batchId: cleanBatchId,
           stamper,
           abortSignal,
+          index: nextSocIndex(cleanBatchId),
         });
         // Persist again — the SOC save itself consumed slots that future
         // uploads must not re-allocate. Await it before the marker below.
         await persistStateNow();
         // Local state now incorporates everything the SOC describes — record
-        // its savedAt so the pre-upload staleness probe has a baseline.
-        setLastSyncedSocSavedAt(cleanBatchId, soc.savedAt);
+        // its index so the pre-upload staleness probe has a baseline.
+        setLastSyncedSocIndex(cleanBatchId, soc.index);
         const socMs = performance.now() - socStartedAt;
         console.log(
           `⏱ [ClientSideUpload] SOC backup done in ${socMs.toFixed(0)}ms (background, ` +
@@ -2303,6 +2326,7 @@ async function maybeSaveIssuerStateToSOC(
       batchId: ctx.cleanBatchId,
       stamper: ctx.stamper,
       abortSignal: ctx.abortSignal,
+      index: nextSocIndex(ctx.cleanBatchId),
     });
     // Persist the slots the save consumed BEFORE recording the marker, so the
     // marker never claims more than IndexedDB holds.
@@ -2311,8 +2335,8 @@ async function maybeSaveIssuerStateToSOC(
       depth: ctx.stamper.depth,
     });
     // Local state now incorporates everything the SOC describes — record its
-    // savedAt so the pre-upload staleness probe has a baseline.
-    setLastSyncedSocSavedAt(ctx.cleanBatchId, soc.savedAt);
+    // index so the pre-upload staleness probe has a baseline.
+    setLastSyncedSocIndex(ctx.cleanBatchId, soc.index);
     return soc;
   } catch (err) {
     console.warn('Failed to save issuer state to SOC (upload itself succeeded):', err);

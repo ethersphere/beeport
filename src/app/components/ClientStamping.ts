@@ -235,35 +235,44 @@ export async function clearStamperState(batchId: string): Promise<void> {
 
 // ─── SOC sync marker ──────────────────────────────────────────────────────────
 //
-// Tracks the `savedAt` of the newest issuer-state SOC that this browser's
-// local state is known to incorporate (either because we wrote that SOC
-// ourselves, or because we restored/merged from it). Before an upload that
-// runs on non-empty local state, the pipeline peeks at the SOC on Swarm: a
-// `savedAt` NEWER than this marker means another device has uploaded to the
-// batch since we last synced, and our counters under-count — see
-// `resolveStamperStateForUpload` in ClientSideUpload.ts.
+// Tracks the INDEX of the newest issuer-state backup that this browser's local
+// state is known to incorporate (either because we wrote it ourselves, or
+// because we restored/merged from it). `-1` means "checked, none exists".
+// Before an upload that runs on non-empty local state, the pipeline probes
+// Swarm: a backup at a HIGHER index than this marker means another device has
+// uploaded to the batch since we last synced, and our counters under-count —
+// see `resolveStamperStateForUpload` in ClientSideUpload.ts.
 //
 // Stored in localStorage (a single small number per batch) rather than IDB:
 // it's written at most once per upload and read once per upload, so none of
 // the quota/latency reasons that moved the bucket counters to IDB apply.
 
 const socSyncStorageKey = (batchId: string) =>
-  `beeport.socSavedAt.${stripHex(batchId).toLowerCase()}`;
+  `beeport.socIndex.${stripHex(batchId).toLowerCase()}`;
 
 /**
- * `savedAt` (unix ms) of the last issuer-state SOC this browser wrote or
- * absorbed for `batchId`, or `null` if unknown (never synced, or state
- * predates this marker).
+ * Index of the last issuer-state backup this browser wrote or absorbed for
+ * `batchId` (`-1` = none exists), or `null` if unknown (never synced).
  */
-export function getLastSyncedSocSavedAt(batchId: string): number | null {
+export function getLastSyncedSocIndex(batchId: string): number | null {
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(socSyncStorageKey(batchId));
-    if (!raw) return null;
+    if (raw === null || raw === '') return null;
     const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return Number.isInteger(n) && n >= -1 ? n : null;
   } catch {
     return null;
+  }
+}
+
+/** Record that local state now incorporates the backup at `index`. */
+export function setLastSyncedSocIndex(batchId: string, index: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(socSyncStorageKey(batchId), String(index));
+  } catch {
+    // ignore — marker is an optimisation; worst case we re-merge next upload
   }
 }
 
@@ -271,36 +280,28 @@ const socIgnoreStorageKey = (batchId: string) =>
   `beeport.socIgnoreUnreadable.${stripHex(batchId).toLowerCase()}`;
 
 /**
- * `savedAt` of an unreadable issuer-state SOC that the user chose to ignore
- * for `batchId`, or `null`. The override only matches that exact backup: a
+ * Index of an unreadable issuer-state backup that the user chose to ignore for
+ * `batchId`, or `null`. The override only matches that exact backup: a
  * different (newer) backup on Swarm asks again.
  */
-export function getIgnoredUnreadableSocSavedAt(batchId: string): number | null {
+export function getIgnoredUnreadableSocIndex(batchId: string): number | null {
   if (typeof localStorage === 'undefined') return null;
   try {
-    const n = Number(localStorage.getItem(socIgnoreStorageKey(batchId)));
-    return Number.isFinite(n) && n > 0 ? n : null;
+    const raw = localStorage.getItem(socIgnoreStorageKey(batchId));
+    if (raw === null || raw === '') return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : null;
   } catch {
     return null;
   }
 }
 
-export function setIgnoredUnreadableSocSavedAt(batchId: string, savedAt: number): void {
+export function setIgnoredUnreadableSocIndex(batchId: string, index: number): void {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(socIgnoreStorageKey(batchId), String(savedAt));
+    localStorage.setItem(socIgnoreStorageKey(batchId), String(index));
   } catch {
     // ignore — the user is asked again on the next upload
-  }
-}
-
-/** Record that local state now incorporates the SOC written at `savedAt`. */
-export function setLastSyncedSocSavedAt(batchId: string, savedAt: number): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(socSyncStorageKey(batchId), String(savedAt));
-  } catch {
-    // ignore — marker is an optimisation; worst case we re-merge next upload
   }
 }
 

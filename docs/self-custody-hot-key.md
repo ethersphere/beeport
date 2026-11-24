@@ -271,8 +271,12 @@ The app protects the state in two ways. It restores the state from Swarm before 
    successful upload the app writes the current bucket counters to a
    Single Owner Chunk on Swarm:
 
-   - SOC identifier = `keccak256("beeport.issuerState" || batchId)` —
-     deterministic per batch, same on every browser.
+   - SOC identifier for save number `n` =
+     `keccak256("beeport.issuerState" || batchId || u32(n))`. Save 0 has no
+     `u32` suffix. The identifier is the same on every browser.
+   - Each save writes a new address (`n` grows by one). A node or gateway
+     can serve an old copy of a chunk that the app writes twice at one
+     address. The app never overwrites a backup.
    - SOC owner     = your hot key — anyone holding the same wallet can
      re-derive the hot key and address the SOC.
    - SOC payload v2 layout (~50 bytes for typical saves):
@@ -296,15 +300,23 @@ The app protects the state in two ways. It restores the state from Swarm before 
      stamped. If the SOC *read fails* (gateway unreachable), the upload
      is **aborted** rather than started from blank counters — only a
      confirmed "no SOC exists" (batch never uploaded to) proceeds blank.
-   - **Local state exists**: a one-chunk probe compares the SOC's
-     `savedAt` against the `beeport.socSavedAt.<batchId>` marker (the
-     newest SOC this browser wrote or absorbed). A newer SOC means
-     another device uploaded since; the remote state is fetched and
+   - **Local state exists**: the app probes for the backup after the
+     newest one that this browser knows. The `beeport.socIndex.<batchId>`
+     marker stores that number. A missing chunk means no change. A
+     chunk that exists means another device uploaded since; the remote
+     state is fetched and
      **merged by element-wise max** of the bucket counters — max covers
      every slot index either device allocated, so future stamps can't
      collide with either device's chunks. If the probe itself fails, the
      upload proceeds on local state (local is authoritative for this
      browser's own history).
+
+   **Find the newest backup.** The backups form a numbered chain. The
+   app tests the number after the last known one. If that chunk exists,
+   the app tests numbers that grow by powers of two. It then uses a
+   binary search (it halves the range at each step) to find the last
+   number that exists. A missing chunk needs about 1 second to return a
+   404. An up-to-date browser sends one request.
 
    The gear button on the stamp list does the same restore manually for
    every batch missing local state — useful to see utilization without
@@ -331,7 +343,7 @@ The app protects the state in two ways. It restores the state from Swarm before 
    readable but leave a small drift on restore: the K + 1 save slots are
    un-tracked, giving ≈ K / 65 536 collision probability per new chunk.
    In practice K ≤ 15 and any retry loop absorbs it. Not worth migrating
-   manually — the next successful upload will overwrite the SOC with v2.
+   manually — the next successful upload writes a new v2 backup.
 
 2. **Re-upload your existing files first to rebuild state.** Re-stamping
    the same chunk content with the same starting counters reproduces the
