@@ -20,7 +20,7 @@ const Disclaimer: React.FC = () => {
       <p>
         You are on <strong>V2</strong> of BeePort. For V1 and old stamps go to{' '}
         <a href="https://beeport-v1.ethswarm.org/" target="_blank" rel="noopener noreferrer">
-          https://beeport-v1.ethswarm.org/
+          V1 Beeport
         </a>
       </p>
     </div>
