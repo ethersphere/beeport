@@ -37,7 +37,7 @@ Each +1 depth doubles slot space but dilutes TTL for the same amount. A batch ha
 
 ## Top-up
 
-Existing batches can be topped up (more duration) from the stamp list. Files stay under the same batch ID and references never change.
+Existing batches can be topped up (more duration) from your storage list. Files stay under the same batch ID and references never change.
 
 ## Choosing a size
 
@@ -51,7 +51,7 @@ Anyone holding the batch owner key can stamp against the batch. In Beeport's sel
 
 | Symptom | Cause / fix |
 | ------- | ----------- |
-| "Stamp not ready yet" right after buying | Gateway still indexing the batch — the app retries automatically; see [Troubleshooting](./troubleshooting.md) |
+| "Storage not ready yet" right after buying | Gateway still indexing the batch — the app retries automatically; see [Troubleshooting](./troubleshooting.md) |
 | "Bucket is full" with low MB used | Per-bucket saturation — deeper stamp, top up, or reset local state if counters look wrong |
 | Stamp missing from list | Reconnect the same wallet; batches are on-chain and rediscovered from the wallet |
 | Expired stamp | Data may be garbage-collected; buy a new batch and re-upload |

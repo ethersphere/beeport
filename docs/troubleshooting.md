@@ -8,9 +8,9 @@ Common failures in Beeport self-custody uploads and what to do about them.
 
 Connect the wallet, choose a file, and select a stamp. If state looks out of sync, refresh the page.
 
-### "Stamp not ready yet" / HTTP 400 `invalid batch id` on a fresh batch
+### "Storage not ready yet" / HTTP 400 `invalid batch id` on a fresh batch
 
-The Bee gateway's batchstore hasn't indexed your `createBatch` block yet. The app probes with one chunk and retries for ~2 minutes ("Waiting for Bee gateway to recognize your new stamp…"). If it still fails after that, the gateway is slow to poll its RPC or watches a different PostageStamp contract — wait a minute and press Upload again (your file selection is preserved), or switch gateways.
+The Bee gateway's batchstore hasn't indexed your `createBatch` block yet. The app probes with one chunk and retries for ~2 minutes ("Waiting for Bee gateway to recognize your new storage…"). If it still fails after that, the gateway is slow to poll its RPC or watches a different PostageStamp contract — wait a minute and press Upload again (your file selection is preserved), or switch gateways.
 
 ### "Stamp is full in one Swarm bucket" / "Bucket is full"
 

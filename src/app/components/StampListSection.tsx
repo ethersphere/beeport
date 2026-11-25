@@ -466,8 +466,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     const ok = window.confirm(
       `Reset local issuer state for batch ${idLabel}…?\n\n` +
         `This clears the bucket counters and chunk-dedup cache stored in this ` +
-        `browser. The next upload to this stamp will start fresh and re-seed ` +
-        `the SOC backup. The stamp itself is unaffected on-chain or on Bee.`
+        `browser. The next upload to this storage will start fresh and re-seed ` +
+        `the SOC backup. The storage itself is unaffected on-chain or on Bee.`
     );
     if (!ok) return;
     // Both helpers are now async (IndexedDB-backed). Await them so the
@@ -517,9 +517,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         </div>
 
         {!address ? (
-          <div className={styles.stampListLoading}>Connect wallet to check stamps</div>
+          <div className={styles.stampListLoading}>Connect wallet to check storage</div>
         ) : isLoading ? (
-          <div className={styles.stampListLoading}>Loading stamps…</div>
+          <div className={styles.stampListLoading}>Loading storage…</div>
         ) : stamps.length === 0 ? (
           <div className={styles.stampListEmpty}>
             No self-custody storage yet. Buy storage to create your first batch — it will appear
@@ -617,7 +617,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   }}
                   data-stamp-id={stamp.batchId}
                   data-copied="false"
-                  title="Click to copy stamp ID"
+                  title="Click to copy storage ID"
                 >
                   ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
                 </div>
@@ -730,7 +730,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                 onClick={() => {
                                   void handleResetLocalState(stamp);
                                 }}
-                                title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain stamp is untouched."
+                                title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain storage is untouched."
                               >
                                 Reset local state
                               </button>
@@ -888,7 +888,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
                   <button
                     className={styles.topUpButton}
-                    title="Top up this stamp"
+                    title="Top up this storage"
                     onClick={() => {
                       try {
                         const formattedId = stamp.batchId.startsWith('0x')
@@ -898,7 +898,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                         window.open(topupUrl, '_self');
                       } catch (error) {
                         console.error('Error during top-up navigation:', error);
-                        alert('Navigation failed. Please copy the stamp ID and use it manually.');
+                        alert('Navigation failed. Please copy the storage ID and use it manually.');
                       }
                     }}
                   >

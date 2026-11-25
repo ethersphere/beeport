@@ -1008,7 +1008,7 @@ async function uploadFileClientSideUnlocked(
       (await MerkleTree.root(STAMP_READY_PROBE_DATA)).hash()
     );
     if (!stampedAddrs.has(probeAddrPreview)) {
-      onStatus?.('Verifying stamp readiness with Bee gateway…');
+      onStatus?.('Verifying storage readiness with Bee gateway…');
       mark('readiness probe started');
       const { probeAddrHex } = await waitForStampReady(
         stamper,
@@ -1346,7 +1346,7 @@ export function checkProjectedStampCapacity(
       utilizationPercent,
       projectedUtilizationPercent,
       message:
-        `Stamp would be ${projectedUtilizationPercent.toFixed(1)}% full ` +
+        `Storage would be ${projectedUtilizationPercent.toFixed(1)}% full ` +
         `after this upload (currently ${utilizationPercent.toFixed(1)}%). ` +
         `Top up the batch or use a fresh one before retrying.`,
     };
@@ -1357,7 +1357,7 @@ export function checkProjectedStampCapacity(
       utilizationPercent,
       projectedUtilizationPercent,
       message:
-        `This upload will push the stamp from ${utilizationPercent.toFixed(1)}% ` +
+        `This upload will push the storage from ${utilizationPercent.toFixed(1)}% ` +
         `to ~${projectedUtilizationPercent.toFixed(1)}% full.`,
     };
   }
@@ -1591,7 +1591,7 @@ async function waitForStampReady(
       if (attempt === STAMP_READY_PROBE_MAX_ATTEMPTS - 1) throw stampNotReady;
       const seconds = (STAMP_READY_PROBE_DELAY_MS / 1000).toFixed(0);
       onStatus?.(
-        `Waiting for Bee gateway to recognize your new stamp… ` +
+        `Waiting for Bee gateway to recognize your new storage… ` +
           `(probe ${attempt + 1}/${STAMP_READY_PROBE_MAX_ATTEMPTS}, retrying in ${seconds}s)`
       );
       await sleep(STAMP_READY_PROBE_DELAY_MS);
@@ -1842,7 +1842,7 @@ function classifyAsStampNotReady(err: unknown): StampNotReadyError | null {
       ? `Bee gateway returned HTTP ${status} for the chunk POST.`
       : errMessage || 'Bee gateway rejected the stamp (batch not indexed yet).';
   return new StampNotReadyError({
-    message: `Stamp not ready yet: ${detail}`,
+    message: `Storage not ready yet: ${detail}`,
     cause: err,
     status,
     responseBody: body,
@@ -2125,7 +2125,7 @@ async function createUploadContext(opts: {
         (await MerkleTree.root(STAMP_READY_PROBE_DATA)).hash()
       );
       if (ctx.stampedAddrs.has(probeAddrPreview)) return;
-      onStatus?.('Verifying stamp readiness with Bee gateway…');
+      onStatus?.('Verifying storage readiness with Bee gateway…');
       const { probeAddrHex } = await waitForStampReady(
         ctx.stamper,
         ctx.beeApiUrl,

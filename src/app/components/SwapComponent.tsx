@@ -349,7 +349,7 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'HotKey',
         message:
-          'Please sign the message in your wallet to derive your self-custody stamping key…',
+          'Please sign the message in your wallet to derive your self-custody storage key…',
       });
     }
     // Always route through deriveHotKey so idle-timeout expiry is respected
@@ -1052,7 +1052,7 @@ const SwapComponent: React.FC = () => {
 
         setStatusMessage({
           step: 'Bridge',
-          message: `Buying stamp via Relay (~$${totalAmountUSD.toFixed(2)})…`,
+          message: `Buying storage via Relay (~$${totalAmountUSD.toFixed(2)})…`,
         });
 
         // On-chain success oracle. Relay's `/intents/status` sometimes
@@ -1176,13 +1176,13 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message: recovered
-          ? 'The purchase finished on chain, but confirmation failed. Your stamp is now in Your Stamps.'
+          ? 'The purchase finished on chain, but confirmation failed. Your storage is now in Your Self-Custody Storage.'
           : 'Self-custody batch creation failed',
         error:
           (err instanceof Error ? err.message : 'Unknown error') +
           (recovered
             ? ''
-            : ' If you were charged, wait a few minutes and open Your Stamps: a purchase that finished on chain appears there.'),
+            : ' If you were charged, wait a few minutes and open Your Self-Custody Storage: a purchase that finished on chain appears there.'),
         isError: true,
       });
       setIsLoading(false);
@@ -1647,7 +1647,7 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+          err instanceof StampNotReadyError ? 'Storage not ready yet' : translated.message,
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
@@ -1673,13 +1673,13 @@ const SwapComponent: React.FC = () => {
     if (
       m.includes('waiting for bee gateway') ||
       m.includes('gateway syncing') ||
-      m.includes('verifying stamp readiness') ||
-      m.includes('recognize your new stamp')
+      m.includes('verifying storage readiness') ||
+      m.includes('recognize your new storage')
     ) {
       return 'Waiting for storage to be usable...';
     }
     if (m.includes('another device') || m.includes('issuer state') || m.includes('swarm for')) {
-      return 'Syncing stamp state...';
+      return 'Syncing storage state...';
     }
     return null;
   };
@@ -1733,9 +1733,9 @@ const SwapComponent: React.FC = () => {
     // the file is NOT on the network yet — do not use the "already uploaded" text.
     if (err instanceof UnreadableIssuerBackupError) {
       return {
-        message: 'Upload stopped: stamp backup unreadable',
+        message: 'Upload stopped: storage backup unreadable',
         warning:
-          'A newer backup of this stamp exists on Swarm but this wallet key cannot read it. Nothing was uploaded. If no other device uses this stamp, ignore the backup and upload again.',
+          'A newer backup of this storage exists on Swarm but this wallet key cannot read it. Nothing was uploaded. If no other device uses this storage, ignore the backup and upload again.',
         detail: raw,
         ignoreBackup: { batchId: err.batchId, index: err.remoteIndex },
       };
@@ -1745,16 +1745,16 @@ const SwapComponent: React.FC = () => {
       return {
         message: 'Issuer-state backup to Swarm failed',
         warning:
-          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this stamp in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
+          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this storage in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
         detail: raw,
       };
     }
 
     if (lower.includes('bucket is full')) {
       return {
-        message: 'Stamp is full in one Swarm bucket',
+        message: 'Storage is full in one Swarm bucket',
         warning:
-          'Swarm allows only a limited number of chunks per logical bucket (out of 65,536). Total “MB used” can still look low while a single bucket is saturated. Try a deeper/larger stamp, top up, pick a different batch, or use “Reset local state” on this stamp if counters look wrong — then retry.',
+          'Swarm allows only a limited number of chunks per logical bucket (out of 65,536). Total “MB used” can still look low while a single bucket is saturated. Try a deeper/larger storage, top up, pick a different batch, or use “Reset local state” on this storage if counters look wrong — then retry.',
         detail: raw,
         keepUploadFormOpen: true,
       };
@@ -1765,7 +1765,7 @@ const SwapComponent: React.FC = () => {
     // StampNotReadyError (classifier normally catches this before we get here).
     if (lower.includes('invalid batch')) {
       return {
-        message: 'Stamp not ready yet',
+        message: 'Storage not ready yet',
         warning:
           'The Bee gateway has not indexed this batch yet. Wait a few seconds and click Upload again — your file selection is preserved.',
         detail: raw,
@@ -1907,7 +1907,7 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+          err instanceof StampNotReadyError ? 'Storage not ready yet' : translated.message,
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
@@ -2055,7 +2055,7 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+          err instanceof StampNotReadyError ? 'Storage not ready yet' : translated.message,
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
@@ -2179,7 +2179,7 @@ const SwapComponent: React.FC = () => {
       setStatusMessage({
         step: 'Error',
         message:
-          err instanceof StampNotReadyError ? 'Stamp not ready yet' : translated.message,
+          err instanceof StampNotReadyError ? 'Storage not ready yet' : translated.message,
         error:
           err instanceof StampNotReadyError ? translated.message : translated.detail,
         warning: translated.warning,
@@ -2545,7 +2545,7 @@ const SwapComponent: React.FC = () => {
                 </div>
               ) : (
                 <div>
-                  🔑 Your wallet will be asked to sign a single message to derive a stamping key.
+                  🔑 Your wallet will be asked to sign a single message to derive a storage key.
                   The key never leaves this tab.
                 </div>
               )}
@@ -2595,9 +2595,9 @@ const SwapComponent: React.FC = () => {
             <div className={styles.inputGroup}>
               <label
                 className={styles.label}
-                data-tooltip="Storage stamps are used to pay to store and host data in Swarm"
+                data-tooltip="Storage is paid for with postage stamps. It is used to pay to store and host data in Swarm"
               >
-                Storage stamps
+                Storage
               </label>
               <StorageStampsDropdown
                 storageOptions={STORAGE_OPTIONS}
@@ -2951,7 +2951,7 @@ const SwapComponent: React.FC = () => {
                 )}
 
                 <div className={styles.uploadWarning}>
-                  Warning! Uploaded data cannot be deleted - it will be removed once the stamp
+                  Warning! Uploaded data cannot be deleted - it will be removed once the storage
                   has expired. Uploaded data exists publicly in the network - anyone who knows
                   the reference can access it.
                 </div>
@@ -3000,8 +3000,8 @@ const SwapComponent: React.FC = () => {
                           if (!ig) return;
                           if (
                             !window.confirm(
-                              'Ignore the unreadable backup and use this browser\'s stamp state?\n\n' +
-                                'Only do this if no other device uploaded with this stamp. ' +
+                              'Ignore the unreadable backup and use this browser\'s storage state?\n\n' +
+                                'Only do this if no other device uploaded with this storage. ' +
                                 'If one did, new uploads can overwrite its files.'
                             )
                           )
@@ -3705,7 +3705,7 @@ const SwapComponent: React.FC = () => {
                     </div>
                   </div>
                   <div className={styles.updateDelayNotice}>
-                    ⏱️ It will take a few minutes for the stamp expiry to be updated
+                    ⏱️ It will take a few minutes for the storage expiry to be updated
                   </div>
                 </div>
 

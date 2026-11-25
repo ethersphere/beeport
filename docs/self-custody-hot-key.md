@@ -318,7 +318,7 @@ The app protects the state in two ways. It restores the state from Swarm before 
    number that exists. A missing chunk needs about 1 second to return a
    404. An up-to-date browser sends one request.
 
-   The gear button on the stamp list does the same restore manually for
+   The gear button on the storage list does the same restore manually for
    every batch missing local state — useful to see utilization without
    starting an upload. Both paths re-derive the hot key from one wallet
    signature, download the SOC, decrypt, apply the delta, and write the
