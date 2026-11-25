@@ -1036,6 +1036,7 @@ async function uploadFileClientSideUnlocked(
       abortSignal,
       transportMode: sessionTransport,
       streamSocketCount,
+      onSocketCountChange: n => onUploadTransport?.('websocket', { streamSocketCount: n }),
     });
     uploadTransport = uploadSession.transport;
     onUploadTransport?.(uploadTransport, {
@@ -2066,6 +2067,8 @@ async function createUploadContext(opts: {
       abortSignal: ctx.abortSignal,
       transportMode: sessionTransport,
       streamSocketCount,
+      onSocketCountChange: n =>
+        ctx.onUploadTransport?.('websocket', { streamSocketCount: n }),
     });
     if (ctx.uploadSession.transport === 'websocket') {
       const streamConc = Math.max(

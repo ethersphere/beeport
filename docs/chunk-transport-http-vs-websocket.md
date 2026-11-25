@@ -89,7 +89,7 @@ Multi-file / folder / NFT collection Auto decisions use **total payload bytes** 
 
 ## Configuration
 
-The upload UI always uses Auto. A live badge shows `HTTP chunks` or `WebSocket ×N` once the session opens.
+The upload UI always uses Auto. A live badge shows `HTTP chunks` or `WebSocket ×N` once the session opens. N is the number of open sockets. The first socket opens at once and the rest open in the background, so N grows from 1 up to the pool size during the first seconds. The badge updates when the pool is full.
 
 ### Environment
 

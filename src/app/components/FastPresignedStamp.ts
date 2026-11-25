@@ -558,6 +558,8 @@ export class PresignedChunkStreamPool {
       abortSignal?: AbortSignal;
       timeoutMs?: number;
       socketCount?: number;
+      /** Called with the live socket count once the background fill finishes. */
+      onSocketCountChange?: (liveSockets: number) => void;
     }
   ): Promise<PresignedChunkStreamPool | null> {
     if (typeof WebSocket === 'undefined') return null;
@@ -610,6 +612,7 @@ export class PresignedChunkStreamPool {
           `[ChunkStream] pool filled: ${pool.liveSocketCount}/${wanted} WebSocket streams ` +
             `(${perSocketInFlight} in-flight/socket, capacity ≈ ${pool.liveSocketCount * perSocketInFlight})`
         );
+        opts?.onSocketCountChange?.(pool.liveSocketCount);
       })();
     }
 
@@ -676,8 +679,14 @@ export type ChunkUploadTransportInfo = {
 /** Upload session — tries WebSocket stream first, falls back to HTTP POST. */
 export class PresignedChunkUploadSession {
   readonly transport: ChunkUploadTransport;
-  /** How many `/chunks/stream` sockets are live right now (0 for HTTP). */
-  readonly streamSocketCount: number;
+  /**
+   * How many `/chunks/stream` sockets are live right now (0 for HTTP). Only the
+   * first socket is open when the session starts; the rest connect in the
+   * background, so this grows during the first moments of an upload.
+   */
+  get streamSocketCount(): number {
+    return this.stream?.liveSocketCount ?? 0;
+  }
   /** Target sockets requested for the pool (0 for HTTP). */
   readonly targetStreamSocketCount: number;
   /** Outer-queue concurrency that can fully feed the stream pool. */
@@ -691,7 +700,6 @@ export class PresignedChunkUploadSession {
   ) {
     this.transport = transport;
     this.stream = stream;
-    this.streamSocketCount = stream?.liveSocketCount ?? 0;
     this.targetStreamSocketCount = stream?.targetSocketCount ?? 0;
     this.targetInFlight = stream?.targetInFlight ?? 0;
   }
@@ -706,6 +714,8 @@ export class PresignedChunkUploadSession {
       transportMode?: 'auto' | 'http' | 'websocket';
       /** Parallel `/chunks/stream` sockets (default {@link DEFAULT_CHUNK_STREAM_SOCKETS}). */
       streamSocketCount?: number;
+      /** Called when the background socket fill finishes, with the live count. */
+      onSocketCountChange?: (liveSockets: number) => void;
       connectTimeoutMs?: number;
     }
   ): Promise<PresignedChunkUploadSession> {
@@ -732,6 +742,7 @@ export class PresignedChunkUploadSession {
         abortSignal: opts?.abortSignal,
         timeoutMs: opts?.connectTimeoutMs ?? 8_000,
         socketCount: opts?.streamSocketCount,
+        onSocketCountChange: opts?.onSocketCountChange,
       });
       if (pool) {
         return new PresignedChunkUploadSession(beeApiBase, 'websocket', pool);

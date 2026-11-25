@@ -89,6 +89,36 @@ Pick whichever fits your setup:
 The legacy Express signature-checking proxy is gone — see
 [`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md) for the rationale and nginx setup.
 
+## Upload speed: server settings for DevOps
+
+The app sends the chunks of a file to the Bee node. A chunk is a 4 KB piece of a file. The app uses one of two methods:
+
+- **HTTP:** the app sends one request for each chunk. It uses this method for files smaller than 50 MB.
+- **WebSocket:** a WebSocket is a connection that stays open. The app sends many chunks on each connection. It uses this method for files of 50 MB or more.
+
+The upload window shows `WebSocket ×N`. N is the number of open WebSocket connections. The app opens the first connection, then the others in the background. N grows during the first seconds of an upload. The maximum is 32.
+
+Check these settings on the server:
+
+1. Use Bee 2.8.1 or later. Older versions do not have the `/chunks/stream` endpoint.
+2. Make the reverse proxy (the server in front of the Bee node) pass the WebSocket upgrade. For nginx, see the WebSocket section in [`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md).
+3. Allow at least 40 connections from one client address. Do not set a lower nginx `limit_conn`.
+4. Set `worker_connections` and `worker_rlimit_nofile` high enough. Each open WebSocket uses two connections in nginx. One browser tab can use 64.
+5. Enable HTTP/2 for the HTTP method. The same document has the steps.
+6. Check the endpoint with `npx wscat -c wss://your-host/chunks/stream`. The command must print `Connected`.
+
+The app uses HTTP if the first WebSocket connection fails. The upload still works, but it is slower.
+
+These variables are fixed when you build the app. A change needs a new build.
+
+| Variable | Default | Effect |
+| -------- | ------- | ------ |
+| `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` | `32` | Number of WebSocket connections for each upload (1 to 32) |
+| `NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB` | `50` | Smallest file size in MB that uses WebSocket |
+| `NEXT_PUBLIC_PREFER_CHUNK_STREAM` | `true` | Set to `false` to use HTTP for all files |
+
+The maximum is 32 connections, with up to 16 chunks without an answer on each. Tests showed no gain above these values. See [`docs/chunk-transport-http-vs-websocket.md`](./docs/chunk-transport-http-vs-websocket.md).
+
 ## How to EXPORT this app
 
 Export this with

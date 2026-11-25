@@ -60,6 +60,12 @@ map $http_origin $cors_origin {
     "~^http://127\.0\.0\.1:3000$"          "http://127.0.0.1:3000";
 }
 
+# Needed for WebSocket upgrade (`Connection: upgrade` only when the client asks).
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 map $request_method $cors_allow_methods {
     default "GET, POST, OPTIONS, PUT, DELETE";
 }
@@ -117,6 +123,9 @@ server {
 
         proxy_pass         http://127.0.0.1:1633;
         proxy_http_version 1.1;
+        # WebSocket upgrade for /chunks/stream (see "WebSocket chunk stream" below).
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -135,6 +144,29 @@ Apply with:
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+## WebSocket chunk stream (faster large uploads)
+
+The app sends files of 50 MB or more over WebSocket. A WebSocket is a connection that stays open. Each connection carries a stream of chunks to `/chunks/stream` on the Bee node. The app opens up to 32 connections at the same time. Each connection can have 16 chunks without an answer.
+
+The server must allow this. Check each item:
+
+1. **Bee version.** Use Bee 2.8.1 or later.
+2. **Upgrade headers.** The nginx example above passes `Upgrade` and `Connection`. Without them, the connection fails and the app uses HTTP.
+3. **Timeouts.** Set `proxy_read_timeout` and `proxy_send_timeout` to `3600s`. A large upload keeps a connection open for a long time.
+4. **Connection limits.** Do not set `limit_conn` below 40 for one client address. One browser tab opens up to 32 connections.
+5. **File descriptors.** nginx uses two connections for each WebSocket: one to the browser and one to Bee. Set `worker_connections` and `worker_rlimit_nofile` for the number of tabs that upload at the same time, multiplied by 64.
+6. **CDN or firewall.** Enable WebSocket support. Disable response buffering on `/chunks/stream`.
+
+Test the endpoint:
+
+```bash
+npx wscat -c wss://your-host/chunks/stream
+```
+
+The command must print `Connected`. In the app, the upload window shows `WebSocket ×N`. N is the number of open connections. It grows from 1 to 32 in the first seconds of an upload. If N stays at 1 for a long time, the server refuses the other connections. Check the limits in items 4 and 5.
+
+The app settings (`NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` and others) are in the [README](../README.md#upload-speed-server-settings-for-devops).
 
 ## HTTP/2 (recommended for client-side chunk uploads)
 
