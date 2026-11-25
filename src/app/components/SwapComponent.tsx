@@ -367,6 +367,24 @@ const SwapComponent: React.FC = () => {
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
 
   // Add state for custom RPC
+  // "Advanced info" (Settings): shows technical details such as bucket stats.
+  const [showAdvancedInfo, setShowAdvancedInfoState] = useState(false);
+  useEffect(() => {
+    try {
+      setShowAdvancedInfoState(localStorage.getItem('beeport.advancedInfo') === '1');
+    } catch {
+      // storage unavailable: stay off
+    }
+  }, []);
+  const setShowAdvancedInfo = useCallback((value: boolean) => {
+    setShowAdvancedInfoState(value);
+    try {
+      localStorage.setItem('beeport.advancedInfo', value ? '1' : '0');
+    } catch {
+      // not persisted; applies for this visit
+    }
+  }, []);
+
   const [isCustomRpc, setIsCustomRpc] = useState(false);
   const [customRpcUrl, setCustomRpcUrl] = useState<string>('');
 
@@ -2736,9 +2754,12 @@ const SwapComponent: React.FC = () => {
           setUseCustomSlippage={setUseCustomSlippage}
           customSlippagePercent={customSlippagePercent}
           setCustomSlippagePercent={setCustomSlippagePercent}
+          showAdvancedInfo={showAdvancedInfo}
+          setShowAdvancedInfo={setShowAdvancedInfo}
         />
       ) : showStampList ? (
         <StampListSection
+          showAdvancedInfo={showAdvancedInfo}
           setShowStampList={setShowStampList}
           address={address}
           beeApiUrl={beeApiUrl}

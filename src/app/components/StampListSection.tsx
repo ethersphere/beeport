@@ -100,6 +100,8 @@ interface StampListSectionProps {
   setSelectedDepth: (depth: number) => void;
   /** Clears a stale upload error banner in the parent overlay (if any). */
   clearParentUploadError?: () => void;
+  /** Show technical details such as the per-batch bucket stats (Settings → Advanced info). */
+  showAdvancedInfo?: boolean;
 }
 
 interface BatchEvent {
@@ -140,6 +142,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   setUploadStep,
   setSelectedDepth,
   clearParentUploadError,
+  showAdvancedInfo = false,
 }) => {
   const { data: walletClient } = useWalletClient();
 
@@ -738,131 +741,146 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                           )}
                         </div>
 
-                        <div className={styles.bucketStatsWrap}>
-                          <button
-                            type="button"
-                            className={styles.bucketStatsToggle}
-                            onClick={() => void toggleBucketStats(stamp)}
-                            aria-expanded={expandedStatsBatchId === stamp.batchId}
-                            title="Worst-bucket fill, per-bucket histogram, and hash-space heat strip"
-                          >
-                            <span className={styles.bucketStatsChevron} aria-hidden>
-                              {expandedStatsBatchId === stamp.batchId ? '▼' : '▶'}
-                            </span>
-                            Bucket stats
-                          </button>
+                        {showAdvancedInfo && (
+                          <div className={styles.bucketStatsWrap}>
+                            <button
+                              type="button"
+                              className={styles.bucketStatsToggle}
+                              onClick={() => void toggleBucketStats(stamp)}
+                              aria-expanded={expandedStatsBatchId === stamp.batchId}
+                              title="Worst-bucket fill, per-bucket histogram, and hash-space heat strip"
+                            >
+                              <span className={styles.bucketStatsChevron} aria-hidden>
+                                {expandedStatsBatchId === stamp.batchId ? '▼' : '▶'}
+                              </span>
+                              Bucket stats
+                            </button>
 
-                          {expandedStatsBatchId === stamp.batchId && (
-                            <div className={styles.bucketStatsPanel}>
-                              <div className={styles.bucketWorstSection}>
-                                <div className={styles.bucketWorstLine}>
-                                  <span className={styles.bucketWorstLabel}>Worst bucket</span>
-                                  <span
-                                    className={styles.bucketWorstValue}
-                                    title="The single fullest of 65 536 logical buckets, as a % of that bucket’s chunk cap (maxSlot). Bee rejects new stamps when any bucket hits 100%, even if nominal fill is low."
-                                  >
-                                    {worstPct.toFixed(1)}%
-                                  </span>
-                                  <span className={styles.bucketWorstHint}>
-                                    of per-bucket capacity — uploads fail if any bucket reaches 100%
-                                  </span>
+                            {expandedStatsBatchId === stamp.batchId && (
+                              <div className={styles.bucketStatsPanel}>
+                                <div className={styles.bucketWorstSection}>
+                                  <div className={styles.bucketWorstLine}>
+                                    <span className={styles.bucketWorstLabel}>Worst bucket</span>
+                                    <span
+                                      className={styles.bucketWorstValue}
+                                      title="The single fullest of 65 536 logical buckets, as a % of that bucket’s chunk cap (maxSlot). Bee rejects new stamps when any bucket hits 100%, even if nominal fill is low."
+                                    >
+                                      {worstPct.toFixed(1)}%
+                                    </span>
+                                    <span className={styles.bucketWorstHint}>
+                                      of per-bucket capacity — uploads fail if any bucket reaches 100%
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
 
-                              {statsLoadingBatchId === stamp.batchId && (
-                                <p className={styles.bucketStatsMuted}>Loading bucket layout…</p>
-                              )}
-                              {statsLoadingBatchId !== stamp.batchId &&
-                                bucketStatsById[stamp.batchId]?.status === 'unavailable' && (
-                                  <p className={styles.bucketStatsMuted}>
-                                    Could not load issuer state for this batch.
-                                  </p>
+                                {statsLoadingBatchId === stamp.batchId && (
+                                  <p className={styles.bucketStatsMuted}>Loading bucket layout…</p>
                                 )}
-                              {statsLoadingBatchId !== stamp.batchId &&
-                                (() => {
-                                  const bsEntry = bucketStatsById[stamp.batchId];
-                                  if (bsEntry?.status !== 'ready') return null;
-                                  const { viz } = bsEntry;
-                                  const partialSum = viz.partialBins.reduce(
-                                    (a: number, b: number) => a + b,
-                                    0
-                                  );
-                                  const histEntries: { label: string; count: number }[] = [
-                                    { label: 'Empty', count: viz.emptyBuckets },
-                                    ...viz.partialBins.map((count: number, i: number) => ({
-                                      label:
-                                        i === 9
-                                          ? '91–100% (not full)'
-                                          : `${i * 10 + 1}–${(i + 1) * 10}%`,
-                                      count,
-                                    })),
-                                    { label: 'Full', count: viz.fullBuckets },
-                                  ];
-                                  const maxHist = Math.max(
-                                    1,
-                                    ...histEntries.map(e => e.count)
-                                  );
-                                  const bucketsPerStripCell = Math.round(
-                                    TOTAL_SWARM_BUCKETS / BUCKET_HEAT_STRIP_COLS
-                                  );
-                                  return (
-                                    <>
-                                      <p className={styles.bucketStatsCaption}>
-                                        {partialSum + viz.emptyBuckets + viz.fullBuckets ===
-                                        TOTAL_SWARM_BUCKETS
-                                          ? `${TOTAL_SWARM_BUCKETS.toLocaleString()} logical buckets`
-                                          : 'Bucket counts'}
-                                        {' · '}
-                                        max {viz.maxSlot} chunks per bucket at depth {stamp.depth}
-                                      </p>
-                                      <div className={styles.bucketHist}>
-                                        {histEntries.map(entry => (
-                                          <div key={entry.label} className={styles.bucketHistRow}>
-                                            <span className={styles.bucketHistLabel}>{entry.label}</span>
-                                            <div className={styles.bucketHistBarTrack}>
+                                {statsLoadingBatchId !== stamp.batchId &&
+                                  bucketStatsById[stamp.batchId]?.status === 'unavailable' && (
+                                    <p className={styles.bucketStatsMuted}>
+                                      Could not load issuer state for this batch.
+                                    </p>
+                                  )}
+                                {statsLoadingBatchId !== stamp.batchId &&
+                                  (() => {
+                                    const bsEntry = bucketStatsById[stamp.batchId];
+                                    if (bsEntry?.status !== 'ready') return null;
+                                    const { viz } = bsEntry;
+                                    const partialSum = viz.partialBins.reduce(
+                                      (a: number, b: number) => a + b,
+                                      0
+                                    );
+                                    const histEntries: { label: string; count: number }[] = [
+                                      { label: 'Empty', count: viz.emptyBuckets },
+                                      ...(viz.slotHistogram
+                                        ? viz.slotHistogram
+                                            .map((count: number, n: number) => ({
+                                              label: `${n} of ${viz.maxSlot} used`,
+                                              count,
+                                            }))
+                                            .slice(1)
+                                        : viz.partialBins.map((count: number, i: number) => ({
+                                            label:
+                                              i === 9
+                                                ? '91–100% (not full)'
+                                                : `${i * 10 + 1}–${(i + 1) * 10}%`,
+                                            count,
+                                          }))),
+                                      { label: 'Full', count: viz.fullBuckets },
+                                    ];
+                                    const maxHist = Math.max(
+                                      1,
+                                      ...histEntries.map(e => e.count)
+                                    );
+                                    const bucketsPerStripCell = Math.round(
+                                      TOTAL_SWARM_BUCKETS / BUCKET_HEAT_STRIP_COLS
+                                    );
+                                    return (
+                                      <>
+                                        <p className={styles.bucketStatsCaption}>
+                                          {partialSum + viz.emptyBuckets + viz.fullBuckets ===
+                                          TOTAL_SWARM_BUCKETS
+                                            ? `${TOTAL_SWARM_BUCKETS.toLocaleString()} logical buckets`
+                                            : 'Bucket counts'}
+                                          {' · '}
+                                          max {viz.maxSlot} chunks per bucket at depth {stamp.depth}
+                                        </p>
+                                        <p className={styles.bucketStatsMuted}>
+                                          Counted from this browser&apos;s saved storage state (restored
+                                          from your Swarm backup on other devices), not read from the node.
+                                          A chunk&apos;s bucket is set by its address, so chunks spread
+                                          across buckets by chance — a few buckets fill before the rest.
+                                        </p>
+                                        <div className={styles.bucketHist}>
+                                          {histEntries.map(entry => (
+                                            <div key={entry.label} className={styles.bucketHistRow}>
+                                              <span className={styles.bucketHistLabel}>{entry.label}</span>
+                                              <div className={styles.bucketHistBarTrack}>
+                                                <div
+                                                  className={styles.bucketHistBarFill}
+                                                  style={{
+                                                    width: `${(entry.count / maxHist) * 100}%`,
+                                                  }}
+                                                />
+                                              </div>
+                                              <span className={styles.bucketHistCount}>
+                                                {entry.count.toLocaleString()}
+                                                <span className={styles.bucketHistPct}>
+                                                  {' '}
+                                                  ({((entry.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}
+                                                  %)
+                                                </span>
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <p className={styles.bucketStatsHeatCaption}>
+                                          Mean slot fill along bucket index (Swarm address hash space) — each
+                                          column ≈{bucketsPerStripCell} buckets
+                                        </p>
+                                        <div
+                                          className={styles.heatStrip}
+                                          role="img"
+                                          aria-label="Heat strip of average bucket utilization along hash space"
+                                        >
+                                          {viz.heatStrip.map((p: number, i: number) => (
+                                            <div key={i} className={styles.heatCell}>
                                               <div
-                                                className={styles.bucketHistBarFill}
-                                                style={{
-                                                  width: `${(entry.count / maxHist) * 100}%`,
-                                                }}
+                                                className={styles.heatFill}
+                                                style={{ height: `${Math.max(0.5, p)}%` }}
+                                                title={`Columns ${i + 1}/${BUCKET_HEAT_STRIP_COLS}: ~${p.toFixed(0)}% avg slot fill`}
                                               />
                                             </div>
-                                            <span className={styles.bucketHistCount}>
-                                              {entry.count.toLocaleString()}
-                                              <span className={styles.bucketHistPct}>
-                                                {' '}
-                                                ({((entry.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}
-                                                %)
-                                              </span>
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                      <p className={styles.bucketStatsHeatCaption}>
-                                        Mean slot fill along bucket index (Swarm address hash space) — each
-                                        column ≈{bucketsPerStripCell} buckets
-                                      </p>
-                                      <div
-                                        className={styles.heatStrip}
-                                        role="img"
-                                        aria-label="Heat strip of average bucket utilization along hash space"
-                                      >
-                                        {viz.heatStrip.map((p: number, i: number) => (
-                                          <div key={i} className={styles.heatCell}>
-                                            <div
-                                              className={styles.heatFill}
-                                              style={{ height: `${Math.max(0.5, p)}%` }}
-                                              title={`Columns ${i + 1}/${BUCKET_HEAT_STRIP_COLS}: ~${p.toFixed(0)}% avg slot fill`}
-                                            />
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                            </div>
-                          )}
-                        </div>
+                                          ))}
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </>
                     );
                   })()

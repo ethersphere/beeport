@@ -735,10 +735,17 @@ export interface BucketStatsVisualization {
   /** Buckets with cnt ≥ maxSlot (full — uploads fail if any bucket hits this). */
   fullBuckets: number;
   /**
-   * Ten bins for buckets with 0 < cnt < maxSlot — index `i` is roughly
-   * ((i/10)×100, ((i+1)/10)×100]% of per-bucket capacity.
+   * Ten bins for buckets with 0 < cnt < maxSlot — index `i` holds buckets
+   * whose fill is in ((i×10)%, ((i+1)×10)%] of per-bucket capacity.
    */
   partialBins: number[];
+  /**
+   * Exact count of buckets per used-slot count (`[n]` = buckets holding exactly
+   * `n` chunks, `n` = 1 … maxSlot-1), only when `maxSlot` ≤ 16. With so few
+   * slots, percentage bins are misleading (fill moves in steps of 100/maxSlot %,
+   * so e.g. “1–10%” can never occur at 8 slots). `null` for larger capacities.
+   */
+  slotHistogram: number[] | null;
   /** Mean utilization % (0–100) per {@link BUCKET_HEAT_STRIP_COLS} segment of bucket index space. */
   heatStrip: number[];
 }
@@ -754,6 +761,7 @@ export function computeBucketStatsVisualization(
   const { buckets } = state;
   const maxSlot = 2 ** (expectedDepth - 16);
   const partialBins = new Array(10).fill(0);
+  const slotHistogram = maxSlot <= 16 ? new Array<number>(maxSlot).fill(0) : null;
   let emptyBuckets = 0;
   let fullBuckets = 0;
 
@@ -767,9 +775,11 @@ export function computeBucketStatsVisualization(
       fullBuckets++;
       continue;
     }
-    const r = cnt / maxSlot;
-    const bin = Math.min(9, Math.floor(r * 10));
+    // Bins are (10i, 10(i+1)]%: 50% of capacity belongs in “41–50%”.
+    // `cnt * 10 / maxSlot` is exact because maxSlot is a power of two.
+    const bin = Math.min(9, Math.max(0, Math.ceil((cnt * 10) / maxSlot) - 1));
     partialBins[bin]++;
+    if (slotHistogram) slotHistogram[cnt]++;
   }
 
   const cols = BUCKET_HEAT_STRIP_COLS;
@@ -793,6 +803,7 @@ export function computeBucketStatsVisualization(
     emptyBuckets,
     fullBuckets,
     partialBins,
+    slotHistogram,
     heatStrip,
   };
 }

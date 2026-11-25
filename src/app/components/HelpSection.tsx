@@ -21,6 +21,8 @@ interface HelpSectionProps {
   setUseCustomSlippage: (value: boolean) => void;
   customSlippagePercent: number;
   setCustomSlippagePercent: (value: number) => void;
+  showAdvancedInfo: boolean;
+  setShowAdvancedInfo: (value: boolean) => void;
 }
 
 const HelpSection: React.FC<HelpSectionProps> = ({
@@ -37,6 +39,8 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setUseCustomSlippage,
   customSlippagePercent,
   setCustomSlippagePercent,
+  showAdvancedInfo,
+  setShowAdvancedInfo,
 }) => {
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
@@ -194,6 +198,21 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               </div>
             </div>
           )}
+
+          <div className={styles.switchContainer} style={{ marginTop: '20px' }}>
+            <span className={styles.switchLabel}>Advanced info</span>
+            <label className={styles.switch}>
+              <input
+                type="checkbox"
+                checked={showAdvancedInfo}
+                onChange={e => setShowAdvancedInfo(e.target.checked)}
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+          <div className={styles.hint}>
+            Shows technical details, such as per-bucket fill statistics in the storage list.
+          </div>
         </div>
 
         <h2>How to use this dapp?</h2>
@@ -249,47 +268,57 @@ const HelpSection: React.FC<HelpSectionProps> = ({
 
         <h2>Frequently Asked Questions</h2>
         <div className={styles.faqSection}>
-          <div className={styles.faqItem}>
-            <h3>What happens if my upload fails?</h3>
-            <p>
+          <details className={styles.faqItem}>
+            <summary>What happens if my upload fails?</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               If an upload fails, the system will automatically retry several times. If it continues
               to fail, your tokens remain safe, and you can try the upload again. The most common
               cause of upload failures is network connectivity issues.
             </p>
-          </div>
+            </div>
+          </details>
 
-          <div className={styles.faqItem}>
-            <h3>How long does it take for my storage to become available?</h3>
-            <p>
+          <details className={styles.faqItem}>
+            <summary>How long does it take for my storage to become available?</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               After purchasing storage, it typically takes 2-5 minutes for it to become usable. The
               app will automatically notify you once your storage is ready for use.
             </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3>Your files list</h3>
-            <p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>Your files list</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               The list of your files is kept in the browser&apos;s storage. Clearing the storage/cache
               of the browser will irreversibly destroy the list. When switching browsers, you can
               migrate this data manually using the IMPORT and EXPORT buttons, otherwise your list
               will start empty.
             </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3>Storage persistence</h3>
-            <p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>Storage persistence</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               Your storage is linked to your wallet address, not to your browser. This means when
               you connect the same wallet to Beeport on a different browser or machine, your
               previously purchased storage will automatically be loaded and available for use. You
               can continue uploading from any device where you connect your wallet.
             </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3>How to prepare archives? </h3>
-            <p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>How to prepare archives?</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to make your folder ready
               for upload as TAR file. You can also upload ZIP files and GZIP files.
             </p>
-          </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
