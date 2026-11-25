@@ -87,6 +87,59 @@ export interface SaveIssuerStateResult {
 }
 
 /**
+ * Pick the backup index for a save.
+ *
+ * `wanted` is this browser's last known index + 1. Another device can have
+ * written that index (or later ones) since, so check it first: if it exists,
+ * merge the newest backup into the live stamper (element-wise max, so this
+ * browser never re-uses a slot the other device used) and write after it.
+ * A failed check is not fatal: the save goes ahead at `wanted`.
+ */
+async function resolveSaveIndex(args: {
+  bee: Bee;
+  hotKey: DerivedHotKey;
+  cleanBatchId: string;
+  stamper: Stamper;
+  wanted?: number;
+}): Promise<number> {
+  const { bee, hotKey, cleanBatchId, stamper, wanted } = args;
+  const ownerAddress = new EthAddress(hotKey.address);
+  if (wanted === undefined) {
+    return (await findLatestIndex(bee, ownerAddress, cleanBatchId)) + 1;
+  }
+  let taken: boolean;
+  try {
+    taken = (await readSocPayloadAt(bee, ownerAddress, cleanBatchId, wanted)) !== null;
+  } catch {
+    return wanted;
+  }
+  if (!taken) return wanted;
+
+  const latest = await findLatestIndex(bee, ownerAddress, cleanBatchId, wanted);
+  try {
+    const remote = await loadIssuerStateFromSOC({
+      bee,
+      hotKey,
+      batchId: cleanBatchId,
+      index: latest,
+    });
+    if (remote) {
+      const live = stamper.getState();
+      const other = remote.state.buckets;
+      for (let b = 0; b < live.length && b < other.length; b++) {
+        if (other[b] > live[b]) live[b] = other[b];
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[IssuerStateSOC] newer backup at index ${latest} could not be merged before save:`,
+      err
+    );
+  }
+  return latest + 1;
+}
+
+/**
  * Encrypt the current stamper state, push it to Swarm as a chunked blob, and
  * commit a Single Owner Chunk pointing at it. Idempotent in spirit (later
  * saves overwrite the SOC at the same address).
@@ -112,6 +165,8 @@ export async function saveIssuerStateToSOC(params: {
   if (!/^[0-9a-fA-F]{64}$/.test(cleanBatchId)) {
     throw new Error(`Invalid batchId for SOC save: ${batchId}`);
   }
+
+  const saveIndex = await resolveSaveIndex({ bee, hotKey, cleanBatchId, stamper, wanted: params.index });
 
   // ── Snapshot pre-save state (S₀). This is what gets encrypted into the
   //    blob. The delta computed below brings it forward to the post-save
@@ -156,9 +211,6 @@ export async function saveIssuerStateToSOC(params: {
   );
   const afterBlobBuckets = stamper.getState();
 
-  const saveIndex =
-    params.index ??
-    (await findLatestIndex(bee, new EthAddress(hotKey.address), cleanBatchId)) + 1;
   const socIdentifier = computeIssuerStateIdentifier(cleanBatchId, saveIndex);
 
   const baseBlobDelta = new Map<number, number>();
@@ -187,8 +239,8 @@ export async function saveIssuerStateToSOC(params: {
   if (afterBlobBuckets[stampBucket] >= maxSlot) {
     throw new Error(
       `SOC issuer-state bucket ${stampBucket} is full (${afterBlobBuckets[stampBucket]}/${maxSlot}). ` +
-        'The hot-key + batchId pair always lands in this bucket — use a larger storage ' +
-        'or a different batch, or reset local state if the counter is wrong.'
+        'The backup chunk for this save lands in that bucket — use a larger storage ' +
+        'or a different batch.'
     );
   }
 
@@ -275,16 +327,6 @@ export async function saveIssuerStateToSOC(params: {
     { abortSignal, timeoutMs: 60_000 }
   );
 
-  console.info('[IssuerStateSOC] saved', {
-    socAddress: soc.address.toHex(),
-    hotKeyAddress: hotKey.address,
-    keyFingerprint: await aesKeyFingerprint(aesKey),
-    blobRef: blobRef.toHex(),
-    savedAt,
-    blobBytesLength: blob.length,
-    index: saveIndex,
-  });
-
   return {
     socAddress: `0x${soc.address.toHex()}` as `0x${string}`,
     blobReference: `0x${blobRef.toHex()}` as `0x${string}`,
@@ -316,12 +358,20 @@ async function readSocPayloadAt(
 
 /**
  * Find the highest backup index that exists for `(hotKey, batchId)`; `-1` when
- * none does. Backups are written at consecutive indexes, so existence is
- * monotone: gallop upward from `hintIndex` (highest index this browser knows
- * of; `-1` or omitted = start from scratch), then binary-search the gap.
+ * none does. Backups are written at consecutive indexes: gallop upward from
+ * `hintIndex` (highest index this browser knows of; `-1`/omitted = scratch),
+ * then binary-search the gap.
  *
- * Up to date (the common case) costs ONE probe, which misses. A miss takes the
- * gateway about 1 s. A fresh browser needs about 2·log2(n) probes for n saves.
+ * A single 404 is not trusted on its own:
+ *  - The next TWO indexes are probed together, so one index that never reached
+ *    the network (a save that failed half-way) does not end the search.
+ *  - Misses found during the search are re-read in the next round.
+ *  - Without a hint (fresh browser, restore path) the final "nothing newer"
+ *    answer is confirmed with a second, fresh read of both indexes, because a
+ *    wrong answer there restores old counters.
+ *
+ * Up to date with a hint costs one round of two parallel probes that miss
+ * (about 1 s on the gateway).
  */
 async function findLatestIndex(
   bee: Bee,
@@ -330,21 +380,34 @@ async function findLatestIndex(
   hintIndex?: number | null,
   cache: Map<number, Uint8Array | null> = new Map()
 ): Promise<number> {
-  const exists = async (i: number): Promise<boolean> => {
-    if (!cache.has(i)) cache.set(i, await readSocPayloadAt(bee, ownerAddress, cleanBatchId, i));
+  const read = async (i: number, fresh = false): Promise<boolean> => {
+    if (fresh || !cache.has(i)) cache.set(i, await readSocPayloadAt(bee, ownerAddress, cleanBatchId, i));
     return cache.get(i) !== null;
   };
-  let lo = hintIndex !== undefined && hintIndex !== null && hintIndex >= 0 ? hintIndex : -1;
-  let step = 1;
-  while (await exists(lo + step)) {
-    lo += step;
-    step *= 2;
-  }
-  let hi = lo + step; // known to be missing
-  while (hi - lo > 1) {
-    const mid = lo + Math.floor((hi - lo) / 2);
-    if (await exists(mid)) lo = mid;
-    else hi = mid;
+  const hasHint = hintIndex !== undefined && hintIndex !== null && hintIndex >= 0;
+  let lo = hasHint ? (hintIndex as number) : -1;
+
+  for (let round = 0; round < 8; round++) {
+    let [n1, n2] = await Promise.all([read(lo + 1), read(lo + 2)]);
+    if (!n1 && !n2 && !hasHint) {
+      [n1, n2] = await Promise.all([read(lo + 1, true), read(lo + 2, true)]);
+    }
+    if (!n1 && !n2) return lo;
+
+    lo = n2 ? lo + 2 : lo + 1;
+    let step = 2;
+    while (await read(lo + step)) {
+      lo += step;
+      step *= 2;
+    }
+    let hi = lo + step; // missing (as far as one read can tell)
+    while (hi - lo > 1) {
+      const mid = lo + Math.floor((hi - lo) / 2);
+      if (await read(mid)) lo = mid;
+      else hi = mid;
+    }
+    // Forget misses above `lo`, so the next round reads them again.
+    for (const [k, v] of cache) if (k > lo && v === null) cache.delete(k);
   }
   return lo;
 }

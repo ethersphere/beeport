@@ -39,7 +39,7 @@ import {
   saveStamperState,
   computeStampUsage,
   computeBucketStatsVisualization,
-  clearStamperState,
+  repairStamperState,
   clearStampedAddresses,
   setLastSyncedSocIndex,
   groupBucketFill,
@@ -453,34 +453,29 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   };
 
   /**
-   * Wipe the local Stamper state and the chunk-dedup set for one batch.
+   * Repair the local Stamper state of one batch and clear its chunk-dedup set.
    *
-   * Used when the persisted state is corrupted (typically a depth mismatch
-   * created by the now-fixed `handleStampSelect` regression that didn't
-   * propagate the stamp's depth — see TODO §1.7). After clearing, a fresh
-   * upload re-seeds both from `Stamper.fromBlank` at the correct on-chain
-   * depth, and the SOC backup gets overwritten on the first successful
-   * upload. We don't try to "salvage" the buckets — counters past Bee's
-   * cap can't be reconciled without the ordered history of which stamps
-   * Bee accepted vs. rejected, which we don't have.
+   * Counters above the bucket limit are capped and the stored depth is set to
+   * the on-chain depth (typical cause: the old depth-desync bug, TODO §1.7).
+   * Counters are never lowered: a lower counter re-uses a slot, and Bee then
+   * replaces the older chunk in it. Wiping the state would not help either —
+   * the next upload restores the same counters from the Swarm backup.
    */
   const handleResetLocalState = async (stamp: BatchEvent) => {
     const idLabel = (stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId)
       .slice(0, 10);
     const ok = window.confirm(
       `Reset local state for storage ${idLabel}…?\n\n` +
-        `This clears the saved bucket counters and the "already uploaded" list for this ` +
-        `one storage in this browser. Other storages are not changed.\n\n` +
-        `The next upload first tries to restore the counters from your Swarm backup. ` +
-        `If there is no backup and this browser created the storage, the counters start ` +
-        `at zero. Then new files can replace older files in the same storage.\n\n` +
-        `Reset only if the counters are wrong. Continue?`
+        `This repairs the saved counters of this one storage in this browser:\n` +
+        `• counters above the bucket limit are set to the limit,\n` +
+        `• the depth is set to the on-chain depth,\n` +
+        `• the "already uploaded" list is cleared, so some chunks can be sent again.\n\n` +
+        `Counters are never lowered, so files already in this storage stay safe. ` +
+        `Other storages are not changed. Continue?`
     );
     if (!ok) return;
-    // Both helpers are now async (IndexedDB-backed). Await them so the
-    // status message and the row update reflect the post-clear state.
-    await Promise.all([
-      clearStamperState(stamp.batchId),
+    const [repaired] = await Promise.all([
+      repairStamperState(stamp.batchId, stamp.depth),
       clearStampedAddresses(stamp.batchId),
     ]);
     setBucketStatsById(prev => {
@@ -492,13 +487,15 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     setStamps(prev =>
       prev.map(s =>
         s.batchId === stamp.batchId
-          ? { ...s, hasLocalIssuerState: false, usage: undefined }
+          ? {
+              ...s,
+              hasLocalIssuerState: !!repaired,
+              usage: repaired ? computeStampUsage(repaired, stamp.depth) : undefined,
+            }
           : s
       )
     );
-    setStatusMessage(
-      `Local state cleared for ${idLabel}. Run a fresh upload to seed it again.`
-    );
+    setStatusMessage(`Local state repaired for ${idLabel}.`);
   };
 
   const handleStampSelect = (stamp: BatchEvent) => {

@@ -188,22 +188,11 @@ contract StampsRegistryV2 {
         uint256 perChunkAmount
     );
 
-    /**
-     * @notice Emitted when a batch's depth is increased via this registry.
-     *         Gated to the original `wallet` (see {increaseBatchDepth}).
-     */
-    event BatchDepthIncreased(
-        bytes32 indexed batchId,
-        address indexed wallet,
-        uint8 newDepth
-    );
-
     // ─── Errors ────────────────────────────────────────────────────────────────
 
     error TransferFailed();
     error ApprovalFailed();
     error UnknownBatch();
-    error NotWallet();
     error InvalidWallet();
     error InvalidHotKey();
     error ZeroAmount();
@@ -340,26 +329,6 @@ contract StampsRegistryV2 {
         POSTAGE_STAMP.topUp(batchId, perChunkAmount);
 
         emit BatchToppedUp(batchId, a.wallet, msg.sender, totalAmount, perChunkAmount);
-    }
-
-    /**
-     * @notice Increase depth on an existing batch. Gated to the wallet that
-     *         originally created the batch via this registry — random callers
-     *         cannot force a depth bump.
-     *
-     * @dev `increaseDepth` on Postage Stamp does not require additional BZZ
-     *      payment; it only changes the bucketing semantics of future
-     *      stamps. Authorisation by the original payer wallet is the natural
-     *      policy here.
-     */
-    function increaseBatchDepth(bytes32 batchId, uint8 newDepth) external {
-        Attribution memory a = batchAttribution[batchId];
-        if (a.wallet == address(0)) revert UnknownBatch();
-        if (msg.sender != a.wallet) revert NotWallet();
-
-        POSTAGE_STAMP.increaseDepth(batchId, newDepth);
-
-        emit BatchDepthIncreased(batchId, a.wallet, newDepth);
     }
 
     ////////////////////////////////////////

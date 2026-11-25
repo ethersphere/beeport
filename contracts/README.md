@@ -19,12 +19,13 @@ Verify:
 npm run verify:registry-v2
 ```
 
-#### Known limitation: `increaseBatchDepth`
+#### Pending redeploy: `increaseBatchDepth` removed
 
-The deployed StampsRegistryV2 contains `increaseBatchDepth`. This function always reverts.
-The Postage Stamp contract accepts `increaseDepth` only from the batch owner.
-The batch owner is the hot key, not the registry.
-The app does not call this function. Do not call it. A new registry version must remove it.
+The source no longer has `increaseBatchDepth` or the `BatchDepthIncreased` event.
+The contract that is deployed now still has the function, and it always reverts.
+The Postage Stamp contract accepts `increaseDepth` only from the batch owner, and the batch owner is the hot key.
+The app does not call the function. Redeploy the registry from this source to remove it.
+Until then, `deployments/gnosis/StampsRegistryV2.json` describes the deployed contract, not this source.
 
 ### Legacy StampsRegistry (V1)
 

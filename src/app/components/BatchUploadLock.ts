@@ -10,7 +10,7 @@
  */
 
 const BATCH_BUSY_MESSAGE =
-  'Another upload to this stamp is still running (in this tab or another ' +
+  'Another upload to this storage is still running (in this tab or another ' +
   'Beeport tab). Wait for it to finish, then try again.';
 
 const inTabBatchLocks = new Set<string>();

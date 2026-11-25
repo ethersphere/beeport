@@ -1753,7 +1753,7 @@ const SwapComponent: React.FC = () => {
       return {
         message: 'Upload stopped: storage backup unreadable',
         warning:
-          'A newer backup of this storage exists on Swarm but this wallet key cannot read it. Nothing was uploaded. If no other device uses this storage, ignore the backup and upload again.',
+          'The newest backup of this storage on Swarm cannot be read (a missing chunk or a different wallet key). Nothing was uploaded. Retry first. If it keeps failing and no other device uploads to this storage, ignore the backup and upload again.',
         detail: raw,
         ignoreBackup: { batchId: err.batchId, index: err.remoteIndex },
       };
@@ -2999,8 +2999,10 @@ const SwapComponent: React.FC = () => {
                           if (!ig) return;
                           if (
                             !window.confirm(
-                              'Ignore the unreadable backup and use this browser\'s storage state?\n\n' +
-                                'Only do this if no other device uploaded with this storage. ' +
+                              'Ignore the unreadable backup?\n\n' +
+                                'Beeport then uses the counters saved in this browser, or the newest ' +
+                                'older backup it can read. Those can miss the latest uploads.\n\n' +
+                                'Only do this if no other device uploaded with this storage recently. ' +
                                 'If one did, new uploads can overwrite its files.'
                             )
                           )

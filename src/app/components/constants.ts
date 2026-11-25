@@ -426,19 +426,6 @@ export const STAMPS_REGISTRY_V2_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
-  // Do not call: always reverts on the deployed registry (Postage Stamp only
-  // accepts increaseDepth from the batch owner, which is the hot key).
-  // Kept so the ABI matches the deployed contract. See contracts/README.md.
-  {
-    inputs: [
-      { internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
-      { internalType: 'uint8', name: 'newDepth', type: 'uint8' },
-    ],
-    name: 'increaseBatchDepth',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
   {
     inputs: [{ internalType: 'address', name: 'wallet', type: 'address' }],
     name: 'getWalletBatchIds',

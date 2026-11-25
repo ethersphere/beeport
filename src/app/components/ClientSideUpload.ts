@@ -64,7 +64,7 @@ import {
   saveIssuerStateToSOC,
   loadIssuerStateFromSOC,
   peekLatestIssuerStateIndex,
-  IssuerStateDecryptError,
+  type LoadIssuerStateResult,
 } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
 import { isBatchCreatedInThisBrowser } from './SelfCustodyBatch';
@@ -454,9 +454,27 @@ function nextSocIndex(cleanBatchId: string): number | undefined {
   return last === null ? undefined : last + 1;
 }
 
+/** Newest backup below `before` that loads and decrypts (looks back at most 10). */
+async function loadNewestReadableBackupBefore(
+  bee: Bee,
+  hotKey: DerivedHotKey,
+  cleanBatchId: string,
+  before: number
+): Promise<LoadIssuerStateResult | null> {
+  for (let i = before - 1; i >= 0 && i >= before - 10; i--) {
+    try {
+      const r = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId, index: i });
+      if (r) return r;
+    } catch {
+      // unreadable too: try the one before
+    }
+  }
+  return null;
+}
+
 /**
- * A newer issuer-state backup exists on Swarm but cannot be decrypted with
- * the current hot key. The UI offers to ignore that one backup (see
+ * A newer issuer-state backup exists on Swarm but cannot be read (missing
+ * chunk or wrong key). The UI offers to ignore that one backup (see
  * `setIgnoredUnreadableSocIndex`); the next save is written after it.
  */
 export class UnreadableIssuerBackupError extends Error {
@@ -485,45 +503,92 @@ async function resolveStamperStateForUpload(args: {
   // ── Case 1: fresh browser — SOC or blank ─────────────────────────────────
   if (!persisted) {
     onStatus?.('No local batch state — checking Swarm for issuer state…');
-    let restored;
+    let latestIndex: number;
     try {
-      // A 404 can also mean "not retrievable yet" (a SOC another device just
-      // wrote), so retry it a few times before believing it.
-      restored = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
-      for (let i = 0; !restored && i < SOC_NOT_FOUND_RETRIES; i++) {
+      latestIndex = await peekLatestIssuerStateIndex({ bee, hotKey, batchId: cleanBatchId });
+      // A 404 can also mean "not retrievable yet" (a backup another device
+      // just wrote), so retry a few times before believing it. A storage this
+      // browser bought has nothing to wait for.
+      const retries = isBatchCreatedInThisBrowser(cleanBatchId) ? 0 : SOC_NOT_FOUND_RETRIES;
+      for (let i = 0; latestIndex < 0 && i < retries; i++) {
         await new Promise(r => setTimeout(r, SOC_NOT_FOUND_RETRY_DELAY_MS));
-        restored = await loadIssuerStateFromSOC({ bee, hotKey, batchId: cleanBatchId });
+        latestIndex = await peekLatestIssuerStateIndex({ bee, hotKey, batchId: cleanBatchId });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Could not verify this batch's issuer state on Swarm (${msg}). ` +
+        `Could not verify this storage's saved state on Swarm (${msg}). ` +
           `Uploading with blank counters could overwrite chunks already stored ` +
-          `on this batch from another browser or device, so the upload was aborted. ` +
-          `Retry when the gateway is reachable, or reset the batch's local state ` +
-          `if you are certain it has never been uploaded to.`
+          `in this storage from another browser or device, so the upload was ` +
+          `stopped. Retry when the gateway is reachable.`
       );
     }
-    if (!restored) {
-      // No SOC on Swarm. That alone does not prove the batch is unused: SOC
-      // saves are best-effort and can fail after a successful upload. Start
-      // from blank only with positive evidence — this browser created the
-      // batch (the common "buy, then upload" path).
+    if (latestIndex < 0) {
+      // No backup on Swarm. That alone does not prove the storage is unused:
+      // backup saves are best-effort and can fail after a successful upload.
+      // Start from blank only with positive evidence — this browser created
+      // the storage (the common "buy, then upload" path).
       if (isBatchCreatedInThisBrowser(cleanBatchId)) return null;
       throw new Error(
-        `No saved state for this stamp was found on Swarm, and this browser did ` +
+        `No saved state for this storage was found on Swarm, and this browser did ` +
           `not create it. If it was used from another device, uploading from ` +
           `here with blank counters could overwrite those files. Upload once ` +
-          `from the device that used this stamp (that saves its state to ` +
+          `from the device that used this storage (that saves its state to ` +
           `Swarm), then try again here.`
       );
     }
+
+    let restored: LoadIssuerStateResult | null;
+    try {
+      restored = await loadIssuerStateFromSOC({
+        bee,
+        hotKey,
+        batchId: cleanBatchId,
+        index: latestIndex,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (getIgnoredUnreadableSocIndex(cleanBatchId) !== latestIndex) {
+        throw new UnreadableIssuerBackupError(
+          `Issuer-state: newest backup found on Swarm but unreadable (${msg}). ` +
+            `Upload stopped so earlier chunks are not overwritten.`,
+          cleanBatchId,
+          latestIndex
+        );
+      }
+      // The user chose to ignore this backup: use the newest older one that
+      // can be read (it can miss the uploads made after it).
+      restored = await loadNewestReadableBackupBefore(bee, hotKey, cleanBatchId, latestIndex);
+      if (!restored) {
+        if (isBatchCreatedInThisBrowser(cleanBatchId)) {
+          setLastSyncedSocIndex(cleanBatchId, latestIndex);
+          return null;
+        }
+        throw new Error(
+          `No readable saved state for this storage was found on Swarm. ` +
+            `Uploading with blank counters could overwrite files already in it, ` +
+            `so the upload was stopped.`
+        );
+      }
+      console.warn(
+        `[ClientSideUpload] Backup ${latestIndex} ignored by user choice; ` +
+          `restored older backup ${restored.index}.`
+      );
+    }
+    if (!restored) {
+      throw new Error(
+        `The saved state of this storage disappeared from Swarm between two reads. ` +
+          `Retry in a moment.`
+      );
+    }
     await saveStamperState(cleanBatchId, restored.state);
-    setLastSyncedSocIndex(cleanBatchId, restored.index);
-    onStatus?.('Restored batch state from Swarm (batch was used on another device).');
+    // Record the newest index, even when an older backup was restored, so the
+    // next save is written after the one the user chose to ignore.
+    setLastSyncedSocIndex(cleanBatchId, latestIndex);
+    onStatus?.('Restored storage state from Swarm (storage was used on another device).');
     console.info(
       `[ClientSideUpload] Restored issuer state for ${cleanBatchId.slice(0, 10)}… ` +
-        `from SOC (savedAt=${new Date(restored.savedAt).toISOString()}, ` +
+        `from backup ${restored.index} (savedAt=${new Date(restored.savedAt).toISOString()}, ` +
         `driftFree=${restored.driftFree})`
     );
     return restored.state;
@@ -574,29 +639,23 @@ async function resolveStamperStateForUpload(args: {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (err instanceof IssuerStateDecryptError) {
-      if (getIgnoredUnreadableSocIndex(cleanBatchId) === remoteIndex) {
-        // The user chose to ignore exactly this backup. Local counters stay
-        // authoritative; the next save is written at the following index.
-        console.warn(
-          `[ClientSideUpload] Ignoring unreadable issuer-state backup (index ${remoteIndex}) by user choice.`
-        );
-        setLastSyncedSocIndex(cleanBatchId, remoteIndex);
-        return persisted;
-      }
-      throw new UnreadableIssuerBackupError(
-        `Issuer-state: newer backup found on Swarm but unreadable (${msg}). ` +
-          `Upload stopped so earlier chunks are not overwritten.`,
-        cleanBatchId,
-        remoteIndex
+    if (getIgnoredUnreadableSocIndex(cleanBatchId) === remoteIndex) {
+      // The user chose to ignore exactly this backup. Local counters stay
+      // authoritative; the next save is written at the following index.
+      console.warn(
+        `[ClientSideUpload] Ignoring unreadable issuer-state backup (index ${remoteIndex}) by user choice.`
       );
+      setLastSyncedSocIndex(cleanBatchId, remoteIndex);
+      return persisted;
     }
-    // Unlike the probe, we now have positive evidence that our counters
+    // Unlike the probe, we now have positive evidence that our counters can
     // under-count. Proceeding would allocate slots the other device already
-    // used and overwrite its chunks.
-    throw new Error(
+    // used and overwrite its chunks — unless the user decides otherwise.
+    throw new UnreadableIssuerBackupError(
       `Issuer-state: newer backup found on Swarm but unreadable (${msg}). ` +
-        `Upload stopped so earlier chunks are not overwritten.`
+        `Upload stopped so earlier chunks are not overwritten.`,
+      cleanBatchId,
+      remoteIndex
     );
   }
   if (!remote) {
@@ -704,12 +763,29 @@ async function uploadFileClientSideUnlocked(
   // evict the chunks stored there (newer stamp wins). So we keep the counters
   // and only take maxSlot from `depth`, which the caller resolves from the
   // batch itself (on-chain first).
-  const persisted = await resolveStamperStateForUpload({
-    bee,
-    hotKey,
-    cleanBatchId,
-    onStatus,
-  });
+  //
+  // Independent setup starts first and runs while the backup probe waits on
+  // the gateway (a miss takes about a second): the chunk-dedup set and the
+  // BMT worker.
+  const dedupPromise = loadStampedAddresses(cleanBatchId);
+  const bmtPromise: Promise<BmtWorkerClient | null> =
+    ecLevel === 0 ? BmtWorkerClient.open() : Promise.resolve(null);
+  const releaseBmt = () => {
+    void bmtPromise.then(c => c?.terminate()).catch(() => undefined);
+  };
+  let persisted: PersistedStamperState | null;
+  try {
+    persisted = await resolveStamperStateForUpload({
+      bee,
+      hotKey,
+      cleanBatchId,
+      onStatus,
+    });
+  } catch (err) {
+    releaseBmt();
+    void dedupPromise.catch(() => undefined);
+    throw err;
+  }
   const stamper = createStamperForBatch(cleanBatchId, depth, persisted);
 
   // ── Diagnostics ──────────────────────────────────────────────────────────
@@ -817,7 +893,7 @@ async function uploadFileClientSideUnlocked(
   // Successful uploads append via {@link StampedAddrWriteBatcher} so we batch
   // many chunk addresses into one transaction instead of one `put` per chunk.
   mark('loading stamped-address dedup set');
-  const stampedAddrs = await loadStampedAddresses(cleanBatchId);
+  const stampedAddrs = await dedupPromise;
   mark('dedup set loaded', { entries: stampedAddrs.size });
   const addrBatcher = new StampedAddrWriteBatcher(cleanBatchId);
   let dedupSkipCount = 0;
@@ -1064,8 +1140,8 @@ async function uploadFileClientSideUnlocked(
     }
 
     if (ecLevel === 0) {
-      bmtClient = await BmtWorkerClient.open();
-      if (bmtClient.runsInWorker) {
+      bmtClient = await bmtPromise;
+      if (bmtClient?.runsInWorker) {
         mark('BMT worker active');
       }
     }
@@ -1266,7 +1342,8 @@ async function uploadFileClientSideUnlocked(
     await addrBatcher.flush().catch(() => {});
     throw err;
   } finally {
-    bmtClient?.terminate();
+    // Also covers a worker that opened early but was never assigned.
+    releaseBmt();
     uploadSession?.close();
     // The signer pool belongs to the hot-key session (shared by every upload
     // in this tab), so it is NOT terminated here — HotKeySession.destroy()

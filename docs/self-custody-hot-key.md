@@ -312,11 +312,20 @@ The app protects the state in two ways. It restores the state from Swarm before 
      browser's own history).
 
    **Find the newest backup.** The backups form a numbered chain. The
-   app tests the number after the last known one. If that chunk exists,
-   the app tests numbers that grow by powers of two. It then uses a
-   binary search (it halves the range at each step) to find the last
-   number that exists. A missing chunk needs about 1 second to return a
-   404. An up-to-date browser sends one request.
+   app tests the next two numbers after the last known one, at the same
+   time. Thus one number that never reached the network does not stop the
+   search. If a chunk exists, the app tests numbers that grow by powers of
+   two. It then uses a binary search (it halves the range at each step) to
+   find the last number that exists. The app reads each miss again in the
+   next round. A browser with no saved number reads the last two misses a
+   second time before it trusts them. A missing chunk needs about 1 second
+   to return a 404. An up-to-date browser sends two requests at the same
+   time.
+
+   **Before each save**, the app checks that the next number is free. If
+   another device used it, the app merges that backup into its own
+   counters (it takes the larger value of each counter). Then it writes
+   after it.
 
    The gear button on the storage list does the same restore manually for
    every batch missing local state — useful to see utilization without

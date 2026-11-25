@@ -233,6 +233,30 @@ export async function clearStamperState(batchId: string): Promise<void> {
   }
 }
 
+/**
+ * Repair the saved counters of one batch without lowering any of them.
+ * Counters above the bucket limit for `depth` are capped at the limit (those
+ * slots are used), and the stored depth is set to `depth`. A lower counter
+ * would re-use a slot, and Bee then replaces the older chunk in that slot, so
+ * this never lowers a counter. Returns the repaired state, or `null` when this
+ * browser has no state for the batch.
+ */
+export async function repairStamperState(
+  batchId: string,
+  depth: number
+): Promise<PersistedStamperState | null> {
+  const state = await loadStamperState(batchId);
+  if (!state) return null;
+  const maxSlot = 2 ** (depth - 16);
+  const buckets = new Uint32Array(state.buckets);
+  for (let i = 0; i < buckets.length; i++) {
+    if (buckets[i] > maxSlot) buckets[i] = maxSlot;
+  }
+  const repaired: PersistedStamperState = { buckets, depth };
+  await saveStamperState(batchId, repaired);
+  return repaired;
+}
+
 // ─── SOC sync marker ──────────────────────────────────────────────────────────
 //
 // Tracks the INDEX of the newest issuer-state backup that this browser's local
