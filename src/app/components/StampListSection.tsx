@@ -42,7 +42,8 @@ import {
   clearStamperState,
   clearStampedAddresses,
   setLastSyncedSocIndex,
-  BUCKET_HEAT_STRIP_COLS,
+  groupBucketFill,
+  bucketHealth,
   type StampUsageStats,
   type BucketStatsVisualization,
 } from './ClientStamping';
@@ -152,7 +153,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   /** Which stamp card has the bucket-distribution panel expanded. */
   const [expandedStatsBatchId, setExpandedStatsBatchId] = useState<string | null>(null);
-  /** Lazy-loaded bucket histogram / heat strip per batch (expand panel). */
+  /** Lazy-loaded bucket-fill data per batch (expand panel). */
   const [bucketStatsById, setBucketStatsById] = useState<
     Record<
       string,
@@ -725,6 +726,28 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                               style={{ width: `${nominalPct}%` }}
                             />
                           </div>
+                          {!corrupted &&
+                            (() => {
+                              const health = bucketHealth(
+                                u.maxBucketUsed,
+                                2 ** (stamp.depth - 16)
+                              );
+                              return (
+                                <div className={styles.usageStatus} title={health.text}>
+                                  <span
+                                    className={`${styles.usageStatusDot} ${
+                                      health.level === 'ok'
+                                        ? styles.usageBarOk
+                                        : health.level === 'warn'
+                                          ? styles.usageBarWarn
+                                          : styles.usageBarDanger
+                                    }`}
+                                  />
+                                  <span className={styles.usageStatusTitle}>{health.title}</span>
+                                  <span className={styles.usageStatusText}>{health.text}</span>
+                                </div>
+                              );
+                            })()}
                           {corrupted && (
                             <div className={styles.usageCorruptDetail}>
                               <button
@@ -748,7 +771,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                               className={styles.bucketStatsToggle}
                               onClick={() => void toggleBucketStats(stamp)}
                               aria-expanded={expandedStatsBatchId === stamp.batchId}
-                              title="Worst-bucket fill, per-bucket histogram, and hash-space heat strip"
+                              title="Worst-bucket fill and how many buckets hold 0, 1, 2 or more chunks"
                             >
                               <span className={styles.bucketStatsChevron} aria-hidden>
                                 {expandedStatsBatchId === stamp.batchId ? '▼' : '▶'}
@@ -787,40 +810,12 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                     const bsEntry = bucketStatsById[stamp.batchId];
                                     if (bsEntry?.status !== 'ready') return null;
                                     const { viz } = bsEntry;
-                                    const partialSum = viz.partialBins.reduce(
-                                      (a: number, b: number) => a + b,
-                                      0
-                                    );
-                                    const histEntries: { label: string; count: number }[] = [
-                                      { label: 'Empty', count: viz.emptyBuckets },
-                                      ...(viz.slotHistogram
-                                        ? viz.slotHistogram
-                                            .map((count: number, n: number) => ({
-                                              label: `${n} of ${viz.maxSlot} used`,
-                                              count,
-                                            }))
-                                            .slice(1)
-                                        : viz.partialBins.map((count: number, i: number) => ({
-                                            label:
-                                              i === 9
-                                                ? '91–100% (not full)'
-                                                : `${i * 10 + 1}–${(i + 1) * 10}%`,
-                                            count,
-                                          }))),
-                                      { label: 'Full', count: viz.fullBuckets },
-                                    ];
-                                    const maxHist = Math.max(
-                                      1,
-                                      ...histEntries.map(e => e.count)
-                                    );
-                                    const bucketsPerStripCell = Math.round(
-                                      TOTAL_SWARM_BUCKETS / BUCKET_HEAT_STRIP_COLS
-                                    );
+                                    const groups = groupBucketFill(viz);
+                                    const nonEmptyTotal = groups.reduce((sum, g) => sum + g.count, 0);
                                     return (
                                       <>
                                         <p className={styles.bucketStatsCaption}>
-                                          {partialSum + viz.emptyBuckets + viz.fullBuckets ===
-                                          TOTAL_SWARM_BUCKETS
+                                          {nonEmptyTotal === TOTAL_SWARM_BUCKETS
                                             ? `${TOTAL_SWARM_BUCKETS.toLocaleString()} logical buckets`
                                             : 'Bucket counts'}
                                           {' · '}
@@ -828,52 +823,47 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                         </p>
                                         <p className={styles.bucketStatsMuted}>
                                           Counted from this browser&apos;s saved storage state (restored
-                                          from your Swarm backup on other devices), not read from the node.
-                                          A chunk&apos;s bucket is set by its address, so chunks spread
-                                          across buckets by chance — a few buckets fill before the rest.
-                                        </p>
-                                        <div className={styles.bucketHist}>
-                                          {histEntries.map(entry => (
-                                            <div key={entry.label} className={styles.bucketHistRow}>
-                                              <span className={styles.bucketHistLabel}>{entry.label}</span>
-                                              <div className={styles.bucketHistBarTrack}>
-                                                <div
-                                                  className={styles.bucketHistBarFill}
-                                                  style={{
-                                                    width: `${(entry.count / maxHist) * 100}%`,
-                                                  }}
-                                                />
-                                              </div>
-                                              <span className={styles.bucketHistCount}>
-                                                {entry.count.toLocaleString()}
-                                                <span className={styles.bucketHistPct}>
-                                                  {' '}
-                                                  ({((entry.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}
-                                                  %)
-                                                </span>
-                                              </span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                        <p className={styles.bucketStatsHeatCaption}>
-                                          Mean slot fill along bucket index (Swarm address hash space) — each
-                                          column ≈{bucketsPerStripCell} buckets
+                                          from your Swarm backup on other devices), not read from the
+                                          node. A chunk&apos;s bucket is set by its address, so chunks
+                                          spread across buckets by chance — a few buckets fill before the
+                                          rest.
                                         </p>
                                         <div
-                                          className={styles.heatStrip}
+                                          className={styles.bucketStack}
                                           role="img"
-                                          aria-label="Heat strip of average bucket utilization along hash space"
+                                          aria-label="How many buckets hold 0, 1, 2 or more chunks"
                                         >
-                                          {viz.heatStrip.map((p: number, i: number) => (
-                                            <div key={i} className={styles.heatCell}>
+                                          {groups
+                                            .filter(g => g.count > 0)
+                                            .map(g => (
                                               <div
-                                                className={styles.heatFill}
-                                                style={{ height: `${Math.max(0.5, p)}%` }}
-                                                title={`Columns ${i + 1}/${BUCKET_HEAT_STRIP_COLS}: ~${p.toFixed(0)}% avg slot fill`}
+                                                key={g.label}
+                                                className={styles.bucketStackSeg}
+                                                style={{ flexGrow: g.count, background: g.color }}
+                                                title={`${g.label}: ${g.count.toLocaleString()} buckets`}
                                               />
-                                            </div>
-                                          ))}
+                                            ))}
                                         </div>
+                                        <ul className={styles.bucketLegend}>
+                                          {groups
+                                            .filter(g => g.count > 0 || g.label.startsWith('Full'))
+                                            .map(g => (
+                                              <li key={g.label} className={styles.bucketLegendItem}>
+                                                <span
+                                                  className={styles.bucketLegendSwatch}
+                                                  style={{ background: g.color }}
+                                                />
+                                                <span className={styles.bucketLegendLabel}>{g.label}</span>
+                                                <span className={styles.bucketLegendCount}>
+                                                  {g.count.toLocaleString()}
+                                                  <span className={styles.bucketHistPct}>
+                                                    {' '}
+                                                    ({((g.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}%)
+                                                  </span>
+                                                </span>
+                                              </li>
+                                            ))}
+                                        </ul>
                                       </>
                                     );
                                   })()}

@@ -306,6 +306,35 @@
   background-color: #f85149;
 }
 
+.usageStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.usageStatusDot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.usageStatusTitle {
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
+.usageStatusText {
+  flex-basis: 100%;
+  padding-left: 16px;
+  color: #8b949e;
+}
+
 .bucketStatsWrap {
   margin-top: 10px;
 }
@@ -382,7 +411,8 @@
 
 .bucketStatsMuted {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.45;
   color: #8b949e;
 }
 
@@ -392,51 +422,50 @@
   color: #6e7681;
 }
 
-.bucketHist {
+.bucketStack {
+  display: flex;
+  height: 14px;
+  gap: 2px;
+  margin: 12px 0 10px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(48, 54, 61, 0.45);
+}
+
+.bucketStackSeg {
+  flex-basis: 0;
+  flex-shrink: 0;
+  min-width: 3px;
+}
+
+.bucketLegend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
-.bucketHistRow {
+.bucketLegendItem {
   display: grid;
-  grid-template-columns: 124px 1fr minmax(7.5rem, auto);
+  grid-template-columns: 10px 1fr auto;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  column-gap: 8px;
+  font-size: 12px;
 }
 
-@media (max-width: 520px) {
-  .bucketHistRow {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
-  .bucketHistLabel {
-    margin-top: 4px;
-  }
+.bucketLegendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
 
-.bucketHistLabel {
+.bucketLegendLabel {
   color: #8b949e;
-  text-align: right;
 }
 
-.bucketHistBarTrack {
-  height: 8px;
-  background: rgba(48, 54, 61, 0.6);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.bucketHistBarFill {
-  height: 100%;
-  background: linear-gradient(90deg, #238636, #56d364);
-  border-radius: 4px;
-  min-width: 0;
-  transition: width 0.2s ease;
-}
-
-.bucketHistCount {
+.bucketLegendCount {
   font-variant-numeric: tabular-nums;
   color: #c9d1d9;
   text-align: right;
@@ -445,37 +474,6 @@
 .bucketHistPct {
   color: #6e7681;
   font-size: 10px;
-}
-
-.bucketStatsHeatCaption {
-  margin: 14px 0 8px;
-  font-size: 11px;
-  color: #6e7681;
-}
-
-.heatStrip {
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
-  height: 52px;
-}
-
-.heatCell {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  background: rgba(48, 54, 61, 0.45);
-  border-radius: 2px 2px 0 0;
-}
-
-.heatFill {
-  width: 100%;
-  min-height: 1px;
-  background: linear-gradient(to top, #238636, #56d364);
-  border-radius: 2px 2px 0 0;
-  transition: height 0.15s ease;
 }
 
 .usageUnknown {

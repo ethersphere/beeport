@@ -721,11 +721,8 @@ export async function loadStampUsage(
   return computeStampUsage(state, expectedDepth);
 }
 
-/** Columns in the stamp-card heat strip (65536 / COLS buckets per cell). */
-export const BUCKET_HEAT_STRIP_COLS = 96;
-
 /**
- * Histogram + heat-strip inputs for the stamp list “bucket stats” panel.
+ * Histogram inputs for the stamp list “bucket stats” panel.
  * All ratios use the batch's on-chain depth (`expectedDepth`), matching
  * {@link computeStampUsage}.
  */
@@ -746,8 +743,6 @@ export interface BucketStatsVisualization {
    * so e.g. “1–10%” can never occur at 8 slots). `null` for larger capacities.
    */
   slotHistogram: number[] | null;
-  /** Mean utilization % (0–100) per {@link BUCKET_HEAT_STRIP_COLS} segment of bucket index space. */
-  heatStrip: number[];
 }
 
 /**
@@ -782,30 +777,107 @@ export function computeBucketStatsVisualization(
     if (slotHistogram) slotHistogram[cnt]++;
   }
 
-  const cols = BUCKET_HEAT_STRIP_COLS;
-  const heatStrip = new Array<number>(cols);
-  const span = buckets.length / cols;
-  for (let c = 0; c < cols; c++) {
-    const start = Math.floor(c * span);
-    const end = Math.floor((c + 1) * span);
-    let sum = 0;
-    let n = 0;
-    for (let j = start; j < end && j < buckets.length; j++) {
-      sum += buckets[j];
-      n++;
-    }
-    const avg = n > 0 ? sum / n : 0;
-    heatStrip[c] = Math.min(100, (avg / maxSlot) * 100);
-  }
-
   return {
     maxSlot,
     emptyBuckets,
     fullBuckets,
     partialBins,
     slotHistogram,
-    heatStrip,
   };
+}
+
+/** One segment of the stacked bucket-fill bar. */
+export interface BucketFillGroup {
+  label: string;
+  /** Number of buckets in this group. */
+  count: number;
+  /** CSS colour: grey (empty) → green → amber → orange → red (full). */
+  color: string;
+}
+
+const FILL_COLORS = ['#2ea043', '#7bbf3c', '#d4a11a', '#f0883e'];
+const EMPTY_COLOR = '#30363d';
+const FULL_COLOR = '#f85149';
+
+/**
+ * Group the bucket histogram into at most six segments for a single stacked
+ * bar: empty, up to four partial-fill groups, full. Small capacities (≤ 16
+ * slots) are grouped by exact chunk count, larger ones by percent of capacity.
+ */
+export function groupBucketFill(viz: BucketStatsVisualization): BucketFillGroup[] {
+  const groups: BucketFillGroup[] = [{ label: 'Empty', count: viz.emptyBuckets, color: EMPTY_COLOR }];
+  if (viz.slotHistogram) {
+    const h = viz.slotHistogram; // h[n] = buckets with exactly n chunks, 1 ≤ n < maxSlot
+    const single = Math.min(3, viz.maxSlot - 1);
+    for (let n = 1; n <= single; n++) {
+      groups.push({
+        label: `${n} chunk${n === 1 ? '' : 's'}`,
+        count: h[n] ?? 0,
+        color: FILL_COLORS[n - 1] ?? FILL_COLORS[3],
+      });
+    }
+    if (viz.maxSlot - 1 > single) {
+      let rest = 0;
+      for (let n = single + 1; n < viz.maxSlot; n++) rest += h[n] ?? 0;
+      groups.push({
+        label: `${single + 1}–${viz.maxSlot - 1} chunks`,
+        count: rest,
+        color: FILL_COLORS[3],
+      });
+    }
+  } else {
+    const bands: [string, number, number][] = [
+      ['1–30% full', 0, 2],
+      ['31–60% full', 3, 5],
+      ['61–90% full', 6, 8],
+      ['91–99% full', 9, 9],
+    ];
+    bands.forEach(([label, from, to], idx) => {
+      let count = 0;
+      for (let b = from; b <= to; b++) count += viz.partialBins[b] ?? 0;
+      groups.push({ label, count, color: FILL_COLORS[idx] ?? FILL_COLORS[3] });
+    });
+  }
+  groups.push({ label: `Full (${viz.maxSlot} chunks)`, count: viz.fullBuckets, color: FULL_COLOR });
+  return groups;
+}
+
+export interface BucketHealth {
+  level: 'ok' | 'warn' | 'danger';
+  title: string;
+  text: string;
+}
+
+/**
+ * Plain-language status for the fullest bucket: an upload fails when any one
+ * bucket is full, so only the worst bucket matters for "will it fail soon".
+ */
+export function bucketHealth(maxUsed: number, maxSlot: number): BucketHealth {
+  const used = Math.max(0, Math.floor(maxUsed));
+  const left = maxSlot - used;
+  const fact = `The fullest bucket has ${Math.min(used, maxSlot)} of ${maxSlot} slots used. An upload fails when one bucket is full.`;
+  if (left <= 0) {
+    return {
+      level: 'danger',
+      title: 'Full',
+      text: `A bucket is full, so uploads whose chunks land in it fail. Use a larger storage for new uploads. ${fact}`,
+    };
+  }
+  if (left <= 1) {
+    return {
+      level: 'danger',
+      title: 'Almost full',
+      text: `Uploads can start to fail very soon. Use a larger storage for big uploads. ${fact}`,
+    };
+  }
+  if (left <= maxSlot * 0.4) {
+    return {
+      level: 'warn',
+      title: 'Getting full',
+      text: `Small uploads still work. Plan for a larger storage soon. ${fact}`,
+    };
+  }
+  return { level: 'ok', title: 'Healthy', text: `Plenty of room. ${fact}` };
 }
 
 // ─── Internals ────────────────────────────────────────────────────────────────
