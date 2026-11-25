@@ -210,28 +210,35 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               <span className={styles.slider}></span>
             </label>
           </div>
-          <div className={styles.hint}>
-            Shows technical details, such as per-bucket fill statistics in the storage list.
-          </div>
+          {showAdvancedInfo && (
+            <div className={styles.customNodeConfig}>
+              <div className={styles.hint} style={{ marginTop: 0 }}>
+                Shows technical details, such as per-bucket fill statistics in the storage list.
+              </div>
+            </div>
+          )}
         </div>
 
-        <h2>How to use this dapp?</h2>
-        <p className={styles.hint}>
+        <h2 className={styles.sectionTitle}>How to use this dapp?</h2>
+        <p className={styles.howToIntro}>
           Beeport is fully self-custody: every chunk is BMT-hashed and postage-stamped in your
           browser before it is POSTed to a Bee node. There is no application server — you just
           need a Bee node that&apos;s reachable from your browser. Pick whichever fits your setup:
         </p>
-        <ol>
-          <li>
-            <h3>Default Bee gateway</h3>
-            <p>
+        <div className={styles.faqList}>
+          <details className={styles.faqItem}>
+            <summary>Default Bee gateway</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               Out of the box the app talks to a public Bee gateway, so you can connect your wallet,
               buy storage, and upload right away — nothing to install.
             </p>
-          </li>
-          <li>
-            <h3>Local Bee node</h3>
-            <p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>Local Bee node</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               Install{' '}
               <a
                 href="https://www.ethswarm.org/build/swarm-desktop"
@@ -245,10 +252,12 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               point it at <code>http://localhost:1633</code>. No tunnel is needed when you&apos;re
               using the dapp on the same machine.
             </p>
-          </li>
-          <li>
-            <h3>Self-hosted remote Bee node</h3>
-            <p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>Self-hosted remote Bee node</summary>
+            <div className={styles.faqAnswer}>
+              <p>
               You can also point the app at a Bee node on your own server. All you need is TLS
               termination and permissive CORS in front of it — a minimal nginx config is in{' '}
               <a
@@ -263,10 +272,11 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               <code>ngrok http 1633 --request-header-add=&quot;ngrok-skip-browser-warning:1&quot;</code>
               .
             </p>
-          </li>
-        </ol>
+            </div>
+          </details>
+        </div>
 
-        <h2>Frequently Asked Questions</h2>
+        <h2 className={styles.sectionTitle}>Frequently Asked Questions</h2>
         <div className={styles.faqSection}>
           <details className={styles.faqItem}>
             <summary>What happens if my upload fails?</summary>

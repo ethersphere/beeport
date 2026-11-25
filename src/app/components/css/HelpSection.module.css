@@ -98,8 +98,18 @@
   margin: 20px 0;
 }
 
-.faqSection {
-  margin-top: 20px;
+.sectionTitle {
+  margin-top: 2rem;
+}
+
+.howToIntro {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+}
+
+.faqSection,
+.faqList {
+  margin-top: 0;
 }
 
 .faqItem {
