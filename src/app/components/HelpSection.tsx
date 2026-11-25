@@ -250,33 +250,6 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           )}
         </div>
 
-        <div className={styles.hotKeyBox}>
-          <div className={styles.hotKeyTitle}>Your hot key</div>
-          <div className={styles.hint} style={{ marginTop: 0 }}>
-            The key that owns your storage on the blockchain. Beeport derives it from your wallet.
-            See &quot;What is the hot key?&quot; below.
-          </div>
-          {hotKeyAddress ? (
-            <div className={styles.hotKeyRow}>
-              <code className={styles.hotKeyAddress}>{hotKeyAddress}</code>
-              <button type="button" className={styles.hotKeyCopy} onClick={copyHotKey}>
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          ) : (
-            <div className={styles.hotKeyEmpty}>
-              {walletAddress
-                ? 'Not created in this browser yet. Beeport creates it the first time you buy or upload storage. Your wallet signs one message for it.'
-                : 'Connect your wallet to see your hot key.'}
-            </div>
-          )}
-          {walletAddress && (
-            <div className={styles.hint}>
-              Derived from wallet <code className={styles.hotKeyWallet}>{walletAddress}</code>
-            </div>
-          )}
-        </div>
-
         <h2 className={styles.sectionTitle}>How to use this dapp?</h2>
         <p className={styles.howToIntro}>
           Beeport is fully self-custody: every chunk is BMT-hashed and postage-stamped in your
@@ -434,11 +407,38 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             <summary>How to prepare archives?</summary>
             <div className={styles.faqAnswer}>
               <p>
-              Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to make your folder ready
-              for upload as TAR file. You can also upload ZIP files and GZIP files.
-            </p>
+                Use &quot;tar -C my_folder -cf my_folder.tar .&quot; command to make your folder
+                ready for upload as TAR file. You can also upload ZIP files and GZIP files.
+              </p>
             </div>
           </details>
+        </div>
+
+        <div className={styles.hotKeyBox}>
+          <div className={styles.hotKeyTitle}>Your hot key</div>
+          <div className={styles.hint} style={{ marginTop: 0 }}>
+            The key that owns your storage on the blockchain. Beeport derives it from your wallet.
+            See &quot;What is the hot key?&quot; above.
+          </div>
+          {hotKeyAddress ? (
+            <div className={styles.hotKeyRow}>
+              <code className={styles.hotKeyAddress}>{hotKeyAddress}</code>
+              <button type="button" className={styles.hotKeyCopy} onClick={copyHotKey}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ) : (
+            <div className={styles.hotKeyEmpty}>
+              {walletAddress
+                ? 'Not created in this browser yet. Beeport creates it the first time you buy or upload storage. Your wallet signs one message for it.'
+                : 'Connect your wallet to see your hot key.'}
+            </div>
+          )}
+          {walletAddress && (
+            <div className={styles.hint}>
+              Derived from wallet <code className={styles.hotKeyWallet}>{walletAddress}</code>
+            </div>
+          )}
         </div>
       </div>
     </div>

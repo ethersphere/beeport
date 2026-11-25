@@ -2535,25 +2535,16 @@ const SwapComponent: React.FC = () => {
       {!showHelp && !showStampList && !showUploadHistory ? (
         <>
           {/* ── Self-custody info panel (always-on; SWIP §Client-side stamping mode α) */}
-          <div className={styles.inputGroup}>
-            <div className={styles.priceInfo}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                Self-custody storage{' '}
-                <span
-                  className={styles.tooltip}
-                  title="Buying: Relay bridges/swaps any chain → BZZ on Gnosis (including Gnosis+BZZ), then the Relay executor approves BZZ to StampsRegistryV2 and calls `createSelfCustodyBatch` with the hot key as on-chain owner. Uploading: chain-independent — chunks are BMT-hashed and stamped locally; pre-stamped chunks go to a key-less Bee gateway."
-                >
-                  ?
-                </span>
-              </div>
-              {!hotKey && !cachedHotKeyAddress && (
+          {!hotKey && !cachedHotKeyAddress && (
+            <div className={styles.inputGroup}>
+              <div className={styles.priceInfo}>
                 <div>
                   🔑 Your wallet will be asked to sign a single message to derive a storage key.
                   The key never leaves this tab.
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className={styles.inputGroup}>
             <label className={styles.label} data-tooltip="Select chain with funds">
