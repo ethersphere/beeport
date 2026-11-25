@@ -56,7 +56,7 @@ Static hosting only — no server-side PHP/Node, databases, or form backends. SP
 
 ## ENS
 
-Link a domain from **History** → **ENS** on website uploads. See [ENS integration](./ens-integration.md).
+Link a domain from **Files** → **ENS** on website uploads. See [ENS integration](./ens-integration.md).
 
 ## Troubleshooting
 

@@ -52,7 +52,7 @@ npx serve out
 - **🔐 Self-custody stamps**: Hot key owns the batch on-chain; gateway validates, never holds your stamp key
 - **🏷️ Postage batches**: Buy or top up storage via wallet + `StampsRegistryV2`
 - **🌐 ENS Integration**: Link your ENS domains to Swarm content for human-readable access
-- **📊 Upload History**: Track all your uploads with file sizes and timestamps
+- **📊 Files**: Track all your uploads with file sizes and timestamps
 - **💰 Cost Optimization**: Infinite approvals and smart gas top-ups minimize transaction costs
 
 ## How to run locally

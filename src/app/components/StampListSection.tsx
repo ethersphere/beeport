@@ -522,7 +522,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
           <div className={styles.stampListLoading}>Loading stamps…</div>
         ) : stamps.length === 0 ? (
           <div className={styles.stampListEmpty}>
-            No self-custody stamps yet. Buy storage to create your first batch — it will appear
+            No self-custody storage yet. Buy storage to create your first batch — it will appear
             here automatically.
           </div>
         ) : (

@@ -266,12 +266,12 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3>Upload history</h3>
+            <h3>Your files list</h3>
             <p>
-              Upload history is kept in the browser&apos;s storage. Clearing the storage/cache of
-              the browser will irreversibly destroy the upload history. When switching browsers, you
-              can migrate this data manually using the IMPORT and EXPORT buttons, otherwise your
-              upload history will start empty.
+              The list of your files is kept in the browser&apos;s storage. Clearing the storage/cache
+              of the browser will irreversibly destroy the list. When switching browsers, you can
+              migrate this data manually using the IMPORT and EXPORT buttons, otherwise your list
+              will start empty.
             </p>
           </div>
           <div className={styles.faqItem}>

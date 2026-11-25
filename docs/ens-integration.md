@@ -13,7 +13,7 @@ Implementation notes: [ENS technical reference](./ens-technical-reference.md).
 ## Linking a domain
 
 1. Upload your content (website uploads work best — see [Webpage upload](./webpage-upload.md)).
-2. Open the **History** tab and click the **ENS** button on the upload.
+2. Open the **Files** tab and click the **ENS** button on the upload.
 3. Pick a domain from the owned-domains dropdown (discovered automatically) or enter one manually. Ownership is verified on-chain before the transaction is offered.
 4. Click **Set Content Hash**, confirm in your wallet, wait for confirmation.
 5. Visit `yourname.eth.limo`.
@@ -46,4 +46,4 @@ The ENS modal also supports `.eth` registration:
 
 - Static sites, SPAs, docs, and media galleries all work; make sure the upload has an `index.html` (folder upload or **Serve uncompressed**).
 - Multiple domains can point at the same reference.
-- Domain ↔ reference associations are remembered in your browser's upload history.
+- Domain ↔ reference associations are remembered in your browser's file list.

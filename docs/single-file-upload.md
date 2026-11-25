@@ -33,7 +33,7 @@ Self-custody uploads keep stamping in this tab until finished; closing the tab d
 - **Reference:** Swarm content hash (hex).
 - **Access:** `https://bzz.link/bzz/<reference>/<filename>` or browse at `/` when uncompressed.
 
-Upload history is stored in the browser; export from History if you need a backup.
+The file list is stored in the browser. Export it from Files if you need a backup.
 
 ## Troubleshooting
 

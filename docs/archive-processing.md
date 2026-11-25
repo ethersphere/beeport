@@ -44,11 +44,11 @@ TAR:     select file → extract → filter → index (if needed) → re-pack �
 
 **Compressed ZIP** (Serve uncompressed off): upload the archive as one blob; download at `https://bzz.link/bzz/<reference>/<filename>`.
 
-## Upload history vs stamps
+## File list vs stamps
 
 | Data | Stored by | Survives browser change? |
 | ---- | --------- | ------------------------- |
-| Upload history (references, filenames) | Browser `localStorage` | No — export CSV if you need a backup |
+| File list (references, filenames) | Browser `localStorage` | No — export CSV if you need a backup |
 | Postage stamps / batches | On-chain + wallet | Yes — reconnect the same wallet |
 
 ---

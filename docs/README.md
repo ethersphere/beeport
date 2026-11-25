@@ -45,7 +45,7 @@ Documentation for uploading to Swarm with **Beeport** (self-custody: your browse
 2. Sign the **one-time hot-key derivation message** when prompted.
 3. Create or select a postage stamp.
 4. Pick an upload mode from the table above and upload.
-5. Open `https://bzz.link/bzz/<reference>/` or link ENS from History.
+5. Open `https://bzz.link/bzz/<reference>/` or link ENS from Files.
 
 ## External links
 

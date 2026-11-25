@@ -644,7 +644,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const filterSuffix = selectedFilter !== 'all' ? `-${selectedFilter}` : '';
     link.setAttribute(
       'download',
-      `upload-history-${address?.slice(0, 8)}${filterSuffix}-${new Date().toISOString().split('T')[0]}.csv`
+      `file-list-${address?.slice(0, 8)}${filterSuffix}-${new Date().toISOString().split('T')[0]}.csv`
     );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -896,7 +896,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     if (!address) return;
 
     const confirmed = window.confirm(
-      'Are you sure you want to clear all upload history? This action cannot be undone.'
+      'Are you sure you want to clear your whole file list? This action cannot be undone.'
     );
     if (confirmed) {
       setHistory([]);
@@ -923,7 +923,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     const confirmed = window.confirm(
-      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your upload history? This action cannot be undone.`
+      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your file list? This action cannot be undone.`
     );
     if (confirmed) {
       // Filter out expired items
@@ -1012,7 +1012,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     if (!address) return;
 
     const confirmed = window.confirm(
-      'Are you sure you want to delete this upload from history? This action cannot be undone. Back it up if still possible.'
+      'Are you sure you want to remove this upload from your file list? This action cannot be undone. Back it up if still possible.'
     );
 
     if (confirmed) {
@@ -1040,10 +1040,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   return (
     <div className={styles.container}>
       <div className={styles.titleContainer}>
-        <h2 className={styles.title}>Upload History</h2>
+        <h2 className={styles.title}>Your Files</h2>
         <div className={styles.buttonGroup}>
           {filteredHistory.length > 0 && (
-            <button className={styles.downloadButton} onClick={downloadCSV} title="Export History ">
+            <button className={styles.downloadButton} onClick={downloadCSV} title="Export file list">
               <svg
                 width="20"
                 height="20"
@@ -1061,7 +1061,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {address && (
-            <label className={styles.uploadButton} title="Import History">
+            <label className={styles.uploadButton} title="Import file list">
               <input
                 type="file"
                 accept=".csv"
@@ -1108,7 +1108,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {history.length > 0 && (
-            <button className={styles.clearButton} onClick={clearHistory} title="Clear History">
+            <button className={styles.clearButton} onClick={clearHistory} title="Clear file list">
               <svg
                 width="20"
                 height="20"
@@ -1408,7 +1408,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     <button
                       className={styles.deleteButton}
                       onClick={() => deleteRecord(record.reference, record.stampId)}
-                      title="Delete from history"
+                      title="Remove from file list"
                     >
                       ✕
                     </button>
