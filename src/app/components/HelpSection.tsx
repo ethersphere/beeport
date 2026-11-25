@@ -23,6 +23,10 @@ interface HelpSectionProps {
   setCustomSlippagePercent: (value: number) => void;
   showAdvancedInfo: boolean;
   setShowAdvancedInfo: (value: boolean) => void;
+  /** Connected wallet address (the hot key is derived from it). */
+  walletAddress?: string;
+  /** Full hot-key address, if derived in this browser (active session or cached). */
+  hotKeyAddress?: string;
 }
 
 const HelpSection: React.FC<HelpSectionProps> = ({
@@ -41,7 +45,21 @@ const HelpSection: React.FC<HelpSectionProps> = ({
   setCustomSlippagePercent,
   showAdvancedInfo,
   setShowAdvancedInfo,
+  walletAddress,
+  hotKeyAddress,
 }) => {
+  const [copied, setCopied] = React.useState(false);
+  const copyHotKey = async () => {
+    if (!hotKeyAddress) return;
+    try {
+      await navigator.clipboard.writeText(hotKeyAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard blocked: the address stays selectable
+    }
+  };
+
   const handleBeeApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value;
     // Remove trailing slashes
@@ -232,6 +250,33 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           )}
         </div>
 
+        <div className={styles.hotKeyBox}>
+          <div className={styles.hotKeyTitle}>Your hot key</div>
+          <div className={styles.hint} style={{ marginTop: 0 }}>
+            The key that owns your storage on the blockchain. Beeport derives it from your wallet.
+            See &quot;What is the hot key?&quot; below.
+          </div>
+          {hotKeyAddress ? (
+            <div className={styles.hotKeyRow}>
+              <code className={styles.hotKeyAddress}>{hotKeyAddress}</code>
+              <button type="button" className={styles.hotKeyCopy} onClick={copyHotKey}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ) : (
+            <div className={styles.hotKeyEmpty}>
+              {walletAddress
+                ? 'Not created in this browser yet. Beeport creates it the first time you buy or upload storage. Your wallet signs one message for it.'
+                : 'Connect your wallet to see your hot key.'}
+            </div>
+          )}
+          {walletAddress && (
+            <div className={styles.hint}>
+              Derived from wallet <code className={styles.hotKeyWallet}>{walletAddress}</code>
+            </div>
+          )}
+        </div>
+
         <h2 className={styles.sectionTitle}>How to use this dapp?</h2>
         <p className={styles.howToIntro}>
           Beeport is fully self-custody: every chunk is BMT-hashed and postage-stamped in your
@@ -320,6 +365,32 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               migrate this data manually using the IMPORT and EXPORT buttons, otherwise your list
               will start empty.
             </p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
+            <summary>What is the hot key?</summary>
+            <div className={styles.faqAnswer}>
+              <p>
+                Every storage has an owner on the blockchain, and the owner must sign each piece
+                of data you upload. Your wallet would have to sign thousands of times, so Beeport
+                uses a helper key instead: the hot key.
+              </p>
+              <p>
+                The first time you buy or upload, your wallet signs one fixed message. Beeport
+                turns that signature into the hot key, in your browser. The key is not saved and
+                not sent anywhere. After 15 minutes without activity, Beeport clears it from
+                memory and asks for the signature again.
+              </p>
+              <p>
+                You have one hot key for each wallet address, and all your storages use it. You get
+                the same hot key on every browser and device with the same wallet, so you cannot
+                lose it. If you lose the wallet, you lose access to your storage.
+              </p>
+              <p>
+                The hot key cannot move your funds. It can only sign uploads to your storage. Sign
+                the Beeport message only on Beeport. You can see your hot key at the top of this
+                page.
+              </p>
             </div>
           </details>
           <details className={styles.faqItem}>

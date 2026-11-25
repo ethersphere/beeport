@@ -631,11 +631,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                 <div className={styles.stampListDetails}>
                   <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
-                  {stamp.hotKeyAddress && (
-                    <span title="On-chain owner of this batch (only this hot key can sign valid stamps)">
-                      🔑 {stamp.hotKeyAddress.slice(0, 6)}…{stamp.hotKeyAddress.slice(-4)}
-                    </span>
-                  )}
 
                   {stamp.missingOnChain ? (
                     <span

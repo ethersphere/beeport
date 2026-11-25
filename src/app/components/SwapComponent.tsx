@@ -2546,22 +2546,7 @@ const SwapComponent: React.FC = () => {
                   ?
                 </span>
               </div>
-              {hotKey ? (
-                <div>
-                  🔑 Hot key (on-chain batch owner):{' '}
-                  <code style={{ fontSize: 12 }}>
-                    {hotKey.address.slice(0, 8)}…{hotKey.address.slice(-6)}
-                  </code>
-                </div>
-              ) : cachedHotKeyAddress ? (
-                <div>
-                  🔑 Cached hot-key address:{' '}
-                  <code style={{ fontSize: 12 }}>
-                    {cachedHotKeyAddress.slice(0, 8)}…{cachedHotKeyAddress.slice(-6)}
-                  </code>{' '}
-                  (will be re-derived on the next buy or upload)
-                </div>
-              ) : (
+              {!hotKey && !cachedHotKeyAddress && (
                 <div>
                   🔑 Your wallet will be asked to sign a single message to derive a storage key.
                   The key never leaves this tab.
@@ -2756,6 +2741,8 @@ const SwapComponent: React.FC = () => {
           setCustomSlippagePercent={setCustomSlippagePercent}
           showAdvancedInfo={showAdvancedInfo}
           setShowAdvancedInfo={setShowAdvancedInfo}
+          walletAddress={address}
+          hotKeyAddress={hotKey?.address ?? cachedHotKeyAddress ?? undefined}
         />
       ) : showStampList ? (
         <StampListSection

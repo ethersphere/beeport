@@ -366,3 +366,65 @@ input:checked + .slider:before {
 .advancedList li:last-child {
   margin-bottom: 0;
 }
+
+.hotKeyBox {
+  margin-top: 24px;
+  padding: 16px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.hotKeyTitle {
+  margin-bottom: 6px;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.hotKeyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hotKeyAddress,
+.hotKeyWallet {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #c9d1d9;
+  word-break: break-all;
+  user-select: all;
+}
+
+.hotKeyAddress {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  background-color: #0f131a;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.hotKeyCopy {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background-color: transparent;
+  color: #c9d1d9;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hotKeyCopy:hover {
+  background-color: #1c2330;
+}
+
+.hotKeyEmpty {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8b949e;
+}
