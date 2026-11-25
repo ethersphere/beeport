@@ -3616,7 +3616,7 @@ const SwapComponent: React.FC = () => {
 
                 {uploadStampInfo && multiFileResults.length === 0 && !nftCollectionResult && (
                   <div className={styles.stampInfoBox}>
-                    <h4>Storage Stamps Details</h4>
+                    <h4>Storage Details</h4>
                     <div className={styles.stampDetails}>
                       <div className={styles.stampDetail}>
                         <span>Utilization:</span>

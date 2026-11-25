@@ -91,7 +91,7 @@ interface StampListSectionProps {
    * Propagate the selected stamp's depth back to the parent so subsequent
    * uploads use the correct on-chain depth.
    *
-   * Without this, "Upload with these stamps" falls through to the parent's
+   * Without this, "Upload with this storage" falls through to the parent's
    * `selectedDepth` default (currently 22) regardless of the actual batch
    * depth — which silently builds the local Stamper at the wrong depth, lets
    * `cnt` values run past Bee's `maxSlot`, and eventually trips
@@ -513,7 +513,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
         <div className={styles.stampListHeader}>
-          <h2>Your Self-Custody Stamps</h2>
+          <h2>Your Self-Custody Storage</h2>
         </div>
 
         {!address ? (
@@ -881,9 +881,9 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   <button
                     className={styles.uploadWithStampButton}
                     onClick={() => handleStampSelect(stamp)}
-                    title="Upload with these stamps"
+                    title="Upload with this storage"
                   >
-                    Upload with these stamps
+                    Upload with this storage
                   </button>
 
                   <button

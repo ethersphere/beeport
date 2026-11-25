@@ -79,7 +79,7 @@ Fix:
 ### 1.7 Fix depth desync between stamp list and uploads + per-batch chunk dedup — `[x]` shipped
 **Files:** `src/app/components/StampListSection.tsx`, `src/app/components/SwapComponent.tsx`, `src/app/components/ClientSideUpload.ts`, `src/app/components/ClientStamping.ts`
 
-`handleStampSelect` now calls `setSelectedDepth(stamp.depth)` so "Upload with these stamps" runs the upload at the actual on-chain depth instead of the parent's `useState(22)` default. The previous bug silently built local Stampers at depth 22 for depth-20 batches, handing out `cnt`s past Bee's `maxSlot`; Bee rejected those stamps while the local bucket counters kept climbing, eventually tripping `Bucket is full` with deceptively low byte fill.
+`handleStampSelect` now calls `setSelectedDepth(stamp.depth)` so "Upload with this storage" runs the upload at the actual on-chain depth instead of the parent's `useState(22)` default. The previous bug silently built local Stampers at depth 22 for depth-20 batches, handing out `cnt`s past Bee's `maxSlot`; Bee rejected those stamps while the local bucket counters kept climbing, eventually tripping `Bucket is full` with deceptively low byte fill.
 
 Defence in depth:
 - `uploadFileClientSide` now refuses any persisted state whose depth disagrees with the batch depth — it `clearStamperState` + `clearStampedAddresses` and starts `fromBlank` rather than running the math against a divergent state.
