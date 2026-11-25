@@ -468,10 +468,13 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     const idLabel = (stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId)
       .slice(0, 10);
     const ok = window.confirm(
-      `Reset local issuer state for batch ${idLabel}…?\n\n` +
-        `This clears the bucket counters and chunk-dedup cache stored in this ` +
-        `browser. The next upload to this storage will start fresh and re-seed ` +
-        `the SOC backup. The storage itself is unaffected on-chain or on Bee.`
+      `Reset local state for storage ${idLabel}…?\n\n` +
+        `This clears the saved bucket counters and the "already uploaded" list for this ` +
+        `one storage in this browser. Other storages are not changed.\n\n` +
+        `The next upload first tries to restore the counters from your Swarm backup. ` +
+        `If there is no backup and this browser created the storage, the counters start ` +
+        `at zero. Then new files can replace older files in the same storage.\n\n` +
+        `Reset only if the counters are wrong. Continue?`
     );
     if (!ok) return;
     // Both helpers are now async (IndexedDB-backed). Await them so the
@@ -734,19 +737,36 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                 2 ** (stamp.depth - 16)
                               );
                               return (
-                                <div className={styles.usageStatus} title={health.text}>
-                                  <span
-                                    className={`${styles.usageStatusDot} ${
-                                      health.level === 'ok'
-                                        ? styles.usageBarOk
-                                        : health.level === 'warn'
-                                          ? styles.usageBarWarn
-                                          : styles.usageBarDanger
-                                    }`}
-                                  />
-                                  <span className={styles.usageStatusTitle}>{health.title}</span>
-                                  <span className={styles.usageStatusText}>{health.text}</span>
-                                </div>
+                                <>
+                                  <div className={styles.usageStatus} title={health.text}>
+                                    <span
+                                      className={`${styles.usageStatusDot} ${
+                                        health.level === 'ok'
+                                          ? styles.usageBarOk
+                                          : health.level === 'warn'
+                                            ? styles.usageBarWarn
+                                            : styles.usageBarDanger
+                                      }`}
+                                    />
+                                    <span className={styles.usageStatusTitle}>{health.title}</span>
+                                    <span className={styles.usageStatusText}>{health.text}</span>
+                                  </div>
+                                  <div className={styles.usageAdvancedActions}>
+                                    <button
+                                      type="button"
+                                      className={styles.usageResetButton}
+                                      onClick={() => {
+                                        void handleResetLocalState(stamp);
+                                      }}
+                                      title="Clear the saved counters and the already-uploaded list for this storage only."
+                                    >
+                                      Reset local state
+                                    </button>
+                                    <span className={styles.usageStatusText}>
+                                      Only if the counters look wrong. Affects this storage only.
+                                    </span>
+                                  </div>
+                                </>
                               );
                             })()}
                           {corrupted && (

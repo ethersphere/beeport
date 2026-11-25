@@ -1349,7 +1349,7 @@ export function checkProjectedStampCapacity(
       message:
         `Storage would be ${projectedUtilizationPercent.toFixed(1)}% full ` +
         `after this upload (currently ${utilizationPercent.toFixed(1)}%). ` +
-        `Top up the batch or use a fresh one before retrying.`,
+        `Use a larger storage for this upload.`,
     };
   }
   if (projectedUtilizationPercent >= STAMP_WARN_UTILIZATION * 100) {

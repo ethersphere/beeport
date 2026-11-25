@@ -1763,16 +1763,16 @@ const SwapComponent: React.FC = () => {
       return {
         message: 'Issuer-state backup to Swarm failed',
         warning:
-          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this storage in another browser) could not be written. You can keep uploading. If this repeats, top up, use a deeper stamp, or reset local stamp state in the stamp list.',
+          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this storage in another browser) could not be written. You can keep uploading. If this repeats, use a larger storage, or reset the local state of this storage (Settings → Advanced info, then the storage list).',
         detail: raw,
       };
     }
 
     if (lower.includes('bucket is full')) {
       return {
-        message: 'Storage is full in one Swarm bucket',
+        message: 'One chunk of this file belongs to a full bucket',
         warning:
-          'Swarm allows only a limited number of chunks per logical bucket (out of 65,536). Total “MB used” can still look low while a single bucket is saturated. Try a deeper/larger storage, top up, pick a different batch, or use “Reset local state” on this storage if counters look wrong — then retry.',
+          'Swarm splits a storage into 65,536 buckets. Each bucket holds a fixed number of chunks. One chunk of this file belongs to a bucket that is full, so the upload stopped. Other files can still work, and chunks already sent stay stored. Use a larger storage for this file. A top-up does not help: it adds time, not space. To check the counters, turn on Advanced info in Settings and look at the storage list.',
         detail: raw,
         keepUploadFormOpen: true,
       };

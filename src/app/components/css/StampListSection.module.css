@@ -335,6 +335,20 @@
   color: #8b949e;
 }
 
+.usageAdvancedActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.usageAdvancedActions .usageStatusText {
+  flex: 1 1 160px;
+  padding-left: 0;
+}
+
 .bucketStatsWrap {
   margin-top: 10px;
 }

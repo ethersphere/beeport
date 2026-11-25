@@ -12,9 +12,15 @@ Connect the wallet, choose a file, and select a stamp. If state looks out of syn
 
 The Bee gateway's batchstore hasn't indexed your `createBatch` block yet. The app probes with one chunk and retries for ~2 minutes ("Waiting for Bee gateway to recognize your new storage…"). If it still fails after that, the gateway is slow to poll its RPC or watches a different PostageStamp contract — wait a minute and press Upload again (your file selection is preserved), or switch gateways.
 
-### "Stamp is full in one Swarm bucket" / "Bucket is full"
+### "One chunk of this file belongs to a full bucket" / "Bucket is full"
 
-Swarm allows a limited number of chunks per logical bucket (65,536 buckets per batch). Total "MB used" can look low while a single bucket is saturated. Use a deeper (larger) stamp, top up, pick a different batch, or use **Reset local state** on the stamp if counters look wrong.
+A storage has 65,536 buckets. Each bucket holds a fixed number of chunks. A chunk goes into the bucket that its address points to. When that bucket is full, the app cannot stamp the chunk. The upload stops. Chunks that the app already sent stay stored.
+
+The app checks its own saved counters before it sends a chunk. Bee applies the same limit. Bee refuses a stamp with a slot number above the limit (`invalid index`).
+
+Other files can still work, because their chunks go to other buckets. A top-up adds time, not space, so it does not help. Use a larger storage for this file.
+
+If the counters look wrong, enable **Advanced info** in Settings. Then use **Reset local state** in the storage list. This clears the counters of that one storage. The next upload restores them from the Swarm backup. If no backup exists, the counters start at zero. New files can then replace older files. Reset only if you are sure that the counters are wrong.
 
 ### "Bee doesn't recognize this batch"
 

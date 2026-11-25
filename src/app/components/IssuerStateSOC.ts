@@ -187,8 +187,8 @@ export async function saveIssuerStateToSOC(params: {
   if (afterBlobBuckets[stampBucket] >= maxSlot) {
     throw new Error(
       `SOC issuer-state bucket ${stampBucket} is full (${afterBlobBuckets[stampBucket]}/${maxSlot}). ` +
-        'The hot-key + batchId pair always lands in this bucket — top up to a deeper stamp, ' +
-        'use a different batch, or reset local state if the counter is wrong.'
+        'The hot-key + batchId pair always lands in this bucket — use a larger storage ' +
+        'or a different batch, or reset local state if the counter is wrong.'
     );
   }
 
