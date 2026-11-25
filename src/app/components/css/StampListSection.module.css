@@ -335,20 +335,6 @@
   color: #8b949e;
 }
 
-.usageAdvancedActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  margin-top: 8px;
-  font-size: 12px;
-}
-
-.usageAdvancedActions .usageStatusText {
-  flex: 1 1 160px;
-  padding-left: 0;
-}
-
 .bucketStatsWrap {
   margin-top: 10px;
 }
@@ -428,6 +414,20 @@
   font-size: 12px;
   line-height: 1.45;
   color: #8b949e;
+}
+
+.bucketStatsFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.bucketStatsFooter .bucketStatsMuted {
+  flex: 1 1 160px;
 }
 
 .bucketStatsCaption {

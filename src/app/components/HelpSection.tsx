@@ -200,7 +200,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           )}
 
           <div className={styles.switchContainer} style={{ marginTop: '20px' }}>
-            <span className={styles.switchLabel}>Advanced info</span>
+            <span className={styles.switchLabel}>Advanced mode</span>
             <label className={styles.switch}>
               <input
                 type="checkbox"
@@ -213,7 +213,20 @@ const HelpSection: React.FC<HelpSectionProps> = ({
           {showAdvancedInfo && (
             <div className={styles.customNodeConfig}>
               <div className={styles.hint} style={{ marginTop: 0 }}>
-                Shows technical details, such as per-bucket fill statistics in the storage list.
+                Advanced mode shows technical details in the storage list:
+                <ul className={styles.advancedList}>
+                  <li>
+                    <strong>Status line:</strong> Healthy, Getting full, Almost full or Full, based
+                    on the fullest bucket.
+                  </li>
+                  <li>
+                    <strong>Bucket stats:</strong> the fullest bucket and a chart of how many
+                    buckets hold 0, 1, 2 or more chunks.
+                  </li>
+                  <li>
+                    <strong>Reset local state:</strong> clears the saved counters of one storage.
+                  </li>
+                </ul>
               </div>
             </div>
           )}
@@ -329,7 +342,7 @@ const HelpSection: React.FC<HelpSectionProps> = ({
               <p>
                 The numbers come from this browser&apos;s saved storage state (restored from your
                 Swarm backup on other devices), not from the node. Turn on{' '}
-                <strong>Advanced info</strong> in Settings for a better overview: a status line
+                <strong>Advanced mode</strong> in Settings for a better overview: a status line
                 (Healthy, Getting full, Almost full, Full) and a chart of how many buckets hold 0,
                 1, 2 or more chunks.
               </p>

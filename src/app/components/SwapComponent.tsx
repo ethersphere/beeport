@@ -367,7 +367,7 @@ const SwapComponent: React.FC = () => {
   const priceEstimateAbortControllerRef = useRef<AbortController | null>(null);
 
   // Add state for custom RPC
-  // "Advanced info" (Settings): shows technical details such as bucket stats.
+  // "Advanced mode" (Settings): shows technical details such as bucket stats.
   const [showAdvancedInfo, setShowAdvancedInfoState] = useState(false);
   useEffect(() => {
     try {
@@ -1763,7 +1763,7 @@ const SwapComponent: React.FC = () => {
       return {
         message: 'Issuer-state backup to Swarm failed',
         warning:
-          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this storage in another browser) could not be written. You can keep uploading. If this repeats, use a larger storage, or reset the local state of this storage (Settings → Advanced info, then the storage list).',
+          'Your file is already on the network; only the encrypted stamper-state snapshot (used to recover this storage in another browser) could not be written. You can keep uploading. If this repeats, use a larger storage, or reset the local state of this storage (Settings → Advanced mode, then the storage list).',
         detail: raw,
       };
     }
@@ -1772,7 +1772,7 @@ const SwapComponent: React.FC = () => {
       return {
         message: 'One chunk of this file belongs to a full bucket',
         warning:
-          'Swarm splits a storage into 65,536 buckets. Each bucket holds a fixed number of chunks. One chunk of this file belongs to a bucket that is full, so the upload stopped. Other files can still work, and chunks already sent stay stored. Use a larger storage for this file. A top-up does not help: it adds time, not space. To check the counters, turn on Advanced info in Settings and look at the storage list.',
+          'Swarm splits a storage into 65,536 buckets. Each bucket holds a fixed number of chunks. One chunk of this file belongs to a bucket that is full, so the upload stopped. Other files can still work, and chunks already sent stay stored. Use a larger storage for this file. A top-up does not help: it adds time, not space. To check the counters, turn on Advanced mode in Settings and look at the storage list.',
         detail: raw,
         keepUploadFormOpen: true,
       };

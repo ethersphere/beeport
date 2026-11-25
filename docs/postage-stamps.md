@@ -52,7 +52,7 @@ Anyone holding the batch owner key can stamp against the batch. In Beeport's sel
 | Symptom | Cause / fix |
 | ------- | ----------- |
 | "Storage not ready yet" right after buying | Gateway still indexing the batch — the app retries automatically; see [Troubleshooting](./troubleshooting.md) |
-| "Bucket is full" with low MB used | One chunk of the file belongs to a full bucket — use a larger storage (a top-up adds time, not space). Reset local state (Settings → Advanced info) only if the counters look wrong |
+| "Bucket is full" with low MB used | One chunk of the file belongs to a full bucket — use a larger storage (a top-up adds time, not space). Reset local state (Settings → Advanced mode) only if the counters look wrong |
 | Stamp missing from list | Reconnect the same wallet; batches are on-chain and rediscovered from the wallet |
 | Expired stamp | Data may be garbage-collected; buy a new batch and re-upload |
 

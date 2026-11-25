@@ -350,3 +350,19 @@ input:checked + .slider:before {
   border-radius: 3px;
   color: #ffffff;
 }
+
+.advancedList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.advancedList li {
+  margin: 0 0 6px;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+.advancedList li:last-child {
+  margin-bottom: 0;
+}

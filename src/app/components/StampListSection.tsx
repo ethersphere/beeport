@@ -101,7 +101,7 @@ interface StampListSectionProps {
   setSelectedDepth: (depth: number) => void;
   /** Clears a stale upload error banner in the parent overlay (if any). */
   clearParentUploadError?: () => void;
-  /** Show technical details such as the per-batch bucket stats (Settings → Advanced info). */
+  /** Show technical details such as the per-batch bucket stats (Settings → Advanced mode). */
   showAdvancedInfo?: boolean;
 }
 
@@ -751,21 +751,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                     <span className={styles.usageStatusTitle}>{health.title}</span>
                                     <span className={styles.usageStatusText}>{health.text}</span>
                                   </div>
-                                  <div className={styles.usageAdvancedActions}>
-                                    <button
-                                      type="button"
-                                      className={styles.usageResetButton}
-                                      onClick={() => {
-                                        void handleResetLocalState(stamp);
-                                      }}
-                                      title="Clear the saved counters and the already-uploaded list for this storage only."
-                                    >
-                                      Reset local state
-                                    </button>
-                                    <span className={styles.usageStatusText}>
-                                      Only if the counters look wrong. Affects this storage only.
-                                    </span>
-                                  </div>
                                 </>
                               );
                             })()}
@@ -881,6 +866,21 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                       </>
                                     );
                                   })()}
+                                <div className={styles.bucketStatsFooter}>
+                                  <button
+                                    type="button"
+                                    className={styles.usageResetButton}
+                                    onClick={() => {
+                                      void handleResetLocalState(stamp);
+                                    }}
+                                    title="Clear the saved counters and the already-uploaded list for this storage only."
+                                  >
+                                    Reset local state
+                                  </button>
+                                  <span className={styles.bucketStatsMuted}>
+                                    Only if the counters look wrong. Affects this storage only.
+                                  </span>
+                                </div>
                               </div>
                             )}
                           </div>

@@ -20,7 +20,7 @@ The app checks its own saved counters before it sends a chunk. Bee applies the s
 
 Other files can still work, because their chunks go to other buckets. A top-up adds time, not space, so it does not help. Use a larger storage for this file.
 
-If the counters look wrong, enable **Advanced info** in Settings. Then use **Reset local state** in the storage list. This clears the counters of that one storage. The next upload restores them from the Swarm backup. If no backup exists, the counters start at zero. New files can then replace older files. Reset only if you are sure that the counters are wrong.
+If the counters look wrong, enable **Advanced mode** in Settings. Then use **Reset local state** in the storage list. This clears the counters of that one storage. The next upload restores them from the Swarm backup. If no backup exists, the counters start at zero. New files can then replace older files. Reset only if you are sure that the counters are wrong.
 
 ### "Bee doesn't recognize this batch"
 
