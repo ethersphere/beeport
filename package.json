@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@ethersphere/bee-js": "^12.1.0",
+    "@ethersphere/core-sdk": "0.3.0",
     "@formbricks/js": "^4.1.0",
     "@lifi/sdk": "3.6.7",
     "@noble/curves": "1.9.7",
@@ -42,7 +43,6 @@
     "react": "^18",
     "react-dom": "^18",
     "serve": "^14.2.4",
-    "swarm-core": "file:vendor/swarm-core",
     "tar-js": "^0.3.0",
     "trackjs-nextjs": "^1.0.3",
     "viem": "^2.25.0",

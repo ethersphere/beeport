@@ -6,23 +6,23 @@
  * produce parity CACs ourselves. Encoding happens here; HTTP vs WebSocket is
  * only how those stamped chunks are delivered afterward.
  *
- * Uses vendored `swarm-core` (ChunkSplitter + Reed-Solomon), matching Bee's
+ * Uses `@ethersphere/core-sdk` (ChunkSplitter + Reed-Solomon), matching Bee's
  * PAC-scoped EC + span level flag so stock Bee downloaders can reconstruct.
  */
 
 import type { Chunk } from 'cafe-utility';
-import { ChunkSplitter, type ChunkBuilder } from 'swarm-core/chunk';
+import { ChunkSplitter, type ChunkBuilder } from '@ethersphere/core-sdk/chunk';
 import {
   getMaxShards,
   getParities,
   makeErasureBatch,
   makeIntermediateChunkHandler,
-} from 'swarm-core/erasure-coding';
+} from '@ethersphere/core-sdk/erasure-coding';
 
 const FILE_READ_SLAB_BYTES = 1 << 20;
 const SINGLE_SHOT_READ_THRESHOLD_BYTES = 64 * 1024 * 1024;
 
-/** Adapt swarm-core {@link ChunkBuilder} to cafe-utility {@link Chunk}. */
+/** Adapt core-sdk {@link ChunkBuilder} to cafe-utility {@link Chunk}. */
 export function asCafeChunk(builder: ChunkBuilder): Chunk {
   return {
     build: () => builder.build(),

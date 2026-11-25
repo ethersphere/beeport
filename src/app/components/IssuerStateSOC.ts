@@ -47,7 +47,7 @@ import {
   Stamper,
 } from '@ethersphere/bee-js';
 import { Binary, type Chunk } from 'cafe-utility';
-import { ChunkJoiner } from 'swarm-core/chunk';
+import { ChunkJoiner } from '@ethersphere/core-sdk/chunk';
 import { keccak_256 } from '@noble/hashes/sha3';
 
 import type { DerivedHotKey, PersistedStamperState } from './ClientStamping';
