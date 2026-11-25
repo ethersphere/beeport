@@ -726,7 +726,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                               style={{ width: `${nominalPct}%` }}
                             />
                           </div>
-                          {!corrupted &&
+                          {showAdvancedInfo &&
+                            !corrupted &&
                             (() => {
                               const health = bucketHealth(
                                 u.maxBucketUsed,
@@ -821,13 +822,6 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                           {' · '}
                                           max {viz.maxSlot} chunks per bucket at depth {stamp.depth}
                                         </p>
-                                        <p className={styles.bucketStatsMuted}>
-                                          Counted from this browser&apos;s saved storage state (restored
-                                          from your Swarm backup on other devices), not read from the
-                                          node. A chunk&apos;s bucket is set by its address, so chunks
-                                          spread across buckets by chance — a few buckets fill before the
-                                          rest.
-                                        </p>
                                         <div
                                           className={styles.bucketStack}
                                           role="img"
@@ -846,7 +840,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                                         </div>
                                         <ul className={styles.bucketLegend}>
                                           {groups
-                                            .filter(g => g.count > 0 || g.label.startsWith('Full'))
+                                            .filter(g => g.count > 0)
                                             .map(g => (
                                               <li key={g.label} className={styles.bucketLegendItem}>
                                                 <span

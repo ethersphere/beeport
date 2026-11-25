@@ -732,17 +732,10 @@ export interface BucketStatsVisualization {
   /** Buckets with cnt ≥ maxSlot (full — uploads fail if any bucket hits this). */
   fullBuckets: number;
   /**
-   * Ten bins for buckets with 0 < cnt < maxSlot — index `i` holds buckets
-   * whose fill is in ((i×10)%, ((i+1)×10)%] of per-bucket capacity.
+   * Exact number of buckets per chunk count: `[n, buckets]` for every `n` in
+   * 1 … maxSlot-1 that at least one bucket has, sorted by `n`.
    */
-  partialBins: number[];
-  /**
-   * Exact count of buckets per used-slot count (`[n]` = buckets holding exactly
-   * `n` chunks, `n` = 1 … maxSlot-1), only when `maxSlot` ≤ 16. With so few
-   * slots, percentage bins are misleading (fill moves in steps of 100/maxSlot %,
-   * so e.g. “1–10%” can never occur at 8 slots). `null` for larger capacities.
-   */
-  slotHistogram: number[] | null;
+  slotCounts: [number, number][];
 }
 
 /**
@@ -755,8 +748,7 @@ export function computeBucketStatsVisualization(
 ): BucketStatsVisualization {
   const { buckets } = state;
   const maxSlot = 2 ** (expectedDepth - 16);
-  const partialBins = new Array(10).fill(0);
-  const slotHistogram = maxSlot <= 16 ? new Array<number>(maxSlot).fill(0) : null;
+  const byCount = new Map<number, number>();
   let emptyBuckets = 0;
   let fullBuckets = 0;
 
@@ -770,19 +762,14 @@ export function computeBucketStatsVisualization(
       fullBuckets++;
       continue;
     }
-    // Bins are (10i, 10(i+1)]%: 50% of capacity belongs in “41–50%”.
-    // `cnt * 10 / maxSlot` is exact because maxSlot is a power of two.
-    const bin = Math.min(9, Math.max(0, Math.ceil((cnt * 10) / maxSlot) - 1));
-    partialBins[bin]++;
-    if (slotHistogram) slotHistogram[cnt]++;
+    byCount.set(cnt, (byCount.get(cnt) ?? 0) + 1);
   }
 
   return {
     maxSlot,
     emptyBuckets,
     fullBuckets,
-    partialBins,
-    slotHistogram,
+    slotCounts: [...byCount.entries()].sort((a, b) => a[0] - b[0]),
   };
 }
 
@@ -795,50 +782,31 @@ export interface BucketFillGroup {
   color: string;
 }
 
-const FILL_COLORS = ['#2ea043', '#7bbf3c', '#d4a11a', '#f0883e'];
 const EMPTY_COLOR = '#30363d';
 const FULL_COLOR = '#f85149';
 
+/** Green (almost empty) → orange (almost full) by share of bucket capacity. */
+function fillColor(used: number, maxSlot: number): string {
+  const ratio = Math.min(1, Math.max(0, used / maxSlot));
+  return `hsl(${Math.round(130 - 110 * ratio)}, 62%, 42%)`;
+}
+
 /**
- * Group the bucket histogram into at most six segments for a single stacked
- * bar: empty, up to four partial-fill groups, full. Small capacities (≤ 16
- * slots) are grouped by exact chunk count, larger ones by percent of capacity.
+ * One group per exact chunk count that occurs (no ranges), plus empty and
+ * full. Groups with no buckets are left out, except empty is always listed.
  */
 export function groupBucketFill(viz: BucketStatsVisualization): BucketFillGroup[] {
   const groups: BucketFillGroup[] = [{ label: 'Empty', count: viz.emptyBuckets, color: EMPTY_COLOR }];
-  if (viz.slotHistogram) {
-    const h = viz.slotHistogram; // h[n] = buckets with exactly n chunks, 1 ≤ n < maxSlot
-    const single = Math.min(3, viz.maxSlot - 1);
-    for (let n = 1; n <= single; n++) {
-      groups.push({
-        label: `${n} chunk${n === 1 ? '' : 's'}`,
-        count: h[n] ?? 0,
-        color: FILL_COLORS[n - 1] ?? FILL_COLORS[3],
-      });
-    }
-    if (viz.maxSlot - 1 > single) {
-      let rest = 0;
-      for (let n = single + 1; n < viz.maxSlot; n++) rest += h[n] ?? 0;
-      groups.push({
-        label: `${single + 1}–${viz.maxSlot - 1} chunks`,
-        count: rest,
-        color: FILL_COLORS[3],
-      });
-    }
-  } else {
-    const bands: [string, number, number][] = [
-      ['1–30% full', 0, 2],
-      ['31–60% full', 3, 5],
-      ['61–90% full', 6, 8],
-      ['91–99% full', 9, 9],
-    ];
-    bands.forEach(([label, from, to], idx) => {
-      let count = 0;
-      for (let b = from; b <= to; b++) count += viz.partialBins[b] ?? 0;
-      groups.push({ label, count, color: FILL_COLORS[idx] ?? FILL_COLORS[3] });
+  for (const [n, count] of viz.slotCounts) {
+    groups.push({
+      label: `${n} chunk${n === 1 ? '' : 's'}`,
+      count,
+      color: fillColor(n, viz.maxSlot),
     });
   }
-  groups.push({ label: `Full (${viz.maxSlot} chunks)`, count: viz.fullBuckets, color: FULL_COLOR });
+  if (viz.fullBuckets > 0) {
+    groups.push({ label: `Full (${viz.maxSlot} chunks)`, count: viz.fullBuckets, color: FULL_COLOR });
+  }
   return groups;
 }
 

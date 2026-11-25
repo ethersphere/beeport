@@ -175,6 +175,10 @@
   font-size: 0.95rem;
 }
 
+.faqAnswer p + p {
+  margin-top: 10px;
+}
+
 .link {
   color: #ff7a00;
   text-decoration: none;

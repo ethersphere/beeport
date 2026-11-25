@@ -310,6 +310,32 @@ const HelpSection: React.FC<HelpSectionProps> = ({
             </div>
           </details>
           <details className={styles.faqItem}>
+            <summary>How does my storage fill up?</summary>
+            <div className={styles.faqAnswer}>
+              <p>
+                Your storage is split into 65,536 buckets. Each bucket holds a fixed number of
+                chunks (a chunk is 4 KB). For example, a storage of depth 19 holds 8 chunks per
+                bucket.
+              </p>
+              <p>
+                A chunk goes into the bucket that its address points to. Addresses look random, so
+                chunks spread across buckets by chance. A few buckets fill before the rest.
+              </p>
+              <p>
+                An upload fails when one bucket is full, even if most of your storage is still
+                empty. This is why a storage can show a low &quot;Used&quot; percentage and still
+                be close to its limit.
+              </p>
+              <p>
+                The numbers come from this browser&apos;s saved storage state (restored from your
+                Swarm backup on other devices), not from the node. Turn on{' '}
+                <strong>Advanced info</strong> in Settings for a better overview: a status line
+                (Healthy, Getting full, Almost full, Full) and a chart of how many buckets hold 0,
+                1, 2 or more chunks.
+              </p>
+            </div>
+          </details>
+          <details className={styles.faqItem}>
             <summary>Storage persistence</summary>
             <div className={styles.faqAnswer}>
               <p>
