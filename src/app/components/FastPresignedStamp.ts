@@ -85,11 +85,6 @@ export function signOwnerPayloadElliptic(privKeyBytes: Uint8Array, data: Uint8Ar
   return sig65;
 }
 
-/** @deprecated Use {@link ownerSignPersonalMessage} — kept for grep compatibility. */
-export function ethSignedDigestForOwnerPayload(data: Uint8Array): Uint8Array {
-  return ownerSignPersonalMessage(data);
-}
-
 /**
  * Produce the 65-byte (r‖s‖v) signature for {@link ethSignedHashForStampPayload}.
  */
@@ -670,12 +665,6 @@ export class PresignedChunkStreamPool {
 
 export type ChunkUploadTransport = 'http' | 'websocket';
 
-export type ChunkUploadTransportInfo = {
-  transport: ChunkUploadTransport;
-  /** Live WebSocket count when transport is `websocket`; otherwise 0. */
-  streamSocketCount: number;
-};
-
 /** Upload session — tries WebSocket stream first, falls back to HTTP POST. */
 export class PresignedChunkUploadSession {
   readonly transport: ChunkUploadTransport;
@@ -1135,14 +1124,5 @@ export class StampSignerPool {
       rec.reject(new Error('stamp signer pool terminated'));
     }
     this.pending.clear();
-  }
-}
-
-export function tryCreateStampSignerPool(privateKey: Uint8Array): StampSignerPool | null {
-  if (typeof Worker === 'undefined') return null;
-  try {
-    return new StampSignerPool(privateKey);
-  } catch {
-    return null;
   }
 }

@@ -36,39 +36,6 @@ const BZZ_ALLOWANCE_ABI = parseAbi([
   'function approve(address spender, uint256 amount) external returns (bool)',
 ]);
 
-export interface CreateSelfCustodyBatchParams {
-  walletClient: WalletClient;
-  publicClient: PublicClient;
-  /** Connected wallet address (msg.sender, payer). */
-  walletAddress: `0x${string}`;
-  /** Hot-key address that becomes the on-chain owner of the batch. */
-  hotKeyAddress: `0x${string}`;
-  initialBalancePerChunk: bigint;
-  depth: number;
-  bucketDepth: number;
-  /** 32-byte hex nonce. With or without 0x prefix. */
-  nonce: `0x${string}` | string;
-  immutable_: boolean;
-  approvalType?: 'exact' | 'infinite';
-  onStatus?: (msg: string) => void;
-}
-
-export interface SelfCustodyBatchResult {
-  /** Lower-case 0x-prefixed batch id. */
-  batchId: `0x${string}`;
-  /** Tx hash of the createBatch call. */
-  createBatchTxHash: `0x${string}`;
-  /**
-   * Block number at which `createBatch` mined. Used downstream by
-   * {@link ../GatewayChainSync.waitForGatewayBatchSync} so the upload UI
-   * can wait for the gateway's chain listener to index past this block
-   * before posting the first chunk.
-   */
-  createBatchBlockNumber: bigint;
-  /** Tx hash of the BZZ approve call (undefined if allowance was sufficient). */
-  approveTxHash?: `0x${string}`;
-}
-
 /**
  * Compute `batchId = keccak256(abi.encode(sender, nonce))` exactly as the
  * upstream Postage Stamp contract does when `createBatch` is invoked with
@@ -101,97 +68,6 @@ export interface TopUpSelfCustodyBatchParams {
 // ─────────────────────────────────────────────────────────────────────────────
 // StampsRegistryV2 — sole supported create/top-up path
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * BZZ approve + `createSelfCustodyBatch` against {@link STAMPS_REGISTRY_V2_ADDRESS}.
- * Caller is the user's wallet on Gnosis (i.e. no aggregator). For the Relay
- * one-shot path see {@link encodeRegistryCreateBatchTxs} which produces the
- * raw calldata for `txs[]`.
- */
-export async function createSelfCustodyBatchViaRegistry(
-  params: CreateSelfCustodyBatchParams
-): Promise<SelfCustodyBatchResult> {
-  const {
-    walletClient,
-    publicClient,
-    walletAddress,
-    hotKeyAddress,
-    initialBalancePerChunk,
-    depth,
-    bucketDepth,
-    nonce,
-    immutable_,
-    approvalType = 'exact',
-    onStatus,
-  } = params;
-
-  const totalAmount = initialBalancePerChunk * BigInt(2 ** depth);
-
-  // ── Step 1: BZZ approval to the REGISTRY (not PostageStamp) ──────────────
-  onStatus?.('Checking BZZ allowance…');
-  const allowance = await publicClient.readContract({
-    address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-    abi: BZZ_ALLOWANCE_ABI,
-    functionName: 'allowance',
-    args: [walletAddress, STAMPS_REGISTRY_V2_ADDRESS as `0x${string}`],
-  });
-
-  let approveTxHash: `0x${string}` | undefined;
-  if ((allowance as bigint) < totalAmount) {
-    onStatus?.('Approving BZZ to the StampsRegistryV2…');
-    const approveAmount = approvalType === 'infinite' ? BigInt(MAX_UINT256) : totalAmount;
-    approveTxHash = await walletClient.writeContract({
-      address: GNOSIS_BZZ_ADDRESS as `0x${string}`,
-      abi: BZZ_ALLOWANCE_ABI,
-      functionName: 'approve',
-      args: [STAMPS_REGISTRY_V2_ADDRESS as `0x${string}`, approveAmount],
-      account: walletAddress,
-      chain: walletClient.chain,
-    });
-
-    const approveReceipt = await publicClient.waitForTransactionReceipt({
-      hash: approveTxHash,
-    });
-    if (approveReceipt.status !== 'success') {
-      throw new Error('BZZ approval transaction reverted');
-    }
-  }
-
-  // ── Step 2: createSelfCustodyBatch on the registry ───────────────────────
-  onStatus?.('Creating batch via StampsRegistryV2…');
-  const createTxHash = await walletClient.writeContract({
-    address: STAMPS_REGISTRY_V2_ADDRESS as `0x${string}`,
-    abi: STAMPS_REGISTRY_V2_ABI,
-    functionName: 'createSelfCustodyBatch',
-    args: [
-      walletAddress,
-      hotKeyAddress,
-      initialBalancePerChunk,
-      depth,
-      bucketDepth,
-      (nonce.startsWith('0x') ? nonce : `0x${nonce}`) as `0x${string}`,
-      immutable_,
-    ],
-    account: walletAddress,
-    chain: walletClient.chain,
-  });
-
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });
-  if (receipt.status !== 'success') {
-    throw new Error('createSelfCustodyBatch transaction reverted');
-  }
-
-  // batchId derivation: msg.sender to PostageStamp is the registry, so the
-  // sender for keccak256 is REGISTRY_V2 — NOT the wallet.
-  const batchId = computeBatchId(STAMPS_REGISTRY_V2_ADDRESS, nonce);
-
-  return {
-    batchId,
-    createBatchTxHash: createTxHash,
-    createBatchBlockNumber: receipt.blockNumber,
-    approveTxHash,
-  };
-}
 
 /**
  * Top up an existing registry-created batch via the registry. Permissionless:
@@ -463,21 +339,6 @@ export function markSelfCustodyBatchToppedUp(
   if (idx === -1) return;
   list[idx] = { ...list[idx], hasBeenToppedUp: true };
   store[key] = list;
-  persistStore(store);
-}
-
-/**
- * Remove a saved self-custody batch (e.g. expired / explicitly forgotten).
- */
-export function removeSelfCustodyBatch(walletAddress: string, batchId: string): void {
-  const key = walletAddress.toLowerCase();
-  const target = batchId.toLowerCase().startsWith('0x')
-    ? batchId.toLowerCase()
-    : `0x${batchId.toLowerCase()}`;
-  const store = loadStore();
-  const list = store[key];
-  if (!list) return;
-  store[key] = list.filter(b => b.batchId.toLowerCase() !== target);
   persistStore(store);
 }
 

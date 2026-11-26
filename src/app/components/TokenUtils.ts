@@ -1,5 +1,4 @@
 import {
-  ChainId,
   ChainType,
   getTokenBalancesByChain,
   getTokens,

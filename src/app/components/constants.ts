@@ -1,4 +1,3 @@
-import { ChainId } from '@lifi/sdk';
 import { StorageOption, SwarmConfigType } from './types';
 import { parseHumanStorageSize } from './utils';
 
@@ -9,9 +8,6 @@ export const LIFI_API_KEY =
 
 export const DEFAULT_NODE_ADDRESS =
   process.env.NEXT_PUBLIC_DEFAULT_NODE_ADDRESS || '0x5cb4839B7d7b0ab6BaAbFEdD6749497ECa65b2Ca';
-
-export const LIFI_CONTRACT_ADDRESS =
-  process.env.NEXT_PUBLIC_LIFI_CONTRACT_ADDRESS || '0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D';
 
 export const GNOSIS_BZZ_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_BZZ_ADDRESS || '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da';
@@ -40,17 +36,6 @@ export const STAMPS_REGISTRY_V2_ADDRESS =
 export const DEFAULT_BEE_API_URL =
   process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://beeport.xyz';
 
-// Check if we're running on production domains
-const isProductionDomain =
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'beeport.ethswarm.org' ||
-    window.location.hostname === 'beeport.eth.limo');
-
-// BEE Gateway URL - use beeport.xyz for development, bzz.link for production
-export const BEE_GATEWAY_URL =
-  process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
-  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://beeport.xyz/bzz/');
-
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
 
@@ -60,14 +45,8 @@ export const GNOSIS_PRICE_ORACLE_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_PRICE_ORACLE_ADDRESS ||
   '0x47EeF336e7fE5bED98499A4696bce8f28c1B0a8b';
 
-export const GNOSIS_DESTINATION_TOKEN =
-  process.env.NEXT_PUBLIC_GNOSIS_DESTINATION_TOKEN || '0x0000000000000000000000000000000000000000';
-
 // Static configuration
 export const MIN_TOKEN_BALANCE_USD = 0.5;
-
-// Minimum USD value for bridging to avoid dust amounts
-export const MIN_BRIDGE_USD_VALUE = 0.1;
 
 /** Default slippage in percent: 5 means 5%. Custom slippage (Settings) can use 0.5 steps. Relay API expects basis points; we convert in RelayQuotes (percent × 100 = bps). */
 export const DEFAULT_SLIPPAGE = 5;
@@ -84,42 +63,6 @@ export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status 
 export const RELAY_STATUS_MAX_ATTEMPTS = 24; // Maximum status check attempts for valid statuses (2 minutes)
 export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
-// Swarm upload configuration
-export const SWARM_DEFERRED_UPLOAD = 'false'; // Use direct upload to Swarm network for better performance
-
-// Stamp optimization constants
-export const STAMP_API_BATCH_SIZE = 5; // Process 5 stamps at a time
-export const STAMP_API_BATCH_DELAY_MS = 100; // Delay between batches
-export const STAMP_API_TIMEOUT_MS = 10000; // 10 second timeout for stamp API calls
-// Note: Expired stamps are cached permanently since they cannot be reactivated
-
-// Disable message signing for executeRoute calls
-export const DISABLE_MESSAGE_SIGNING = true;
-
-// Accept exchange rate updates automatically for executeRoute calls
-export const ACCEPT_EXCHANGE_RATE_UPDATES = true;
-
-// Upload retry and timeout configuration
-export const UPLOAD_RETRY_CONFIG = {
-  maxRetries: 2, // Maximum number of retry attempts (total tries = maxRetries + 1)
-  retryDelayMs: 5000, // Wait time between retries in milliseconds (5 seconds)
-  retryableErrors: [
-    'Network request failed',
-    'timeout',
-    'stalled',
-    'Upload failed',
-    'Network error',
-  ], // Error message substrings that trigger retries
-} as const;
-
-// Upload timeout configuration
-export const UPLOAD_TIMEOUT_CONFIG = {
-  minTimeoutMinutes: 10, // Minimum timeout duration in minutes
-  maxTimeoutMinutes: 12 * 60, // Maximum timeout duration in minutes (12 hours)
-  assumedUploadSpeedMbps: 1, // Assumed minimum upload speed in Mbps for timeout calculations
-  timeoutBufferMultiplier: 1.5, // Buffer multiplier for timeout calculations (50% buffer)
-} as const;
-
 // File size thresholds for warnings and enhanced logging
 export const FILE_SIZE_CONFIG = {
   largeFileThresholdGB: 2, // Files larger than this show warnings
@@ -128,26 +71,12 @@ export const FILE_SIZE_CONFIG = {
   enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
 } as const;
 
-// Use the same production check for other features
-const isProduction = isProductionDomain;
-
 // Define all time options
 const ALL_TIME_OPTIONS = [
   { days: 1, display: '1 day' },
   { days: 2, display: '2 days' },
   { days: 7, display: '7 days' },
   { days: 15, display: '15 days' },
-  { days: 30, display: '30 days' },
-  { days: 90, display: '90 days' },
-  { days: 180, display: '180 days' },
-  { days: 365, display: '1 year' },
-  { days: 365 * 2, display: '2 years' },
-  { days: 365 * 5, display: '5 years' },
-  { days: 365 * 10, display: '10 years' },
-];
-
-// Define conservative time options (for potential future use)
-const CONSERVATIVE_TIME_OPTIONS = [
   { days: 30, display: '30 days' },
   { days: 90, display: '90 days' },
   { days: 180, display: '180 days' },
@@ -173,18 +102,6 @@ const ALL_STORAGE_OPTIONS: StorageOption[] = [
   { depth: 27, size: '476GB' },
 ];
 
-// Define conservative storage options (for potential future use)
-const CONSERVATIVE_STORAGE_OPTIONS: StorageOption[] = [
-  { depth: 20, size: '680MB' },
-  { depth: 21, size: '2.6GB' },
-  { depth: 22, size: '7.7GB' },
-  { depth: 23, size: '20GB' },
-  { depth: 24, size: '47GB' },
-  { depth: 25, size: '105GB' },
-  { depth: 26, size: '227GB' },
-  { depth: 27, size: '476GB' },
-];
-
 // Export all storage options for both production and development
 export const STORAGE_OPTIONS: StorageOption[] = ALL_STORAGE_OPTIONS;
 
@@ -200,16 +117,6 @@ export function guaranteedStampCapacityBytes(depth: number): number | undefined 
 }
 
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
-  toChain: ChainId.DAI,
-  /** StampsRegistryV2 — same contract the self-custody buy flow uses on Gnosis. */
-  swarmPostageStampAddress: STAMPS_REGISTRY_V2_ADDRESS,
-  swarmToken: GNOSIS_BZZ_ADDRESS,
-  swarmContractGasLimit: '2000000',
-  swarmContractAbi: [
-    'function createSelfCustodyBatch(address wallet, address hotKeyOwner, uint256 initialBalancePerChunk, uint8 depth, uint8 bucketDepth, bytes32 nonce, bool immutable_) external returns (bytes32 batchId)',
-    'function topUpBatch(bytes32 batchId, uint256 perChunkAmount) external',
-    'function getWalletBatchIds(address wallet) external view returns (bytes32[])',
-  ],
   swarmBatchInitialBalance: '477774720',
   swarmBatchDepth: '20',
   swarmBatchBucketDepth: '16',

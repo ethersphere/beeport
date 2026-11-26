@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAccount, useChainId, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
-import { watchChainId, getWalletClient } from '@wagmi/core';
+import { getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { config, getPollingInterval } from '@/app/wagmi';
+import { config } from '@/app/wagmi';
 import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
 import styles from './css/SwapComponent.module.css';
-import { parseAbi, formatUnits } from 'viem';
+import { formatUnits } from 'viem';
 import { getAddress } from 'viem';
 
 import { ExecutionStatus, UploadStep } from './types';
@@ -18,7 +18,6 @@ import {
   GNOSIS_BZZ_ADDRESS,
   DEFAULT_SWARM_CONFIG,
   STORAGE_OPTIONS,
-  GNOSIS_DESTINATION_TOKEN,
   TIME_OPTIONS,
   DEFAULT_BEE_API_URL,
   DEFAULT_SLIPPAGE,
@@ -38,15 +37,12 @@ import StorageDurationDropdown from './StorageDurationDropdown';
 
 import {
   formatErrorMessage,
-  performWithRetry,
   toChecksumAddress,
   getGnosisPublicClient,
   perChunkBalanceForDays,
   setGnosisRpcUrl,
-  fetchCurrentPriceFromOracle,
   fetchStampInfo,
   formatExpiryTime,
-  isExpiringSoon,
   getStampUsage,
   updateHistoryAfterTopUp,
 } from './utils';

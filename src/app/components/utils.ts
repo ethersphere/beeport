@@ -183,57 +183,6 @@ export const performWithRetry = async <T>(
 };
 
 /**
- * Logs the token swap route from quote steps
- * @param steps Array of steps from LIFI quote
- * @param type String identifier for the quote type
- */
-export const logTokenRoute = (steps: any[], type: string) => {
-  console.info(`>> ${type} Token Route:`);
-
-  // Log the tool information if available
-  if (steps.length > 0 && steps[0].toolDetails) {
-    console.info(
-      `   Tool used: ${steps[0].toolDetails.name} (${steps[0].toolDetails.logoURI || 'N/A'})`
-    );
-  } else if (steps.length > 0 && steps[0].tool) {
-    console.info(`   Tool used: ${steps[0].tool}`);
-  }
-
-  steps.forEach((step, index) => {
-    // Check if this is a contract call step
-    if (
-      step.action.fromToken.symbol === 'BZZ' &&
-      step.action.toToken.symbol === 'BZZ' &&
-      step.action.toContractCallData?.length > 0
-    ) {
-      console.info(`   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`);
-      if (step.toolDetails) {
-        console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
-      } else if (step.tool) {
-        console.info(`     Tool: ${step.tool}`);
-      }
-      return;
-    }
-
-    const fromToken = step.action.fromToken.name || step.action.fromToken.symbol;
-    const toToken = step.action.toToken.name || step.action.toToken.symbol;
-    const fromChain = step.action.fromChainId;
-    const toChain = step.action.toChainId;
-
-    console.info(
-      `   Step ${index + 1}: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
-    );
-
-    // Log tool information for each step if available
-    if (step.toolDetails) {
-      console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
-    } else if (step.tool) {
-      console.info(`     Tool: ${step.tool}`);
-    }
-  });
-};
-
-/**
  * Generates a new nonce and returns an updated SwarmConfig
  * @param swarmConfig The current SwarmConfig object
  * @param setSwarmConfig Optional state setter function to update the config
@@ -276,45 +225,6 @@ export const generateProperNonce = (): string => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('')
   );
-};
-
-/**
- * Handles exchange rate updates for Li.Fi SDK executeRoute calls
- * @param params Exchange rate update parameters from Li.Fi SDK
- * @param setStatusMessage Function to update status message
- * @param acceptExchangeRateUpdates Boolean flag to control acceptance
- * @returns Promise<boolean> indicating whether to accept the rate update
- */
-export const handleExchangeRateUpdate = async (
-  params: {
-    toToken: any;
-    oldToAmount: string;
-    newToAmount: string;
-  },
-  setStatusMessage: (status: any) => void,
-  acceptExchangeRateUpdates: boolean
-): Promise<boolean> => {
-  const { toToken, oldToAmount, newToAmount } = params;
-
-  console.log('Exchange rate update detected:');
-  console.log(`Token: ${toToken.symbol}`);
-  console.log(`Old amount: ${oldToAmount}`);
-  console.log(`New amount: ${newToAmount}`);
-
-  // Calculate percentage change
-  const oldAmount = parseFloat(oldToAmount);
-  const newAmount = parseFloat(newToAmount);
-  const percentageChange = ((newAmount - oldAmount) / oldAmount) * 100;
-
-  console.log(`Exchange rate change: ${percentageChange.toFixed(2)}%`);
-
-  // Update status message to inform user about the rate change
-  setStatusMessage((prev: any) => ({
-    ...prev,
-    message: `${prev.message} (Rate updated: ${percentageChange > 0 ? '+' : ''}${percentageChange.toFixed(2)}%)`,
-  }));
-
-  return acceptExchangeRateUpdates;
 };
 
 /**
@@ -371,46 +281,6 @@ export const fetchNodeWalletAddress = async (
   } catch (error) {
     console.error('Error fetching node wallet address:', error);
     return defaultAddress;
-  }
-};
-
-/**
- * Fetches current price from Gnosis price oracle
- * @param publicClient Optional public client to use, if not provided uses getGnosisPublicClient
- * @param priceOracleAddress Optional oracle address, if not provided uses default
- * @param priceOracleAbi Optional oracle ABI, if not provided uses default
- * @returns Promise<bigint> The current price, or 65000n as fallback
- */
-export const fetchCurrentPriceFromOracle = async (
-  publicClient?: any,
-  priceOracleAddress?: string,
-  priceOracleAbi?: any
-): Promise<bigint> => {
-  try {
-    // Use our custom RPC configuration first, not wagmi's publicClient
-    const client = getGnosisPublicClient().client;
-
-    // If no address/abi provided, we'll need them from the calling component
-    // to avoid circular dependencies
-    if (!priceOracleAddress || !priceOracleAbi) {
-      throw new Error(
-        'Price oracle address and ABI must be provided to avoid circular dependencies'
-      );
-    }
-
-    const price = await client.readContract({
-      address: priceOracleAddress as `0x${string}`,
-      abi: priceOracleAbi,
-      functionName: 'currentPrice',
-      args: [],
-    });
-
-    console.log('Price fetched from oracle (utility):', price);
-    return BigInt(price as string | number | bigint);
-  } catch (error) {
-    console.error('Error fetching current price from oracle:', error);
-    console.log('Using utility fallback price: 65000');
-    return BigInt(65000); // Fallback price
   }
 };
 
@@ -623,14 +493,6 @@ export const parseDateFromCSV = (dateString: string): number => {
   // If all else fails, try the browser's default parsing
   parsedDate = new Date(dateString);
   return parsedDate.getTime(); // Will be NaN if invalid
-};
-
-/**
- * Format hash for display (shows first 6 and last 6 characters)
- */
-export const formatHash = (hash: string): string => {
-  if (hash.length <= 12) return hash;
-  return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
 };
 
 

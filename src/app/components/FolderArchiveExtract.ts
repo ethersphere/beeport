@@ -2,11 +2,9 @@
  * Client-side archive extraction + index.html generation, for use with the
  * self-custody upload paths (SWIP §Client-side stamping, mode α).
  *
- * Why this exists separately from {@link ./ArchiveProcessor}: ArchiveProcessor
- * was built for the legacy /bzz upload path, where we needed to re-package
- * everything into a TAR file for Bee to stamp + chunk server-side. The
- * self-custody path stamps + chunks each file ENTRY locally, so re-tarring
- * just to immediately re-extract would be wasted work. Instead we expose:
+ * The self-custody path stamps + chunks each file ENTRY locally (the old
+ * /bzz path re-packaged everything into a TAR for Bee to chunk server-side).
+ * This module exposes:
  *
  *   - {@link extractArchiveToEntries} — flatten ZIP/TAR/.tar.gz into a list of
  *     `{ path, data: Uint8Array }` ready to feed into
@@ -31,9 +29,8 @@ export interface ArchiveEntry {
 }
 
 /**
- * Should this path be silently dropped from the upload? Mirrors the legacy
- * filter set in {@link ./ArchiveProcessor.shouldFilterFile} so users get
- * identical behaviour when re-running an upload after upgrading.
+ * Should this path be silently dropped from the upload? Same filter set as
+ * the legacy 1.1.x upload path, so users get identical behaviour.
  */
 function shouldFilterPath(rawPath: string): boolean {
   const path = rawPath.replace(/^\.\/+/, '').replace(/^\/+/, '');

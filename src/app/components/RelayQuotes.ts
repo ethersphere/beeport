@@ -257,20 +257,6 @@ export interface RelayQuoteResponse {
   };
 }
 
-export interface RelayQuoteParams {
-  selectedChainId: number;
-  fromToken: string;
-  address: string;
-  bzzAmount: string;
-  nodeAddress: string;
-  swarmConfig: any;
-  topUpBatchId?: string;
-  setEstimatedTime?: (time: number) => void;
-  isForEstimation?: boolean;
-  /** Slippage in percent (e.g. 5 = 5%, 0.5 = 0.5%). When set, overrides DEFAULT_SLIPPAGE. Relay API receives basis points (percent × 100). */
-  slippagePercent?: number;
-}
-
 
 /**
  * Optional escape-hatch passed by the caller. Returns `true` if the desired

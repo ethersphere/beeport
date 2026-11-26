@@ -518,26 +518,6 @@ export async function loadStampedAddresses(batchId: string): Promise<Set<string>
 }
 
 /**
- * Append a single (batch, addrHex) entry. Cheap enough to call on the
- * upload hot path right after Bee accepts a chunk — one tiny `put` per
- * chunk replaces the previous bulk re-serialization of the entire set.
- */
-export async function addStampedAddress(
-  batchId: string,
-  addrHex: string
-): Promise<void> {
-  const key = stripHex(batchId).toLowerCase();
-  try {
-    await withStore(STAMPED_ADDRS_STORE, 'readwrite', store => {
-      const record: StampedAddrRecord = { batchId: key, addrHex };
-      store.put(record);
-    });
-  } catch (err) {
-    console.warn('Failed to append stamped address to IDB for', batchId, err);
-  }
-}
-
-/**
  * Buffers chunk-address writes so we issue one IndexedDB transaction per flush
  * instead of one `put` per chunk on the upload hot path.
  */

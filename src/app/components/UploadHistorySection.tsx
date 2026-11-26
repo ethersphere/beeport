@@ -3,7 +3,6 @@ import styles from './css/UploadHistorySection.module.css';
 import { DEFAULT_BEE_API_URL } from './constants';
 import {
   formatExpiryTime,
-  isExpiringSoon,
   formatDateEU,
   formatDateForCSV,
   parseDateFromCSV,
