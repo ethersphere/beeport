@@ -7,7 +7,9 @@ import {
   formatDateForCSV,
   parseDateFromCSV,
   fetchStampInfo,
+  getGnosisPublicClient,
 } from './utils';
+import { refreshBatchesFromContract } from './PostageContract';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -109,113 +111,74 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   /**
-   * Periodically refreshes stamp expiry dates from the API
-   * Only runs if 24+ hours have passed since last check
-   * Updates all records that share the same stamp ID efficiently
+   * Refresh expiry dates from the Postage Stamp contract on every load.
+   *
+   * - Storage still on chain: expiry = now + remaining time.
+   * - Storage the contract no longer has, or with no time left: expired. A
+   *   file was uploaded with it, so the storage existed then; a row only
+   *   disappears when it expires.
+   * - A failed read leaves the record unchanged.
+   *
+   * (The old version asked the Bee gateway once a day, but the gateway
+   * answers `/stamps` and `/batches` with its web page, so it never updated.)
    */
-  const refreshStampExpiry = async (records: UploadRecord[], userAddress: string) => {
-    // Check if 24 hours have passed since last refresh
-    const lastCheckKey = `stampExpiryLastCheck_${userAddress}`;
-    const lastCheckTimestamp = localStorage.getItem(lastCheckKey);
-    const now = Date.now();
-    const twentyFourHours = 24 * 60 * 60 * 1000;
+  const refreshStampExpiry = async (
+    records: UploadRecord[],
+    userAddress: string
+  ): Promise<UploadRecord[]> => {
+    const norm = (id: string) => {
+      const l = id.toLowerCase();
+      return l.startsWith('0x') ? l : `0x${l}`;
+    };
+    const uniqueStamps = Array.from(
+      new Set(
+        records
+          .map(r => r.stampId)
+          .filter(id => typeof id === 'string' && /^(0x)?[0-9a-fA-F]{64}$/.test(id))
+          .map(norm)
+      )
+    );
+    if (uniqueStamps.length === 0) return records;
 
-    if (lastCheckTimestamp) {
-      const lastCheck = parseInt(lastCheckTimestamp);
-      const timeSinceLastCheck = now - lastCheck;
-      
-      if (timeSinceLastCheck < twentyFourHours) {
-        console.log(`⏳ Stamp expiry check skipped - last checked ${Math.round(timeSinceLastCheck / (60 * 60 * 1000))} hours ago`);
-        return;
-      }
+    let onChain;
+    try {
+      onChain = await refreshBatchesFromContract(
+        getGnosisPublicClient().client as any,
+        uniqueStamps
+      );
+    } catch (err) {
+      console.warn('Expiry refresh from chain failed:', err);
+      return records;
     }
 
-    console.log('🔄 Refreshing stamp expiry dates (24+ hours since last check)...');
-    setIsMigrating(true);
-    setMigrationProgress('Checking expiry dates...');
-
-    // Collect unique stamp IDs
-    const uniqueStamps = Array.from(new Set(records.map(record => record.stampId)));
-    console.log(`📊 Found ${uniqueStamps.length} unique stamps to check`);
-
-    // Map stamp IDs to their record indices for efficient updates
-    const stampToRecords = new Map<string, number[]>();
-    records.forEach((record, index) => {
-      if (!stampToRecords.has(record.stampId)) {
-        stampToRecords.set(record.stampId, []);
-      }
-      stampToRecords.get(record.stampId)!.push(index);
+    const now = Date.now();
+    let changed = false;
+    const updatedRecords = records.map(record => {
+      if (typeof record.stampId !== 'string') return record;
+      const row = onChain.get(norm(record.stampId));
+      if (!row) return record;
+      const expired = row.exists === false || !(row.batchTTL > 0);
+      const expiryDate = expired
+        ? Math.min(record.expiryDate || now, now - 1000)
+        : now + row.batchTTL * 1000;
+      // Ignore drift under a minute so the list does not rewrite on every load.
+      if (Math.abs(expiryDate - (record.expiryDate || 0)) < 60_000 && !expired) return record;
+      if (expired && record.expiryDate && record.expiryDate < now) return record;
+      changed = true;
+      return { ...record, expiryDate };
     });
 
-    let updatedCount = 0;
-    const updatedRecords = [...records];
-
-    // Process each unique stamp
-    for (let i = 0; i < uniqueStamps.length; i++) {
-      const stampId = uniqueStamps[i];
-      const recordIndices = stampToRecords.get(stampId)!;
-
-      try {
-        setMigrationProgress(`Checking (${i + 1}/${uniqueStamps.length})...`);
-
-        // Fetch fresh stamp info from API
-        const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
-
-        if (stampInfo && stampInfo.batchTTL) {
-          // Calculate new expiry date
-          const newExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
-
-          // Update all records using this stamp
-          recordIndices.forEach(index => {
-            const oldExpiryDate = updatedRecords[index].expiryDate;
-            updatedRecords[index] = {
-              ...updatedRecords[index],
-              expiryDate: newExpiryDate,
-            };
-            
-            // Log if expiry changed significantly (more than 1 hour difference)
-            if (Math.abs(newExpiryDate - oldExpiryDate) > 60 * 60 * 1000) {
-              console.log(
-                `✅ Updated ${updatedRecords[index].filename || 'unnamed'}: ${formatStampId(stampId)} expiry changed from ${formatDateEU(oldExpiryDate)} to ${formatDateEU(newExpiryDate)}`
-              );
-            }
-          });
-
-          updatedCount += recordIndices.length;
-        } else {
-          console.log(`⚠️ No API data for stamp ${formatStampId(stampId)} (${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`);
-        }
-      } catch (error) {
-        console.error(`❌ Error refreshing expiry for ${formatStampId(stampId)}:`, error);
-      }
-
-      // Add delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    // Update localStorage with refreshed data
-    if (updatedCount > 0) {
-      console.log(`✅ Refreshed expiry dates for ${updatedCount} record(s) across ${uniqueStamps.length} stamp(s)`);
-      
+    if (!changed) return records;
+    try {
       const savedHistory = localStorage.getItem('uploadHistory');
-      if (savedHistory) {
-        const allHistory: UploadHistory = JSON.parse(savedHistory);
-        allHistory[userAddress] = updatedRecords;
-        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
-      }
-
-      // Update component state
-      setHistory(updatedRecords);
+      const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
+      allHistory[userAddress] = updatedRecords;
+      localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+    } catch (err) {
+      console.warn('Could not save refreshed expiry dates:', err);
     }
-
-    // Update last check timestamp
-    localStorage.setItem(lastCheckKey, now.toString());
-    
-    setMigrationProgress(`Expiry check complete! (${uniqueStamps.length} checked)`);
-    setTimeout(() => {
-      setIsMigrating(false);
-      setMigrationProgress('');
-    }, 2000);
+    setHistory(updatedRecords);
+    return updatedRecords;
   };
 
   /**
@@ -377,10 +340,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
         }
 
-        // First, refresh stamp expiry dates (runs once every 24 hours)
-        refreshStampExpiry(uniqueHistory, address).then(() => {
-          // Then, auto-migrate any old/invalid expiry dates
-          migrateOldExpiryDates(uniqueHistory, address);
+        // First, refresh expiry dates from the chain, then migrate any
+        // old/invalid expiry formats on top of the refreshed records.
+        refreshStampExpiry(uniqueHistory, address).then(refreshed => {
+          migrateOldExpiryDates(refreshed, address);
         });
       }
     }
@@ -1241,7 +1204,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       ) : (
         <div className={styles.historyList}>
           {filteredHistory.map((record, index) => (
-            <div key={index} className={styles.historyItem}>
+            <div
+              key={index}
+              className={`${styles.historyItem} ${
+                record.expiryDate < Date.now() ? styles.historyItemExpired : ''
+              }`}
+            >
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
@@ -1289,6 +1257,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   </div>
                   <div className={styles.tagContainer}>
                     <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
+                    {record.expiryDate < Date.now() && (
+                      <span
+                        className={styles.expiredTag}
+                        title="The storage of this file expired. The network deletes its data over time, so the link can stop working."
+                      >
+                        Storage expired
+                      </span>
+                    )}
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}
