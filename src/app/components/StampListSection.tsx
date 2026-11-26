@@ -31,7 +31,11 @@ import {
   isExpiryWarning,
   parseHumanStorageSize,
 } from './utils';
-import { refreshBatchesFromContract } from './PostageContract';
+import {
+  fetchRegistryCreatedAt,
+  livenessFrom,
+  refreshBatchesFromContract,
+} from './PostageContract';
 import { fetchGlobalBatch, type BeeGlobalBatch } from './BeeApi';
 import { deriveHotKey } from './ClientStamping';
 import {
@@ -121,6 +125,8 @@ interface BatchEvent {
    * never made it on-chain (failed tx) or it was reaped after expiry.
    */
   missingOnChain?: boolean;
+  /** Paid time ran out (or the batch was removed). Hidden from the list; never usable. */
+  expired?: boolean;
   /** Hot-key address that owns this batch on-chain. */
   hotKeyAddress?: string;
   hasBeenToppedUp?: boolean;
@@ -284,7 +290,16 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
     const localStates = new Map(localStateEntries);
 
-    return stored.map(s => {
+    // A row the Postage Stamp contract no longer has is either a purchase not
+    // mined yet or a batch that expired and was removed. The registry tells
+    // them apart (it records every mined purchase).
+    const gone = [...onChainMap.entries()].filter(([, b]) => b.exists === false).map(([k]) => k);
+    const createdAtEntries = await Promise.all(
+      gone.map(async k => [k, await fetchRegistryCreatedAt(publicClient, k)] as const)
+    );
+    const registryCreatedAt = new Map(createdAtEntries);
+
+    const rows = stored.map(s => {
       const id = s.batchId.toLowerCase().startsWith('0x')
         ? s.batchId.toLowerCase()
         : `0x${s.batchId.toLowerCase()}`;
@@ -306,7 +321,11 @@ const StampListSection: React.FC<StampListSectionProps> = ({
         usage,
       };
 
-      if (!onChain && !gateway) {
+      const liveness = livenessFrom(onChain, registryCreatedAt.get(id));
+      if (liveness === 'expired') {
+        return { ...base, expired: true, batchTTL: 0 };
+      }
+      if ((!onChain || onChain.exists === false) && !gateway) {
         return { ...base, missingOnChain: true };
       }
 
@@ -323,12 +342,17 @@ const StampListSection: React.FC<StampListSectionProps> = ({
 
       return {
         ...base,
-        depth: onChain?.depth ?? gateway?.depth ?? s.depth,
-        bucketDepth: onChain?.bucketDepth ?? gateway?.bucketDepth ?? s.bucketDepth,
+        depth: (onChain?.exists !== false ? onChain?.depth : undefined) ?? gateway?.depth ?? s.depth,
+        bucketDepth:
+          (onChain?.exists !== false ? onChain?.bucketDepth : undefined) ??
+          gateway?.bucketDepth ??
+          s.bucketDepth,
         batchTTL,
         ttlSource,
       };
     });
+    // Expired storage cannot be used or topped up, so it is not listed.
+    return rows.filter(r => !r.expired);
   };
 
   // Initial load: pull from localStorage + chain. No wallet signing needed.
@@ -499,6 +523,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   };
 
   const handleStampSelect = (stamp: BatchEvent) => {
+    if (stamp.expired) return;
     clearParentUploadError?.();
     // CRITICAL: align the upload depth with the on-chain batch depth.
     // The parent's `selectedDepth` default doesn't necessarily match this
@@ -629,7 +654,14 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
 
-                  {stamp.missingOnChain ? (
+                  {stamp.expired ? (
+                    <span
+                      className={`${styles.selfCustodyBadge} ${styles.expiredBadge}`}
+                      title="The paid time of this storage ran out and the network removed it. It cannot be used or topped up."
+                    >
+                      Expired
+                    </span>
+                  ) : stamp.missingOnChain ? (
                     <span
                       title="The Postage Stamp contract has no entry for this batch — it likely hasn't been mined yet, or the batch was fully expired and reaped."
                       className={styles.selfCustodyBadge}
@@ -895,14 +927,16 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   <button
                     className={styles.uploadWithStampButton}
                     onClick={() => handleStampSelect(stamp)}
-                    title="Upload with this storage"
+                    disabled={!!stamp.expired}
+                    title={stamp.expired ? 'This storage has expired' : 'Upload with this storage'}
                   >
                     Upload with this storage
                   </button>
 
                   <button
                     className={styles.topUpButton}
-                    title="Top up this storage"
+                    title={stamp.expired ? 'This storage has expired' : 'Top up this storage'}
+                    disabled={!!stamp.expired}
                     onClick={() => {
                       try {
                         const formattedId = stamp.batchId.startsWith('0x')

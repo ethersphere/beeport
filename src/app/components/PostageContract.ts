@@ -17,7 +17,12 @@
 
 import type { Address, PublicClient } from 'viem';
 
-import { GNOSIS_STAMP_ADDRESS, POSTAGE_STAMP_ABI } from './constants';
+import {
+  GNOSIS_STAMP_ADDRESS,
+  POSTAGE_STAMP_ABI,
+  STAMPS_REGISTRY_V2_ADDRESS,
+  STAMPS_REGISTRY_V2_ABI,
+} from './constants';
 import type { ChainBatchInfo } from './SelfCustodyBatch';
 
 /** Average Gnosis block time used to convert blocks-remaining → seconds. */
@@ -139,6 +144,7 @@ export function toChainBatchInfo(
     bucketDepth: batch.bucketDepth,
     immutable: batch.immutable,
     batchTTL: computeBatchTTL(batch, pricing),
+    exists: batch.exists,
   };
 }
 
@@ -222,4 +228,89 @@ export async function discoverBatchesByOwner(
     cursor = end + 1n;
   }
   return Array.from(found);
+}
+
+// ─── Expiry ──────────────────────────────────────────────────────────────────
+
+/** Thrown before an upload or top-up that targets a storage which has expired. */
+export class StorageExpiredError extends Error {
+  readonly batchId: string;
+  constructor(batchId: string, action: 'upload' | 'topup') {
+    super(
+      action === 'topup'
+        ? 'This storage has expired and was removed from the network, so it cannot be topped up. Buy new storage instead.'
+        : 'This storage has expired and was removed from the network. Buy new storage to upload.'
+    );
+    this.name = 'StorageExpiredError';
+    this.batchId = batchId;
+  }
+}
+
+/**
+ * - `active`: on chain with time left.
+ * - `expired`: on chain with no time left, or removed from the Postage Stamp
+ *   contract although the registry recorded its purchase.
+ * - `pending`: no purchase recorded yet (the buy transaction is not mined).
+ * - `unknown`: a chain read failed.
+ */
+export type BatchLiveness = 'active' | 'expired' | 'pending' | 'unknown';
+
+/**
+ * `createdAt` recorded by StampsRegistryV2 for a batch (`0n` = no purchase
+ * recorded), or `null` when the read fails.
+ */
+export async function fetchRegistryCreatedAt(
+  publicClient: PublicClient,
+  batchId: string
+): Promise<bigint | null> {
+  try {
+    const res = (await publicClient.readContract({
+      address: STAMPS_REGISTRY_V2_ADDRESS as Address,
+      abi: STAMPS_REGISTRY_V2_ABI,
+      functionName: 'batchAttribution',
+      args: [toLowerHex(batchId)],
+    })) as readonly [string, string, bigint];
+    return BigInt(res[2]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Classify a batch from what the chain says. A batch row disappears from the
+ * Postage Stamp contract only when it expires (the purchase creates it in the
+ * same transaction as the registry record), so "registry has it, contract
+ * does not" means expired.
+ */
+export function livenessFrom(
+  onChain: { exists?: boolean; batchTTL: number } | undefined,
+  registryCreatedAt?: bigint | null
+): BatchLiveness {
+  if (!onChain) return 'unknown';
+  if (onChain.exists !== false) return onChain.batchTTL > 0 ? 'active' : 'expired';
+  if (registryCreatedAt === null || registryCreatedAt === undefined) return 'unknown';
+  return registryCreatedAt > 0n ? 'expired' : 'pending';
+}
+
+/** Read one batch and classify it (see {@link livenessFrom}). Never throws. */
+export async function checkBatchLiveness(
+  publicClient: PublicClient,
+  batchId: string
+): Promise<{ liveness: BatchLiveness; depth?: number }> {
+  try {
+    const [batch, pricing] = await Promise.all([
+      fetchBatchFromContract(publicClient, batchId),
+      fetchOnChainPricing(publicClient),
+    ]);
+    if (batch.exists) {
+      return {
+        liveness: computeBatchTTL(batch, pricing) > 0 ? 'active' : 'expired',
+        depth: batch.depth,
+      };
+    }
+    const createdAt = await fetchRegistryCreatedAt(publicClient, batchId);
+    return { liveness: livenessFrom({ exists: false, batchTTL: 0 }, createdAt) };
+  } catch {
+    return { liveness: 'unknown' };
+  }
 }

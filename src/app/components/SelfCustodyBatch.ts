@@ -488,4 +488,6 @@ export interface ChainBatchInfo {
   immutable: boolean;
   /** Seconds until expiry. */
   batchTTL: number;
+  /** False when the Postage Stamp contract has no row for the batch. */
+  exists?: boolean;
 }

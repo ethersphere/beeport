@@ -22,6 +22,10 @@ Other files can still work, because their chunks go to other buckets. A top-up a
 
 If the counters look wrong, enable **Advanced mode** in Settings. Then use **Reset local state** in the storage list. This repairs the counters of that one storage. Counters above the bucket limit go to the limit, and the depth goes to the on-chain depth. The reset never lowers a counter, so files already in the storage stay safe. A reset cannot add space to a bucket that is really full.
 
+### "This storage has expired"
+
+Storage is rented for a fixed time. When the paid time runs out, the Postage Stamp contract removes the batch. The network then deletes the files over time. The app reads each storage from the contract. It hides expired storage in the storage list. It also refuses uploads and top-ups to expired storage. Buy new storage to upload again.
+
 ### "Bee doesn't recognize this batch"
 
 If it's not a fresh-batch race (above), the gateway probably watches a different postage contract than the one that created the batch. Compare Bee's `--postage-stamp-contract-address` with the app's Gnosis stamp address.

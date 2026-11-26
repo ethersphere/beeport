@@ -504,6 +504,12 @@
   gap: 10px;
 }
 
+.selfCustodyBadge.expiredBadge {
+  background-color: rgba(248, 81, 73, 0.12);
+  color: #ff8a82;
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
 .selfCustodyBadge {
   display: inline-flex;
   align-items: center;

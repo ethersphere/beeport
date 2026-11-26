@@ -75,7 +75,11 @@ import {
   markSelfCustodyBatchToppedUp,
 } from './SelfCustodyBatch';
 import { waitForGatewayBatchSync } from './GatewayChainSync';
-import { fetchBatchFromContract } from './PostageContract';
+import {
+  checkBatchLiveness,
+  fetchBatchFromContract,
+  StorageExpiredError,
+} from './PostageContract';
 import { STAMPS_REGISTRY_V2_ADDRESS, STAMPS_REGISTRY_V2_ABI } from './constants';
 import {
   uploadFileClientSide,
@@ -926,6 +930,13 @@ const SwapComponent: React.FC = () => {
       // whichever path makes sense. We still route through the registry so
       // any indexers/UIs can tie the top-up back to the original wallet.
       if (isTopUp && topUpBatchId && originalStampInfo) {
+        const topUpLiveness = await checkBatchLiveness(
+          getGnosisPublicClient().client as any,
+          topUpBatchId
+        );
+        if (topUpLiveness.liveness === 'expired') {
+          throw new StorageExpiredError(topUpBatchId, 'topup');
+        }
         const totalBzzNeeded = updatedConfig.swarmBatchTotal as string;
 
         // For non-Gnosis or non-BZZ origin we still need to first get BZZ
@@ -1178,6 +1189,16 @@ const SwapComponent: React.FC = () => {
       setUploadStep('ready');
     } catch (err) {
       console.error('Self-custody buy failed:', err);
+      if (err instanceof StorageExpiredError) {
+        setStatusMessage({
+          step: 'Error',
+          message: 'This storage has expired',
+          error: err.message,
+          isError: true,
+        });
+        setIsLoading(false);
+        return;
+      }
       // The purchase may have landed even though the wait failed. Look on
       // chain; a batch that exists is added to "Your Stamps".
       let recovered = false;
@@ -1212,14 +1233,27 @@ const SwapComponent: React.FC = () => {
     // A top-up must never fall through to the new-batch path. Without the
     // original batch's depth we cannot price or execute the top-up.
     if (isTopUp && topUpBatchId && !originalStampInfo) {
-      setStatusMessage({
-        step: 'Error',
-        message: 'Could not load the batch to top up',
-        error:
-          'The batch details are not available yet (gateway and chain lookup failed). ' +
-          'Nothing was charged. Reload the page and try again.',
-        isError: true,
-      });
+      const { liveness } = await checkBatchLiveness(
+        getGnosisPublicClient().client as any,
+        topUpBatchId
+      );
+      setStatusMessage(
+        liveness === 'expired'
+          ? {
+              step: 'Error',
+              message: 'This storage has expired',
+              error: new StorageExpiredError(topUpBatchId, 'topup').message,
+              isError: true,
+            }
+          : {
+              step: 'Error',
+              message: 'Could not load the batch to top up',
+              error:
+                'The batch details are not available yet (gateway and chain lookup failed). ' +
+                'Nothing was charged. Reload the page and try again.',
+              isError: true,
+            }
+      );
       setShowOverlay(true);
       return;
     }
@@ -1393,11 +1427,16 @@ const SwapComponent: React.FC = () => {
    */
   const resolveUploadDepth = async (batchIdHex: string): Promise<number> => {
     const id = batchIdHex.toLowerCase();
-    try {
-      const onChain = await fetchBatchFromContract(getGnosisPublicClient().client as any, id);
-      if (onChain.exists) return onChain.depth;
-    } catch (err) {
-      console.warn('[upload] On-chain depth lookup failed, using local data:', err);
+    // Refuse expired storage before anything else (and before the wallet is
+    // asked to sign): Bee would only answer "invalid batch id".
+    const { liveness, depth: chainDepth } = await checkBatchLiveness(
+      getGnosisPublicClient().client as any,
+      id
+    );
+    if (liveness === 'expired') throw new StorageExpiredError(id, 'upload');
+    if (liveness === 'active' && chainDepth !== undefined) return chainDepth;
+    if (liveness === 'unknown') {
+      console.warn('[upload] On-chain batch lookup failed, using local data');
     }
     const stored = address
       ? getSelfCustodyBatches(address).find(b => b.batchId.toLowerCase() === id)
@@ -1429,12 +1468,11 @@ const SwapComponent: React.FC = () => {
     setStatusMessage({ step: 'Uploading', message: 'Preparing upload…' });
 
     try {
-      const derived = await ensureHotKey();
-
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
       const depthForUpload = await resolveUploadDepth(batchIdHex);
+      const derived = await ensureHotKey();
 
       // Self-custody batches are owned by the hot key on-chain — Bee's
       // `/stamps/:id` endpoint always 404s here, so the legacy "poll until
@@ -1745,6 +1783,15 @@ const SwapComponent: React.FC = () => {
 
     // Raised BEFORE any chunk is sent (newer backup found but unreadable), so
     // the file is NOT on the network yet — do not use the "already uploaded" text.
+    if (err instanceof StorageExpiredError) {
+      return {
+        message: 'This storage has expired',
+        warning:
+          'Its paid time ran out and the network removed it. Files stored with it are deleted over time. Buy new storage to upload.',
+        detail: err.message,
+      };
+    }
+
     if (err instanceof UnreadableIssuerBackupError) {
       return {
         message: 'Upload stopped: storage backup unreadable',
@@ -1833,11 +1880,11 @@ const SwapComponent: React.FC = () => {
     setStatusMessage({ step: 'Uploading', message: 'Preparing multi-file upload…' });
 
     try {
-      const derived = await ensureHotKey();
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
       const depthForUpload = await resolveUploadDepth(batchIdHex);
+      const derived = await ensureHotKey();
 
       setStatusMessage({
         step: 'Uploading',
@@ -1962,11 +2009,11 @@ const SwapComponent: React.FC = () => {
     setStatusMessage({ step: 'Uploading', message: 'Preparing collection upload…' });
 
     try {
-      const derived = await ensureHotKey();
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
       const depthForUpload = await resolveUploadDepth(batchIdHex);
+      const derived = await ensureHotKey();
 
       // Inject a generated index.html if the user hasn't supplied one. The
       // listing is the same Swarm-styled page the legacy folder upload
@@ -2104,11 +2151,11 @@ const SwapComponent: React.FC = () => {
     setStatusMessage({ step: 'Uploading', message: 'Preparing NFT collection upload…' });
 
     try {
-      const derived = await ensureHotKey();
       const batchIdHex = postageBatchId.startsWith('0x')
         ? (postageBatchId as `0x${string}`)
         : (`0x${postageBatchId}` as `0x${string}`);
       const depthForUpload = await resolveUploadDepth(batchIdHex);
+      const derived = await ensureHotKey();
 
       setStatusMessage({
         step: 'Uploading',
