@@ -345,15 +345,37 @@ async function readSocPayloadAt(
   index: number
 ): Promise<Uint8Array | null> {
   const reader = bee.makeSOCReader(ownerAddress);
-  try {
-    const soc = await reader.download(
-      new Identifier(computeIssuerStateIdentifier(cleanBatchId, index))
-    );
-    return soc.payload.toUint8Array();
-  } catch (err) {
-    if (isNotFound(err)) return null;
-    throw err;
+  const identifier = new Identifier(computeIssuerStateIdentifier(cleanBatchId, index));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const soc = await reader.download(identifier);
+      return soc.payload.toUint8Array();
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      // Bee answers `500 read chunk failed` when a network lookup fails for a
+      // reason other than "not found" (timeout, no peer). That is transient,
+      // and one such answer must not stop an upload: retry before giving up.
+      if (attempt >= SOC_READ_RETRY_DELAYS_MS.length || !isTransientReadError(err)) throw err;
+      await new Promise(r => setTimeout(r, SOC_READ_RETRY_DELAYS_MS[attempt]));
+    }
   }
+}
+
+/** Waits between retries of a backup chunk read that failed transiently. */
+const SOC_READ_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
+/** A 5xx answer or a request that got no answer at all (network error). */
+function isTransientReadError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as {
+    name?: unknown;
+    status?: unknown;
+    statusText?: unknown;
+    response?: { status?: unknown };
+  };
+  if (e.name === 'AbortError' || e.statusText === 'ERR_CANCELED') return false;
+  const status = typeof e.status === 'number' ? e.status : e.response?.status;
+  return typeof status !== 'number' || status >= 500;
 }
 
 /**
