@@ -31,6 +31,8 @@ Set **`NEXT_PUBLIC_BMT_WORKER=false`** to hash on the main thread (same algorith
 
 Bulk leaf and manifest chunks use **`buildStampEnvelope`** + **`uploadChunkPresignedFetch`** for throughput (`fetch` instead of axios, no JSON parse on success).
 
+**Manifest nodes get a random obfuscation key.** An obfuscation key is a 32-byte value. A manifest node stores it in its first bytes and uses it to scramble the rest. bee-js 12 sets this key to zero. Then the `/` index node has the same bytes, and thus the same address, for every file. Each upload then stamped that node into one more slot of the same bucket, until the bucket was full. The app now sets a random key on each node, as Bee does. Readers take the key from the node, so manifests resolve as before.
+
 **Issuer-state SOC postage** uses the same **`buildStampEnvelope`** (Noble + `ethSignedHashForStampPayload`) as every other presigned chunk, but the HTTP transport is **`uploadSocPresignedFetch`**, not `uploadChunkPresignedFetch`. See [Why SOCs are not POSTed to `/chunks`](#why-socs-are-not-posted-to-chunks) below.
 
 ## Why SOCs are not posted to `/chunks`

@@ -347,6 +347,8 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
         });
       }
     }
+    // Runs once per wallet; the helpers above only read their arguments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
 
   const formatDate = (timestamp: number) => {

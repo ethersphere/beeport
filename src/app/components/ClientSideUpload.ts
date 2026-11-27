@@ -465,7 +465,7 @@ const SOC_SAVE_RETRY_DELAYS_MS = [3_000, 10_000];
  * in `stamper` (`persist` writes them to IndexedDB before the wait), and a
  * backup that did land at the wanted index makes the retry write the next one.
  */
-export async function saveIssuerStateWithRetry(args: {
+async function saveIssuerStateWithRetry(args: {
   bee: Bee;
   hotKey: DerivedHotKey;
   cleanBatchId: string;

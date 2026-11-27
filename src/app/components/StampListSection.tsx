@@ -40,12 +40,10 @@ import { fetchGlobalBatch, type BeeGlobalBatch } from './BeeApi';
 import { deriveHotKey } from './ClientStamping';
 import {
   loadStamperState,
-  saveStamperState,
   computeStampUsage,
   computeBucketStatsVisualization,
   repairStamperState,
   clearStampedAddresses,
-  setLastSyncedSocIndex,
   groupBucketFill,
   bucketHealth,
   type StampUsageStats,

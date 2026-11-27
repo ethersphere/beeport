@@ -267,9 +267,17 @@ The app protects the state in two ways. It restores the state from Swarm before 
 
 ### Recovery options (and what's actually shipped)
 
-1. **Encrypted Swarm SOC backup — implemented & default.** After every
-   successful upload the app writes the current bucket counters to a
-   Single Owner Chunk on Swarm:
+1. **Encrypted Swarm SOC backup — implemented & default.** The app writes
+   the current bucket counters to a Single Owner Chunk (SOC) on Swarm. The
+   address of a SOC comes from an identifier and an owner key, not from its
+   content. The app writes a backup at three times:
+
+   - after you buy storage (the first backup, with all counters at zero);
+   - after each upload;
+   - in a sync, when a storage has no backup and this browser bought it or
+     has state for it.
+
+   These details apply to each backup:
 
    - SOC identifier for save number `n` =
      `keccak256("beeport.issuerState" || batchId || u32(n))`. Save 0 has no
@@ -322,17 +330,28 @@ The app protects the state in two ways. It restores the state from Swarm before 
    to return a 404. An up-to-date browser sends two requests at the same
    time.
 
+   Bee does not ask a peer (another Bee node) again for one minute after
+   the peer did not return a chunk. After about three reads of a missing
+   address, no peer is left. Bee then answers `500 read chunk failed`
+   instead of 404. The app reads that answer as a miss.
+
    **Before each save**, the app checks that the next number is free. If
    another device used it, the app merges that backup into its own
    counters (it takes the larger value of each counter). Then it writes
    after it.
 
-   The gear button on the storage list does the same restore manually for
-   every batch missing local state — useful to see utilization without
-   starting an upload. Both paths re-derive the hot key from one wallet
-   signature, download the SOC, decrypt, apply the delta, and write the
-   reconstructed post-save buckets into IndexedDB. See
-   `IssuerStateSOC.ts`.
+   **Sync without an upload.** The sync button (🔄) below the storage list
+   syncs every storage. The app also syncs on its own when the hot key
+   unlocks, and when the list loads while the hot key is unlocked. For each
+   storage, the sync restores the newest backup, merges it, or writes a
+   first backup. It writes local state only while it holds the
+   per-storage upload lock. Thus it cannot run at the same time as an
+   upload of that storage. See `IssuerStateSync.ts`.
+
+   **Failed saves.** The app tries a failed save again after 3 seconds and
+   after 10 seconds. If the save still fails, the upload success screen
+   shows a warning. Other browsers cannot use the storage until a later
+   save works.
 
    **Upload mechanics:** the encrypted state blob is uploaded as normal CACs
    (`POST /chunks`). The SOC itself must use Bee's SOC API:
@@ -358,8 +377,8 @@ The app protects the state in two ways. It restores the state from Swarm before 
    the same chunk content with the same starting counters reproduces the
    *same* `(bucket, cnt)` allocation, which is the same stamp Bee already
    has — no collision, just a no-op. Useful only if SOC restore is
-   unavailable (Bee gateway unreachable, or the batch has no SOC saved
-   yet because no successful upload has happened on it).
+   unavailable (Bee gateway unreachable, or no backup of the batch
+   exists).
 
 3. **Accept some slot burn (only safe for low-fill batches).** Start
    from a blank counter array. New chunks succeed only if their bucket
@@ -391,10 +410,9 @@ unavailable. (4) is the worst case.
   slots and collide. The post-hoc merge fixes the counters for future
   uploads but can't un-collide chunks stamped during the overlap.
 - **Do not rely on incognito mode** for the upload step — storage for that profile is wiped on exit.
-- **The SOC backup is only seeded by a successful upload.** A batch that
-  has never completed an upload has no SOC yet; losing local state
-  before the first upload completes just means starting from blank
-  counters (which is correct at that point).
+- **The first backup is written at purchase.** If that write fails, the
+  next sync in the browser that bought the storage writes it. Until then,
+  another browser does not upload to the storage.
 
 The hot key, by contrast, requires no backup at all because it's
 deterministic from the wallet signature (see "How a returning user
