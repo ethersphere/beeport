@@ -6,6 +6,7 @@ import { getWalletClient } from '@wagmi/core';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { config } from '@/app/wagmi';
 import { createConfig, EVM, ChainId, ChainType, getChains, Chain } from '@lifi/sdk';
+import { seedBackupAfterPurchase } from './IssuerStateSync';
 import styles from './css/SwapComponent.module.css';
 import { formatUnits } from 'viem';
 import { getAddress } from 'viem';
@@ -1180,6 +1181,16 @@ const SwapComponent: React.FC = () => {
         createdVia: 'registry',
       });
       removePendingBatchPurchase(predictedBatchId);
+      // Save the first (empty) state backup to Swarm in the background, so
+      // another browser with this wallet can upload to the storage before
+      // this one has uploaded anything.
+      void seedBackupAfterPurchase({
+        beeApiUrl,
+        hotKey: derived,
+        batchId: predictedBatchId,
+        depth,
+        createdAtBlock: createBatchBlockNumber,
+      });
 
       setStatusMessage({
         step: 'Complete',

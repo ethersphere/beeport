@@ -391,17 +391,17 @@ const StampListSection: React.FC<StampListSectionProps> = ({
    */
   const syncStoragesFromSwarm = async (
     hotKey: Parameters<typeof syncIssuerStatesFromSwarm>[0]['hotKey'],
-    batchIds: string[]
+    storages: BatchEvent[]
   ): Promise<IssuerStateSyncResult[]> => {
     const results = await syncIssuerStatesFromSwarm({
       bee: new Bee(beeApiUrl),
       hotKey,
-      batchIds,
+      storages: storages.map(e => ({ batchId: e.batchId, depth: e.depth })),
     });
     for (const r of results) {
       if (r.outcome === 'failed') console.warn(`State sync failed for ${r.batchId}:`, r.error);
     }
-    if (results.some(r => r.outcome === 'restored' || r.outcome === 'merged')) {
+    if (results.some(r => r.outcome === 'restored' || r.outcome === 'merged' || r.outcome === 'seeded')) {
       const updated = await buildStampList(getSelfCustodyBatches(address as string));
       setStamps(updated.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
       setBucketStatsById({});
@@ -419,12 +419,14 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   autoSyncRef.current = () => {
     if (!address || autoSyncRunning.current) return;
     const hotKey = getActiveHotKey(address);
-    const ids = stampsRef.current.filter(e => !e.missingOnChain).map(e => e.batchId);
-    if (!hotKey || ids.length === 0) return;
+    const list = stampsRef.current.filter(e => !e.missingOnChain);
+    if (!hotKey || list.length === 0) return;
     autoSyncRunning.current = true;
-    void syncStoragesFromSwarm(hotKey, ids)
+    void syncStoragesFromSwarm(hotKey, list)
       .then(results => {
-        const changed = results.filter(r => r.outcome === 'restored' || r.outcome === 'merged');
+        const changed = results.filter(
+          r => r.outcome === 'restored' || r.outcome === 'merged' || r.outcome === 'seeded'
+        );
         if (changed.length > 0) {
           setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(changed)}.`);
         }
@@ -485,7 +487,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       // unlocks the hot key for every storage.
       setStatusMessage(`Syncing storage state from Swarm for ${syncable.length} storage(s)…`);
       const hotKey = await deriveHotKey(walletClient, address as `0x${string}`);
-      const results = await syncStoragesFromSwarm(hotKey, syncable.map(e => e.batchId));
+      const results = await syncStoragesFromSwarm(hotKey, syncable);
       setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(results)}.`);
     } catch (err) {
       console.error('Refresh failed:', err);

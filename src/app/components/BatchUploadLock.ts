@@ -17,10 +17,11 @@ const inTabBatchLocks = new Set<string>();
 
 /**
  * How long an upload waits for the lock before it reports "busy". A state sync
- * (see IssuerStateSync.ts) holds the lock for a few milliseconds only, so a
- * short wait keeps it from failing an upload that starts at the same moment.
+ * holds it for milliseconds; writing a first backup (see IssuerStateSync.ts)
+ * holds it for a few seconds. The wait keeps either from failing an upload
+ * that starts at the same moment.
  */
-const UPLOAD_LOCK_WAIT_MS = 3_000;
+const UPLOAD_LOCK_WAIT_MS = 20_000;
 const UPLOAD_LOCK_POLL_MS = 150;
 
 /** Acquire the per-batch upload lock. Returns an idempotent release function. */
