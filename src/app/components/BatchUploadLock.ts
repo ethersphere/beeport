@@ -15,8 +15,30 @@ const BATCH_BUSY_MESSAGE =
 
 const inTabBatchLocks = new Set<string>();
 
+/**
+ * How long an upload waits for the lock before it reports "busy". A state sync
+ * (see IssuerStateSync.ts) holds the lock for a few milliseconds only, so a
+ * short wait keeps it from failing an upload that starts at the same moment.
+ */
+const UPLOAD_LOCK_WAIT_MS = 3_000;
+const UPLOAD_LOCK_POLL_MS = 150;
+
 /** Acquire the per-batch upload lock. Returns an idempotent release function. */
 export async function acquireBatchUploadLock(batchId: string): Promise<() => void> {
+  const deadline = Date.now() + UPLOAD_LOCK_WAIT_MS;
+  for (;;) {
+    const release = await tryAcquireBatchLock(batchId);
+    if (release) return release;
+    if (Date.now() >= deadline) throw new Error(BATCH_BUSY_MESSAGE);
+    await new Promise(r => setTimeout(r, UPLOAD_LOCK_POLL_MS));
+  }
+}
+
+/**
+ * Take the per-batch lock only when it is free right now; `null` when an
+ * upload (or another sync) holds it. Same lock as uploads, across tabs.
+ */
+export async function tryAcquireBatchLock(batchId: string): Promise<(() => void) | null> {
   if (!batchId) throw new Error('No batchId provided');
   const id = stripHex(batchId).toLowerCase();
   const locks =
@@ -25,11 +47,11 @@ export async function acquireBatchUploadLock(batchId: string): Promise<() => voi
       : undefined;
 
   if (locks?.request) {
-    return new Promise<() => void>((resolve, reject) => {
+    return new Promise<(() => void) | null>((resolve, reject) => {
       locks
         .request(`beeport.upload.${id}`, { ifAvailable: true }, lock => {
           if (!lock) {
-            reject(new Error(BATCH_BUSY_MESSAGE));
+            resolve(null);
             return undefined;
           }
           // Hold the lock until the caller releases it.
@@ -47,7 +69,7 @@ export async function acquireBatchUploadLock(batchId: string): Promise<() => voi
   }
 
   // No Web Locks API: guard this tab only.
-  if (inTabBatchLocks.has(id)) throw new Error(BATCH_BUSY_MESSAGE);
+  if (inTabBatchLocks.has(id)) return null;
   inTabBatchLocks.add(id);
   let released = false;
   return () => {

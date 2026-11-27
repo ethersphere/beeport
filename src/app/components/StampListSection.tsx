@@ -10,7 +10,7 @@
  *      SOCs            the bucket-counter state when local data is missing.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bee } from '@ethersphere/bee-js';
 import { useWalletClient } from 'wagmi';
 import { formatUnits } from 'viem';
@@ -51,7 +51,12 @@ import {
   type StampUsageStats,
   type BucketStatsVisualization,
 } from './ClientStamping';
-import { loadIssuerStateFromSOC } from './IssuerStateSOC';
+import { getActiveHotKey, onHotKeyUnlocked } from './HotKeySession';
+import {
+  summarizeSyncResults,
+  syncIssuerStatesFromSwarm,
+  type IssuerStateSyncResult,
+} from './IssuerStateSync';
 import styles from './css/StampListSection.module.css';
 
 /** User-defined names for postage batches (this browser only). */
@@ -381,6 +386,68 @@ const StampListSection: React.FC<StampListSectionProps> = ({
   }, [address]);
 
   /**
+   * Sync the given storages with Swarm, then redraw the list and drop cached
+   * bucket stats so "Used" and the stats show the merged counters.
+   */
+  const syncStoragesFromSwarm = async (
+    hotKey: Parameters<typeof syncIssuerStatesFromSwarm>[0]['hotKey'],
+    batchIds: string[]
+  ): Promise<IssuerStateSyncResult[]> => {
+    const results = await syncIssuerStatesFromSwarm({
+      bee: new Bee(beeApiUrl),
+      hotKey,
+      batchIds,
+    });
+    for (const r of results) {
+      if (r.outcome === 'failed') console.warn(`State sync failed for ${r.batchId}:`, r.error);
+    }
+    if (results.some(r => r.outcome === 'restored' || r.outcome === 'merged')) {
+      const updated = await buildStampList(getSelfCustodyBatches(address as string));
+      setStamps(updated.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      setBucketStatsById({});
+      setExpandedStatsBatchId(null);
+    }
+    return results;
+  };
+
+  // Automatic sync: whenever the hot key is unlocked (no extra signature),
+  // and on load when it already is. Quiet unless a storage changed.
+  const stampsRef = useRef<BatchEvent[]>([]);
+  stampsRef.current = stamps;
+  const autoSyncRunning = useRef(false);
+  const autoSyncRef = useRef<() => void>(() => undefined);
+  autoSyncRef.current = () => {
+    if (!address || autoSyncRunning.current) return;
+    const hotKey = getActiveHotKey(address);
+    const ids = stampsRef.current.filter(e => !e.missingOnChain).map(e => e.batchId);
+    if (!hotKey || ids.length === 0) return;
+    autoSyncRunning.current = true;
+    void syncStoragesFromSwarm(hotKey, ids)
+      .then(results => {
+        const changed = results.filter(r => r.outcome === 'restored' || r.outcome === 'merged');
+        if (changed.length > 0) {
+          setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(changed)}.`);
+        }
+      })
+      .catch(err => console.warn('Automatic state sync failed:', err))
+      .finally(() => {
+        autoSyncRunning.current = false;
+      });
+  };
+  useEffect(() => {
+    if (!address) return;
+    const wallet = address.toLowerCase();
+    return onHotKeyUnlocked(unlocked => {
+      if (unlocked === wallet) autoSyncRef.current();
+    });
+  }, [address]);
+  // Also once the list has loaded, in case the key was unlocked before.
+  const stampCount = stamps.length;
+  useEffect(() => {
+    if (stampCount > 0) autoSyncRef.current();
+  }, [stampCount, address]);
+
+  /**
    * Full refresh: re-read every batch on-chain and (if a wallet client is
    * available) attempt to restore the stamper state from SOCs for batches
    * that have no local state yet. Restoration NEVER overwrites a non-empty
@@ -399,10 +466,8 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       const events = await buildStampList(stored);
       setStamps(events.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
 
-      const needsSocRestore = events.filter(
-        e => !e.hasLocalIssuerState && !e.missingOnChain
-      );
-      if (needsSocRestore.length === 0) {
+      const syncable = events.filter(e => !e.missingOnChain);
+      if (syncable.length === 0) {
         setStatusMessage(
           `Refreshed ${events.length} batch${events.length === 1 ? '' : 'es'} from chain.`
         );
@@ -410,64 +475,18 @@ const StampListSection: React.FC<StampListSectionProps> = ({
       }
       if (!walletClient) {
         setStatusMessage(
-          `Refreshed ${events.length} from chain. Connect a wallet to restore issuer state from Swarm for ${needsSocRestore.length} batch(es) missing local data.`
+          `Refreshed ${events.length} from chain. Connect a wallet to sync storage state from Swarm.`
         );
         return;
       }
 
-      // We have batches without local state but with on-chain entries → ask
-      // the wallet to derive the hot key and try the SOC fallback. ONE
-      // signature unlocks decryption for every batch (same hot key for all).
-      setStatusMessage(
-        `Restoring issuer state from Swarm for ${needsSocRestore.length} batch(es)…`
-      );
+      // Sync every storage with its newest Swarm backup (restore when this
+      // browser has nothing, merge when the backup is newer). ONE signature
+      // unlocks the hot key for every storage.
+      setStatusMessage(`Syncing storage state from Swarm for ${syncable.length} storage(s)…`);
       const hotKey = await deriveHotKey(walletClient, address as `0x${string}`);
-      const bee = new Bee(beeApiUrl);
-
-      let restored = 0;
-      let failed = 0;
-      for (const ev of needsSocRestore) {
-        try {
-          const result = await loadIssuerStateFromSOC({
-            bee,
-            hotKey,
-            batchId: ev.batchId,
-          });
-          if (!result) {
-            failed++;
-            continue;
-          }
-          // Only restore if we still have nothing locally — prevents a slow
-          // SOC read from clobbering a fresh save written by another tab
-          // while we were waiting.
-          if (!(await loadStamperState(ev.batchId))) {
-            await saveStamperState(ev.batchId, result.state);
-            // Baseline for the pre-upload staleness probe: local state now
-            // incorporates the backup at `index`.
-            setLastSyncedSocIndex(ev.batchId, result.index);
-            restored++;
-          }
-        } catch (err) {
-          console.warn(`SOC restore failed for ${ev.batchId}:`, err);
-          failed++;
-        }
-      }
-
-      // Re-render with the new hasLocalIssuerState flags.
-      const updated = await buildStampList(stored);
-      setStamps(updated.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-
-      if (restored > 0 && failed === 0) {
-        setStatusMessage(`Restored issuer state for ${restored} batch(es) from Swarm.`);
-      } else if (restored > 0 && failed > 0) {
-        setStatusMessage(
-          `Restored ${restored}; could not restore ${failed} (no SOC found yet — re-upload once to seed it).`
-        );
-      } else {
-        setStatusMessage(
-          `No SOC issuer state available yet for ${failed} batch(es). They will be seeded after the next upload.`
-        );
-      }
+      const results = await syncStoragesFromSwarm(hotKey, syncable.map(e => e.batchId));
+      setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(results)}.`);
     } catch (err) {
       console.error('Refresh failed:', err);
       setStatusMessage(`Refresh failed: ${(err as Error).message}`);
@@ -984,7 +1003,7 @@ const StampListSection: React.FC<StampListSectionProps> = ({
             className={styles.resetButton}
             onClick={handleFullRefresh}
             disabled={isRefreshing}
-            title="Refresh batch list from the Postage Stamp contract and restore any missing issuer state from Swarm SOCs"
+            title="Sync storage list from the chain and storage state from Swarm"
           >
             {isRefreshing ? '⏳' : '🔄'}
           </button>

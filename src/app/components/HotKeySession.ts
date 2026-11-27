@@ -178,6 +178,17 @@ export async function deriveHotKey(
 
   const session = await HotKeySession.create(walletClient, walletAddress);
   hotKeyCache.set(cacheKey, session);
+  // Tell listeners after this call returns, so an upload that unlocked the
+  // key is not delayed by them.
+  setTimeout(() => {
+    for (const listener of unlockListeners) {
+      try {
+        listener(cacheKey);
+      } catch (err) {
+        console.warn('Hot key unlock listener failed:', err);
+      }
+    }
+  }, 0);
 
   try {
     localStorage.setItem(`beeport.hotKeyAddress.${cacheKey}`, session.address);
@@ -186,6 +197,27 @@ export async function deriveHotKey(
   }
 
   return session;
+}
+
+type HotKeyUnlockListener = (walletAddress: string) => void;
+const unlockListeners = new Set<HotKeyUnlockListener>();
+
+/**
+ * Call `listener` each time a hot key is unlocked (a new session after a
+ * wallet signature). It gets the lower-case wallet address. Returns an
+ * unsubscribe function.
+ */
+export function onHotKeyUnlocked(listener: HotKeyUnlockListener): () => void {
+  unlockListeners.add(listener);
+  return () => {
+    unlockListeners.delete(listener);
+  };
+}
+
+/** The live hot key for this wallet, or `null` when it is locked. Never prompts. */
+export function getActiveHotKey(walletAddress: string): DerivedHotKey | null {
+  const session = hotKeyCache.get(walletAddress.toLowerCase());
+  return session && !session.isExpired() ? session : null;
 }
 
 /** Drop in-memory session for a wallet (workers terminated). */

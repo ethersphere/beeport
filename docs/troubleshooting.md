@@ -28,7 +28,7 @@ Storage is rented for a fixed time. When the paid time runs out, the Postage Sta
 
 ### "Could not verify this storage's saved state on Swarm" / `500 read chunk failed`
 
-After each upload, the app saves the state of the storage to Swarm. The state is a set of counters that show which parts of the storage are in use. Another browser with the same wallet reads this saved state before it uploads.
+After each upload, the app saves the state of the storage to Swarm. The state is a set of counters that show which parts of the storage are in use. Another browser with the same wallet reads this saved state before it uploads. The app also reads it when you unlock the hot key, and when you click the sync button (🔄) below the storage list. The hot key is the key that signs your uploads. One wallet signature unlocks it.
 
 Bee answers 404 when it cannot find a chunk. Bee also remembers each peer (another Bee node) that did not return a chunk. Bee does not ask that peer again for one minute. After about three failed reads of the same address, no peer is left. Bee then answers `500 read chunk failed` for that address until the address gets no reads for one minute.
 
