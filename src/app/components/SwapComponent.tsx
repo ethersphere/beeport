@@ -184,6 +184,9 @@ const SwapComponent: React.FC = () => {
   const [insufficientFunds, setInsufficientFunds] = useState<boolean>(false);
   const [isPriceEstimating, setIsPriceEstimating] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
+  // True when an upload finished but the storage-state backup on Swarm could
+  // not be saved: other browsers cannot continue this storage until it is.
+  const [stateBackupFailed, setStateBackupFailed] = useState(false);
   const [statusMessage, setStatusMessage] = useState<ExecutionStatus>({
     step: '',
     message: '',
@@ -1543,6 +1546,7 @@ const SwapComponent: React.FC = () => {
         redundancyLevel,
       };
 
+      setStateBackupFailed(false);
       const result = await uploadFileClientSide({
         ...uploadParamsBase,
         onProgress: (processed, total) => {
@@ -1576,6 +1580,8 @@ const SwapComponent: React.FC = () => {
         .then(soc => {
           if (soc) {
             console.info('[Self-custody] SOC issuer-state backup completed', soc);
+          } else {
+            setStateBackupFailed(true);
           }
         })
         .catch(() => {
@@ -1892,6 +1898,7 @@ const SwapComponent: React.FC = () => {
       });
       setIsDistributing(false);
 
+      setStateBackupFailed(false);
       const result = await uploadMultipleFilesClientSide({
         files,
         batchId: batchIdHex,
@@ -1915,6 +1922,7 @@ const SwapComponent: React.FC = () => {
         onUploadTransport: handleUploadTransport,
         redundancyLevel,
       });
+      if (!result.issuerStateSoc) setStateBackupFailed(true);
 
       setMultiFileResults(result.results);
       setUploadProgress(100);
@@ -2035,6 +2043,7 @@ const SwapComponent: React.FC = () => {
       });
       setIsDistributing(false);
 
+      setStateBackupFailed(false);
       const result = await uploadFilesAsCollectionClientSide({
         entries: finalEntries,
         batchId: batchIdHex,
@@ -2051,6 +2060,7 @@ const SwapComponent: React.FC = () => {
         onUploadTransport: handleUploadTransport,
         redundancyLevel,
       });
+      if (!result.issuerStateSoc) setStateBackupFailed(true);
 
       setUploadProgress(100);
       const refHex = result.reference.startsWith('0x')
@@ -3377,6 +3387,14 @@ const SwapComponent: React.FC = () => {
                       ? 'NFT Collection Uploaded Successfully!'
                       : 'Upload Successful!'}
                 </h3>
+
+                {stateBackupFailed && (
+                  <div className={styles.stateBackupWarning}>
+                    Your upload is complete, but the storage state could not be saved to
+                    Swarm. Other browsers cannot use this storage until a later upload
+                    from this browser saves it.
+                  </div>
+                )}
 
                 {/* Multi-file: list each file with its own reference. */}
                 {multiFileResults.length > 0 ? (

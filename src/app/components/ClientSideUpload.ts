@@ -65,6 +65,7 @@ import {
   loadIssuerStateFromSOC,
   peekLatestIssuerStateIndex,
   type LoadIssuerStateResult,
+  type SaveIssuerStateResult,
 } from './IssuerStateSOC';
 import { BmtWorkerClient } from './BmtWorkerClient';
 import { isBatchCreatedInThisBrowser } from './SelfCustodyBatch';
@@ -452,6 +453,47 @@ const SOC_NOT_FOUND_RETRY_DELAY_MS = 2_000;
 function nextSocIndex(cleanBatchId: string): number | undefined {
   const last = getLastSyncedSocIndex(cleanBatchId);
   return last === null ? undefined : last + 1;
+}
+
+/** Waits between attempts of an issuer-state backup save that failed. */
+const SOC_SAVE_RETRY_DELAYS_MS = [3_000, 10_000];
+
+/**
+ * Save the issuer-state backup, retrying a failed attempt. Until a save lands,
+ * other browsers cannot continue this storage, so one transient gateway error
+ * must not end it. A retry is safe: a failed attempt keeps the slots it used
+ * in `stamper` (`persist` writes them to IndexedDB before the wait), and a
+ * backup that did land at the wanted index makes the retry write the next one.
+ */
+export async function saveIssuerStateWithRetry(args: {
+  bee: Bee;
+  hotKey: DerivedHotKey;
+  cleanBatchId: string;
+  stamper: Stamper;
+  abortSignal?: AbortSignal;
+  persist: () => Promise<void>;
+}): Promise<SaveIssuerStateResult> {
+  const { bee, hotKey, cleanBatchId, stamper, abortSignal, persist } = args;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await saveIssuerStateToSOC({
+        bee,
+        hotKey,
+        batchId: cleanBatchId,
+        stamper,
+        abortSignal,
+        index: nextSocIndex(cleanBatchId),
+      });
+    } catch (err) {
+      if (attempt >= SOC_SAVE_RETRY_DELAYS_MS.length || abortSignal?.aborted) throw err;
+      console.warn(
+        `Issuer-state backup save failed (attempt ${attempt + 1}), retrying:`,
+        describeSocError(err)
+      );
+      await persist();
+      await new Promise(r => setTimeout(r, SOC_SAVE_RETRY_DELAYS_MS[attempt]));
+    }
+  }
 }
 
 /** Newest backup below `before` that loads and decrypts (looks back at most 10). */
@@ -1251,13 +1293,13 @@ async function uploadFileClientSideUnlocked(
     issuerStateSocPromise = (async (): Promise<IssuerStateSocResult | undefined> => {
       try {
         onStatus?.('Saving issuer state to Swarm (SOC)…');
-        const soc = await saveIssuerStateToSOC({
+        const soc = await saveIssuerStateWithRetry({
           bee,
           hotKey,
-          batchId: cleanBatchId,
+          cleanBatchId,
           stamper,
           abortSignal,
-          index: nextSocIndex(cleanBatchId),
+          persist: persistStateNow,
         });
         // Persist again — the SOC save itself consumed slots that future
         // uploads must not re-allocate. Await it before the marker below.
@@ -2400,13 +2442,18 @@ async function maybeSaveIssuerStateToSOC(
 ): Promise<IssuerStateSocResult | undefined> {
   try {
     onStatus?.('Saving issuer state to Swarm (SOC)…');
-    const soc = await saveIssuerStateToSOC({
+    const persist = () =>
+      saveStamperState(ctx.cleanBatchId, {
+        buckets: ctx.stamper.getState(),
+        depth: ctx.stamper.depth,
+      });
+    const soc = await saveIssuerStateWithRetry({
       bee: ctx.bee,
       hotKey,
-      batchId: ctx.cleanBatchId,
+      cleanBatchId: ctx.cleanBatchId,
       stamper: ctx.stamper,
       abortSignal: ctx.abortSignal,
-      index: nextSocIndex(ctx.cleanBatchId),
+      persist,
     });
     // Persist the slots the save consumed BEFORE recording the marker, so the
     // marker never claims more than IndexedDB holds.

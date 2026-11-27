@@ -601,6 +601,19 @@
   margin-bottom: 15px;
 }
 
+.stateBackupWarning {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background-color: rgba(255, 122, 0, 0.1);
+  border: 1px solid rgba(255, 122, 0, 0.3);
+  border-radius: 8px;
+  color: #ff7a00;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
 .referenceBox {
   margin: 20px 0;
   padding: 15px;
