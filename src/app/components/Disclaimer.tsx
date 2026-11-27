@@ -18,10 +18,11 @@ const Disclaimer: React.FC = () => {
         familiar with how it works.
       </p>
       <p>
-        You are on <strong>V2</strong> of BeePort. For V1 and old stamps go to{' '}
+        You are on <strong>V2</strong> of Beeport. For V1 and old stamps go to{' '}
         <a href="https://beeport-v1.ethswarm.org/" target="_blank" rel="noopener noreferrer">
           V1 Beeport
         </a>
+        .
       </p>
     </div>
   );
