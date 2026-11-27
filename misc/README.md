@@ -1,6 +1,10 @@
 # Registry Data Migration Script
 
-This script fetches all `BatchCreated` events from the old StampsRegistry contract and saves them to a JSON file. This data can be used to migrate to the new contract or for analysis purposes.
+Historical utility for the **legacy V1** `StampsRegistry` on Gnosis. The Solidity
+source was removed from this repository; the on-chain contract may still exist
+at a known address for event scraping.
+
+This script fetches all `BatchCreated` events from that contract and saves them to a JSON file. This data can be used to migrate to the new contract or for analysis purposes.
 
 ## Setup
 

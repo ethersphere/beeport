@@ -8,46 +8,45 @@ interface ErasureCodingDropdownProps {
   className?: string;
 }
 
+const erasureCodingOptions: DropdownOption[] = [
+  {
+    value: 0,
+    label: 'None (Default)',
+    icon: '🔓',
+    description: 'No erasure coding - standard storage',
+  },
+  {
+    value: 1,
+    label: 'Medium',
+    icon: '🛡️',
+    description: 'Survives ~1% lost chunks - ~8% more storage',
+  },
+  {
+    value: 2,
+    label: 'Strong',
+    icon: '🔒',
+    description: 'Survives ~5% lost chunks - ~20% more storage',
+  },
+  {
+    value: 3,
+    label: 'Insane',
+    icon: '🔐',
+    description: 'Survives ~10% lost chunks - ~32% more storage',
+  },
+  {
+    value: 4,
+    label: 'Paranoid',
+    icon: '🏰',
+    description: 'Survives ~50% lost chunks - ~230% more storage',
+  },
+];
+
 const ErasureCodingDropdown: React.FC<ErasureCodingDropdownProps> = ({
   selectedLevel,
   onLevelChange,
   disabled = false,
   className = '',
 }) => {
-  // Define erasure coding options with icons and descriptions
-  const erasureCodingOptions: DropdownOption[] = [
-    {
-      value: 0,
-      label: 'None (Default)',
-      icon: '🔓',
-      description: 'No erasure coding - standard storage',
-    },
-    {
-      value: 1,
-      label: 'Medium',
-      icon: '🛡️',
-      description: 'Basic protection - ~25% more storage',
-    },
-    {
-      value: 2,
-      label: 'Strong',
-      icon: '🔒',
-      description: 'Enhanced protection - ~50% more storage',
-    },
-    {
-      value: 3,
-      label: 'Insane',
-      icon: '🔐',
-      description: 'High protection - ~100% more storage',
-    },
-    {
-      value: 4,
-      label: 'Paranoid',
-      icon: '🏰',
-      description: 'Maximum protection - ~200% more storage',
-    },
-  ];
-
   const handleSelect = (value: string | number) => {
     onLevelChange(Number(value));
   };

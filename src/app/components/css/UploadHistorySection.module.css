@@ -359,6 +359,17 @@ a.filename:visited {
   font-weight: 500;
 }
 
+.ecLevel {
+  font-size: 12px;
+  color: #58a6ff;
+  background-color: rgba(88, 166, 255, 0.12);
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  width: fit-content;
+  font-weight: 500;
+}
+
 .date {
   color: #8b949e;
   font-size: 14px;
@@ -604,4 +615,25 @@ a.filename:visited {
 .expiryExpired {
   color: #f85149 !important;
   font-weight: 600;
+}
+
+/* A file whose storage expired: dimmed, with a red tag. */
+.historyItemExpired {
+  opacity: 0.6;
+}
+
+.historyItemExpired:hover {
+  opacity: 0.85;
+}
+
+.expiredTag {
+  font-size: 12px;
+  color: #ff8a82;
+  background-color: rgba(248, 81, 73, 0.12);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  padding: 1px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  width: fit-content;
+  font-weight: 500;
 }

@@ -13,8 +13,10 @@ import { DeployFunction } from 'hardhat-deploy/types';
  *
  *   WALLET_SECRET           Private key of the deployer account
  *   GNOSIS_RPC_URL          Gnosis RPC (e.g. https://rpc.gnosischain.com)
- *   GNOSIS_STAMPS_REGISTRY  Address of the deployed StampsRegistry contract
- *                           Defaults to: 0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3
+ *   GNOSIS_STAMPS_REGISTRY  Legacy StampsRegistry (V1) address the router was
+ *                           built against (`createBatchRegistry`). Defaults to
+ *                           mainnet deploy: 0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3
+ *                           Beeport’s UI uses StampsRegistryV2 separately — do not confuse the two.
  *   MAINNET_ETHERSCAN_KEY   GnosisScan API key for contract verification
  *
  * Deploy command
@@ -34,8 +36,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   log('─────────────────────────────────────────────────────────────────');
   log('Deploying SushiSwapStampsRouter …');
 
-  // The existing StampsRegistry that the router will call after swapping BZZ.
-  // Must be the same registry the frontend uses (GNOSIS_CUSTOM_REGISTRY_ADDRESS).
+  // Legacy StampsRegistry (V1) — router constructor expects `createBatchRegistry`.
+  // Not the same contract as StampsRegistryV2 used by the Next.js app.
   const stampsRegistryAddress =
     process.env.GNOSIS_STAMPS_REGISTRY ||
     '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
@@ -118,6 +120,5 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 export default func;
 func.tags = ['SushiSwapStampsRouter', 'all'];
 
-// This deploy script depends on StampsRegistry already being deployed.
-// If you want automatic ordering, uncomment the next line:
-// func.dependencies = ['StampsRegistry'];
+// Legacy ordering hook — V1 registry deploy script was removed from this repo.
+// Router expects an already-deployed StampsRegistry at GNOSIS_STAMPS_REGISTRY.

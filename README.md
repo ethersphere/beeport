@@ -4,7 +4,20 @@
 
 Web3 will transform how the world operates, but today it still needs practical bridges for people to access it. Swarm is a leading decentralized storage solution, yet difficult for everyday users to reach. Beeport solves this by making Swarm accessible through familiar Web2 entry points—bringing the power of decentralized storage to anyone, right now.
 
-This is a [Next.js](https://nextjs.org) project that enables users to purchase BZZ tokens from any supported blockchain and upload files to the Swarm network with automatic postage stamp creation.
+This is a [Next.js](https://nextjs.org) static app that lets users buy BZZ from many chains and **upload files to Swarm with self-custody postage stamping** — chunking, BMT hashing, and stamp signing happen entirely in the browser; the Bee gateway only validates pre-stamped chunks.
+
+## Self-custody uploads (how it works)
+
+Beeport does **not** hand your files or stamp keys to a server:
+
+1. Your wallet buys a postage batch via `StampsRegistryV2` on Gnosis. The on-chain batch **owner** is a derived **hot key** (not the gateway).
+2. You sign one wallet message to derive that hot key for the session ([details](./docs/self-custody-hot-key.md)).
+3. The browser chunks the file, signs every postage stamp locally (optionally in Web Workers), and uploads to a Bee gateway over HTTP or WebSocket (`/chunks/stream` on Bee 2.8.1+).
+4. The gateway never sees the hot private key — it only checks each stamp against the on-chain owner.
+
+There is **no backend app to run** for uploads: set a Bee API URL the browser can reach (default [beeport.xyz](https://beeport.xyz/)) and the static frontend does the rest.
+
+Further reading: [Self-custody hot key](./docs/self-custody-hot-key.md) · [Client-side chunk pipeline](./docs/client-side-chunk-pipeline.md) · [Self-hosting a Bee gateway](./docs/self-hosting-bee-gateway.md)
 
 ## Getting Started
 
@@ -35,27 +48,76 @@ npx serve out
 
 - **🔗 Cross-Chain Swaps**: Buy BZZ tokens from any supported blockchain (Ethereum, Polygon, Arbitrum, etc.) using [Relay API](https://docs.relay.link/)
 - **⛽ Smart Gas Management**: Automatically checks destination chain balance and only tops up gas when needed (< 1 xDAI)
-- **📁 File Upload**: Upload single files, multiple files, or entire NFT collections to Swarm
-- **🏷️ Automatic Stamps**: Creates postage stamps automatically with optimal batch sizes
+- **📁 File Upload**: Upload single files, folders, multiple files, or NFT collections — stamped and chunked in the browser
+- **🔐 Self-custody stamps**: Hot key owns the batch on-chain; gateway validates, never holds your stamp key
+- **🏷️ Postage batches**: Buy or top up storage via wallet + `StampsRegistryV2`
 - **🌐 ENS Integration**: Link your ENS domains to Swarm content for human-readable access
-- **📊 Upload History**: Track all your uploads with file sizes and timestamps
+- **📊 Files**: Track all your uploads with file sizes and timestamps
 - **💰 Cost Optimization**: Infinite approvals and smart gas top-ups minimize transaction costs
 
 ## How to run locally
 
-First install swarm desktop and run it or install and run bee node locally
-Set the BEE API URL to http://localhost:1633
+By default the app targets the public gateway **[beeport.xyz](https://beeport.xyz/)**
+(`DEFAULT_BEE_API_URL`). To use Swarm Desktop or a standalone Bee node on your
+machine, set the **Bee node URL** in the UI or via:
 
-## How to setup endpoint to serve content remotely
-
-Add the in the scripts/index.js code to the server and run it
-That will expose bee node endpoints for upload through proxy
-
-or you need a PAID plan for NGROK to run your local Node and expose it to world and then start it with this command
-
-```CLI
-ngrok http 1633 --request-header-add="ngrok-skip-browser-warning:1"
+```bash
+NEXT_PUBLIC_DEFAULT_BEE_API_URL=http://localhost:1633
 ```
+
+That's it — the browser does the BMT, postage stamping and `POST /chunks`
+itself. There is **no application server to run**.
+
+## How to expose your Bee node to the world
+
+Beeport is fully self-custody: every chunk is signed in the browser by a
+hot key registered on-chain via `StampsRegistryV2`, and Bee's
+`presignedStamper` validates each stamp directly. You only need a way for
+browsers to reach a Bee node over HTTPS.
+
+Pick whichever fits your setup:
+
+- **Production**: TLS-terminating reverse proxy (nginx, Caddy, Cloudflare,
+  etc.) in front of a Bee node, with permissive CORS for your frontend's
+  origin. A drop-in nginx config is in [`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md).
+- **Quick demo / local dev**: a paid NGROK plan to expose `localhost:1633`:
+
+  ```bash
+  ngrok http 1633 --request-header-add="ngrok-skip-browser-warning:1"
+  ```
+
+The legacy Express signature-checking proxy is gone — see
+[`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md) for the rationale and nginx setup.
+
+## Upload speed: server settings for DevOps
+
+The app sends the chunks of a file to the Bee node. A chunk is a 4 KB piece of a file. The app uses one of two methods:
+
+- **HTTP:** the app sends one request for each chunk. It uses this method for files smaller than 50 MB.
+- **WebSocket:** a WebSocket is a connection that stays open. The app sends many chunks on each connection. It uses this method for files of 50 MB or more.
+
+The upload window shows `WebSocket ×N`. N is the number of open WebSocket connections. The app opens the first connection, then the others in the background. N grows during the first seconds of an upload. The maximum is 32.
+
+Check these settings on the server:
+
+1. Use Bee 2.8.1 or later. Older versions do not have the `/chunks/stream` endpoint.
+2. Make the reverse proxy (the server in front of the Bee node) pass the WebSocket upgrade. For nginx, see the WebSocket section in [`docs/self-hosting-bee-gateway.md`](./docs/self-hosting-bee-gateway.md).
+3. Allow at least 40 connections from one client address. Do not set a lower nginx `limit_conn`.
+4. Set `worker_connections` and `worker_rlimit_nofile` high enough. Each open WebSocket uses two connections in nginx. One browser tab can use 64.
+5. Enable HTTP/2 for the HTTP method. The same document has the steps.
+6. Check the endpoint with `npx wscat -c wss://your-host/chunks/stream`. The command must print `Connected`.
+
+The app uses HTTP if the first WebSocket connection fails. The upload still works, but it is slower.
+
+These variables are fixed when you build the app. A change needs a new build.
+
+| Variable | Default | Effect |
+| -------- | ------- | ------ |
+| `NEXT_PUBLIC_CHUNK_STREAM_SOCKETS` | `32` | Number of WebSocket connections for each upload (1 to 32) |
+| `NEXT_PUBLIC_AUTO_CHUNK_STREAM_MIN_MB` | `50` | Smallest file size in MB that uses WebSocket |
+| `NEXT_PUBLIC_PREFER_CHUNK_STREAM` | `true` | Set to `false` to use HTTP for all files |
+
+The maximum is 32 connections, with up to 16 chunks without an answer on each. Tests showed no gain above these values. See [`docs/chunk-transport-http-vs-websocket.md`](./docs/chunk-transport-http-vs-websocket.md).
 
 ## How to EXPORT this app
 

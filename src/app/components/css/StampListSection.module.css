@@ -223,12 +223,304 @@
   border: 1px solid #30363d;
 }
 
+.usageWrapper {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #8b949e;
+}
+
+.usageRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+}
+
+.usageLabel {
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
+.usageDetail {
+  color: #8b949e;
+}
+
+.usageCorruptBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  background-color: rgba(229, 83, 75, 0.12);
+  color: #ff8a82;
+  border: 1px solid rgba(229, 83, 75, 0.4);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: help;
+}
+
+.usageCorruptDetail {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.usageResetButton {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(229, 83, 75, 0.5);
+  color: #ff8a82;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.usageResetButton:hover {
+  background: rgba(229, 83, 75, 0.12);
+}
+
+.usageBarContainer {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(48, 54, 61, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.usageBar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.usageBarOk {
+  background-color: #2ea043;
+}
+
+.usageBarWarn {
+  background-color: #d4a11a;
+}
+
+.usageBarDanger {
+  background-color: #f85149;
+}
+
+.usageStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.usageStatusDot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.usageStatusTitle {
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
+.usageStatusText {
+  flex-basis: 100%;
+  padding-left: 16px;
+  color: #8b949e;
+}
+
+.bucketStatsWrap {
+  margin-top: 10px;
+}
+
+.bucketStatsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(48, 54, 61, 0.4);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.bucketStatsToggle:hover {
+  background: rgba(48, 54, 61, 0.65);
+  border-color: #6e7681;
+  color: #c9d1d9;
+}
+
+.bucketStatsChevron {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  color: #6e7681;
+  font-size: 10px;
+}
+
+.bucketStatsPanel {
+  margin-top: 10px;
+  padding: 12px;
+  background: rgba(22, 27, 34, 0.85);
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.bucketWorstSection {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.bucketWorstLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-size: 13px;
+  color: #c9d1d9;
+}
+
+.bucketWorstLabel {
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.bucketWorstValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #f0f6fc;
+}
+
+.bucketWorstHint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.35;
+}
+
+.bucketStatsMuted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8b949e;
+}
+
+.bucketStatsFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.bucketStatsFooter .bucketStatsMuted {
+  flex: 1 1 160px;
+}
+
+.bucketStatsCaption {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #6e7681;
+}
+
+.bucketStack {
+  display: flex;
+  height: 14px;
+  gap: 2px;
+  margin: 12px 0 10px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(48, 54, 61, 0.45);
+}
+
+.bucketStackSeg {
+  flex-basis: 0;
+  flex-shrink: 0;
+  min-width: 3px;
+}
+
+.bucketLegend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bucketLegendItem {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  font-size: 12px;
+}
+
+.bucketLegendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.bucketLegendLabel {
+  color: #8b949e;
+}
+
+.bucketLegendCount {
+  font-variant-numeric: tabular-nums;
+  color: #c9d1d9;
+  text-align: right;
+}
+
+.bucketHistPct {
+  color: #6e7681;
+  font-size: 10px;
+}
+
+.usageUnknown {
+  color: #8b949e;
+  font-style: italic;
+  cursor: help;
+}
+
 .stampActions {
   display: flex;
   flex-direction: row;
   align-items: center;
   margin-top: 12px;
   gap: 10px;
+}
+
+.selfCustodyBadge.expiredBadge {
+  background-color: rgba(248, 81, 73, 0.12);
+  color: #ff8a82;
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
+.selfCustodyBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background-color: rgba(255, 122, 0, 0.12);
+  color: #ff9d3f;
+  border: 1px solid rgba(255, 122, 0, 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: help;
 }
 
 .uploadWithStampButton {

@@ -33,8 +33,12 @@ const config: HardhatUserConfig = {
       accounts: [PRIVATE_KEY],
       chainId: 100,
       verify: {
+        // Etherscan v2 unified endpoint — the legacy `https://api.gnosisscan.io`
+        // (v1) is deprecated as of 2025. The unified v2 API takes a single
+        // Etherscan API key across all supported chains and selects the chain
+        // via `?chainid=`. See https://docs.etherscan.io/v2-migration.
         etherscan: {
-          apiUrl: "https://api.gnosisscan.io",
+          apiUrl: "https://api.etherscan.io/v2/api?chainid=100",
           apiKey: GNOSIS_API_KEY,
         },
       },
@@ -49,7 +53,10 @@ const config: HardhatUserConfig = {
         network: "gnosis",
         chainId: 100,
         urls: {
-          apiURL: "https://api.gnosisscan.io/api",
+          // Etherscan v2 unified endpoint (see comment on networks.gnosis.verify
+          // above). browserURL stays gnosisscan.io — the v2 API just gates which
+          // explorer's database we read/write.
+          apiURL: "https://api.etherscan.io/v2/api?chainid=100",
           browserURL: "https://gnosisscan.io",
         },
       },

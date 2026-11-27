@@ -8,16 +8,13 @@ export type ExecutionStatus = {
   reference?: string;
   filename?: string;
   warning?: string;
+  /** Set when the user may choose to ignore one unreadable stamp backup. */
+  ignoreBackup?: { batchId: string; index: number };
 };
 
 export type UploadStep = 'idle' | 'ready' | 'uploading' | 'complete';
 
 export type SwarmConfigType = {
-  toChain: number;
-  swarmPostageStampAddress: string;
-  swarmToken: string;
-  swarmContractGasLimit: string;
-  swarmContractAbi: string[];
   swarmBatchInitialBalance: string;
   swarmBatchDepth: string;
   swarmBatchBucketDepth: string;
@@ -31,36 +28,6 @@ export type StorageOption = {
   size: string;
 };
 
-export interface GetGnosisQuoteParams {
-  gnosisSourceToken: string;
-  address: string;
-  bzzAmount: string;
-  nodeAddress: string;
-  swarmConfig: any;
-  setEstimatedTime?: (time: number) => void;
-  topUpBatchId?: string;
-}
-
-export interface GetCrossChainQuoteParams {
-  selectedChainId: number;
-  fromToken: string;
-  address: string;
-  toAmount: string;
-  gnosisDestinationToken: string;
-  setEstimatedTime?: (time: number) => void;
-}
-
-// LiFi SDK interfaces
-export interface ToAmountQuoteParams {
-  fromChain: string | number;
-  toChain: string | number;
-  fromToken: string;
-  toToken: string;
-  fromAddress: string;
-  toAddress?: string;
-  toAmount: string | number;
-}
-
 export interface TokenInfo {
   address: string;
   chainId: number;
@@ -72,114 +39,23 @@ export interface TokenInfo {
   priceUSD?: string;
 }
 
-export interface ToolDetails {
-  key: string;
-  name: string;
-  logoURI: string;
-}
-
-export interface FeeCost {
-  name: string;
-  description: string;
-  token: TokenInfo;
-  amount: string;
-  amountUSD: string;
-  percentage?: string;
-  included?: boolean;
-}
-
-export interface GasCost {
-  type: string;
-  price: string;
-  estimate: string;
-  limit: string;
-  amount: string;
-  amountUSD: string;
-  token: TokenInfo;
-}
-
-export interface TransactionRequest {
-  value: string;
-  to: string;
-  data: string;
-  from: string;
-  chainId: number;
-  gasPrice: string;
-  gasLimit: string;
-}
-
 export interface StampInfo {
   batchID: string;
   utilization: number;
+  /** Bee v2.8.1 fractional fullness in `[0, 1]` when returned by `/stamps`. */
+  utilizationRatio?: number;
   usable: boolean;
   depth: number;
   amount: string;
   bucketDepth: number;
   exists: boolean;
   batchTTL: number;
+  /** Local-only label from `PATCH /stamps/{id}` when the node owns the batch. */
+  label?: string;
   // Additional properties for UI display
   totalSize?: string;
   usedSize?: string;
   remainingSize?: string;
   utilizationPercent?: number;
   createdDate?: string;
-}
-
-export interface IncludedStep {
-  id: string;
-  type: string;
-  action: {
-    fromChainId: number;
-    fromAmount: string;
-    fromToken: TokenInfo;
-    toChainId: number;
-    toToken: TokenInfo;
-    fromAddress: string;
-    toAddress: string;
-    destinationGasConsumption?: string;
-  };
-  estimate: {
-    tool: string;
-    fromAmount: string;
-    toAmount: string;
-    toAmountMin: string;
-    gasCosts: GasCost[];
-    executionDuration: number;
-    approvalAddress: string;
-    feeCosts: FeeCost[];
-  };
-  tool: string;
-  toolDetails: ToolDetails;
-}
-
-export interface ToAmountQuoteResponse {
-  type: string;
-  id: string;
-  tool: string;
-  toolDetails: ToolDetails;
-  action: {
-    fromToken: TokenInfo;
-    fromAmount: string;
-    toToken: TokenInfo;
-    fromChainId: number;
-    toChainId: number;
-    slippage: number;
-    fromAddress: string;
-    toAddress: string;
-  };
-  estimate: {
-    tool: string;
-    approvalAddress: string;
-    toAmountMin: string;
-    toAmount: string;
-    fromAmount: string;
-    feeCosts: FeeCost[];
-    gasCosts: GasCost[];
-    executionDuration: number;
-    fromAmountUSD?: string;
-    toAmountUSD?: string;
-  };
-  includedSteps: IncludedStep[];
-  integrator: string;
-  transactionRequest: TransactionRequest;
 }

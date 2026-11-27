@@ -1,0 +1,613 @@
+{
+  "address": "0xA1a108E50FdB1aE7848a78577a37f7Bb8F27232f",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "postageStamp",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "bzz",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "ApprovalFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidHotKey",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidWallet",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotWallet",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransferFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "UnknownBatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ZeroAmount",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "hotKeyOwner",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "depth",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "bucketDepth",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "immutable_",
+          "type": "bool"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "nonce",
+          "type": "bytes32"
+        }
+      ],
+      "name": "BatchCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "newDepth",
+          "type": "uint8"
+        }
+      ],
+      "name": "BatchDepthIncreased",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "perChunkAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "BatchToppedUp",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "BZZ",
+      "outputs": [
+        {
+          "internalType": "contract IERC20",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "POSTAGE_STAMP",
+      "outputs": [
+        {
+          "internalType": "contract ISwarmContract",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "batchAttribution",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "hotKeyOwner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint96",
+          "name": "createdAt",
+          "type": "uint96"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "hotKeyOwner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "initialBalancePerChunk",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "depth",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint8",
+          "name": "bucketDepth",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "nonce",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bool",
+          "name": "immutable_",
+          "type": "bool"
+        }
+      ],
+      "name": "createSelfCustodyBatch",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "getWalletBatchAt",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        }
+      ],
+      "name": "getWalletBatchCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        }
+      ],
+      "name": "getWalletBatchIds",
+      "outputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "",
+          "type": "bytes32[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint8",
+          "name": "newDepth",
+          "type": "uint8"
+        }
+      ],
+      "name": "increaseBatchDepth",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "nonce",
+          "type": "bytes32"
+        }
+      ],
+      "name": "predictBatchId",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "perChunkAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "topUpBatch",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "transactionHash": "0xb6c69bd668df610cf326b47d0d300fdfcb599e6f431184f46c453ff54ccd5d70",
+  "receipt": {
+    "to": null,
+    "from": "0xb1C7F17Ed88189Abf269Bf68A3B2Ed83C5276aAe",
+    "contractAddress": "0xA1a108E50FdB1aE7848a78577a37f7Bb8F27232f",
+    "transactionIndex": 20,
+    "gasUsed": "732529",
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "blockHash": "0x6fa02af6444f3c4385f98fd8fbafbee5a637646d0d23890bdebe7f8d670d3770",
+    "transactionHash": "0xb6c69bd668df610cf326b47d0d300fdfcb599e6f431184f46c453ff54ccd5d70",
+    "logs": [],
+    "blockNumber": 45970168,
+    "cumulativeGasUsed": "6120742",
+    "status": 1,
+    "byzantium": true
+  },
+  "args": [
+    "0x45a1502382541Cd610CC9068e88727426b696293",
+    "0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da"
+  ],
+  "numDeployments": 1,
+  "solcInputHash": "2f0f51171319d41ca8809eccac0ce5a1",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.23+commit.f704f362\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"postageStamp\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"bzz\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[],\"name\":\"ApprovalFailed\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"InvalidHotKey\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"InvalidWallet\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"NotWallet\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"TransferFailed\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"UnknownBatch\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ZeroAmount\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"hotKeyOwner\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"totalAmount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint8\",\"name\":\"depth\",\"type\":\"uint8\"},{\"indexed\":false,\"internalType\":\"uint8\",\"name\":\"bucketDepth\",\"type\":\"uint8\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"immutable_\",\"type\":\"bool\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"nonce\",\"type\":\"bytes32\"}],\"name\":\"BatchCreated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint8\",\"name\":\"newDepth\",\"type\":\"uint8\"}],\"name\":\"BatchDepthIncreased\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"payer\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"totalAmount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"perChunkAmount\",\"type\":\"uint256\"}],\"name\":\"BatchToppedUp\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"BZZ\",\"outputs\":[{\"internalType\":\"contract IERC20\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"POSTAGE_STAMP\",\"outputs\":[{\"internalType\":\"contract ISwarmContract\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"name\":\"batchAttribution\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"hotKeyOwner\",\"type\":\"address\"},{\"internalType\":\"uint96\",\"name\":\"createdAt\",\"type\":\"uint96\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"hotKeyOwner\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"initialBalancePerChunk\",\"type\":\"uint256\"},{\"internalType\":\"uint8\",\"name\":\"depth\",\"type\":\"uint8\"},{\"internalType\":\"uint8\",\"name\":\"bucketDepth\",\"type\":\"uint8\"},{\"internalType\":\"bytes32\",\"name\":\"nonce\",\"type\":\"bytes32\"},{\"internalType\":\"bool\",\"name\":\"immutable_\",\"type\":\"bool\"}],\"name\":\"createSelfCustodyBatch\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"getWalletBatchAt\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"}],\"name\":\"getWalletBatchCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"wallet\",\"type\":\"address\"}],\"name\":\"getWalletBatchIds\",\"outputs\":[{\"internalType\":\"bytes32[]\",\"name\":\"\",\"type\":\"bytes32[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"},{\"internalType\":\"uint8\",\"name\":\"newDepth\",\"type\":\"uint8\"}],\"name\":\"increaseBatchDepth\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"nonce\",\"type\":\"bytes32\"}],\"name\":\"predictBatchId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"batchId\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"perChunkAmount\",\"type\":\"uint256\"}],\"name\":\"topUpBatch\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}],\"devdoc\":{\"events\":{\"BatchCreated(bytes32,address,address,uint256,uint8,uint8,bool,bytes32)\":{\"params\":{\"batchId\":\"keccak256(abi.encode(address(this), nonce))\",\"bucketDepth\":\"Stamp bucket depth (passed through).\",\"depth\":\"Stamp depth (passed through to Postage Stamp).\",\"hotKeyOwner\":\"On-chain `_owner` set on the Postage Stamp contract.\",\"immutable_\":\"Whether the batch is immutable (passed through).\",\"nonce\":\"The nonce used to derive `batchId`.\",\"totalAmount\":\"Total BZZ paid (initialBalancePerChunk * 2**depth).\",\"wallet\":\"Logical \\\"user\\\" address; how the UI lists this batch.\"}}},\"kind\":\"dev\",\"methods\":{\"constructor\":{\"params\":{\"bzz\":\"BZZ token contract address.\",\"postageStamp\":\"Upstream Swarm Postage Stamp contract address.\"}},\"createSelfCustodyBatch(address,address,uint256,uint8,uint8,bytes32,bool)\":{\"details\":\"Trust model      - `msg.sender` is whoever pays the BZZ (a user EOA, or an        aggregator's multicaller after a cross-chain swap fills BZZ to it).      - `wallet` is whatever address the UI wants this batch listed under.        It is unauthenticated by design \\u2014 anyone can call this with any        `wallet` value. The worst a third party can do by spamming        someone else's `wallet` is gift them a batch they don't actually        own (the on-chain owner is still the spammer's `hotKeyOwner`).        UIs SHOULD show enumeration entries that don't match a known        local hot key as \\\"external\\\" or hide them.      - `hotKeyOwner` is the actual non-custodial owner. This contract        never receives or stores its private key.\",\"params\":{\"bucketDepth\":\"Bucket depth (typically 16 for Bee).\",\"depth\":\"Batch depth.\",\"hotKeyOwner\":\"On-chain `_owner` for the new batch.\",\"immutable_\":\"Whether the batch is immutable.\",\"initialBalancePerChunk\":\"Per-chunk balance (PLUR).\",\"nonce\":\"Salt used to derive `batchId` (must be unique                              per registry; collision = revert from upstream).\",\"wallet\":\"The UI-side \\\"user\\\" address. May equal `msg.sender`                              in direct calls, or differ in aggregator flows.\"},\"returns\":{\"batchId\":\"             keccak256(abi.encode(address(this), nonce)).\"}},\"increaseBatchDepth(bytes32,uint8)\":{\"details\":\"`increaseDepth` on Postage Stamp does not require additional BZZ      payment; it only changes the bucketing semantics of future      stamps. Authorisation by the original payer wallet is the natural      policy here.\"},\"predictBatchId(bytes32)\":{\"details\":\"`keccak256(abi.encode(address(this), nonce))` mirrors the Postage      Stamp contract's own `batchId` derivation when `msg.sender` is      this registry.\"},\"topUpBatch(bytes32,uint256)\":{\"details\":\"Depth is read live from upstream Postage Stamp rather than a      mirrored field, so this works correctly across `increaseDepth`      operations performed in-between.\",\"params\":{\"batchId\":\"Batch to top up. Must have been created via this                         registry (i.e. have an attribution entry).\",\"perChunkAmount\":\"Per-chunk top-up amount (PLUR).\"}}},\"stateVariables\":{\"_walletBatches\":{\"details\":\"wallet \\u2192 batch IDs the wallet is recorded as having paid for.\"}},\"version\":1},\"userdoc\":{\"events\":{\"BatchCreated(bytes32,address,address,uint256,uint8,uint8,bool,bytes32)\":{\"notice\":\"Emitted when a self-custody batch is created via this registry.\"},\"BatchDepthIncreased(bytes32,address,uint8)\":{\"notice\":\"Emitted when a batch's depth is increased via this registry.         Gated to the original `wallet` (see {increaseBatchDepth}).\"},\"BatchToppedUp(bytes32,address,address,uint256,uint256)\":{\"notice\":\"Emitted when a batch is topped up via this registry. Permissionless:         anyone can top up any batch known to this registry.\"}},\"kind\":\"user\",\"methods\":{\"BZZ()\":{\"notice\":\"BZZ token used to pay for stamps. Set at construction; cannot         change for the lifetime of this registry.\"},\"POSTAGE_STAMP()\":{\"notice\":\"Upstream Swarm Postage Stamp contract on Gnosis Chain.\"},\"batchAttribution(bytes32)\":{\"notice\":\"batchId \\u2192 attribution metadata. Empty for batches not created         through this registry (e.g. created directly on Postage Stamp         by an earlier client version).\"},\"createSelfCustodyBatch(address,address,uint256,uint8,uint8,bytes32,bool)\":{\"notice\":\"Create a self-custody postage batch.         BZZ flow:  msg.sender \\u2192 this contract \\u2192 Postage Stamp.         The caller MUST have approved this contract for at least         `initialBalancePerChunk * 2**depth` BZZ before calling.         The on-chain `_owner` set on Postage Stamp is `hotKeyOwner`,         NOT `msg.sender`. Only the holder of `hotKeyOwner`'s private         key can sign valid postage stamps for this batch.\"},\"getWalletBatchAt(address,uint256)\":{\"notice\":\"Read a single batch ID from `wallet`'s list by index.         Reverts if `index` is out of range.\"},\"getWalletBatchCount(address)\":{\"notice\":\"Number of batches recorded under `wallet`.\"},\"getWalletBatchIds(address)\":{\"notice\":\"All batch IDs recorded under `wallet`. Newest entries are at the         end of the array (push order). Use {getWalletBatchCount} for         pagination.\"},\"increaseBatchDepth(bytes32,uint8)\":{\"notice\":\"Increase depth on an existing batch. Gated to the wallet that         originally created the batch via this registry \\u2014 random callers         cannot force a depth bump.\"},\"predictBatchId(bytes32)\":{\"notice\":\"Compute the batch ID a future call to {createSelfCustodyBatch}         with the given `nonce` would produce. Useful to the UI to         pre-compute the batch ID for receipts and downstream calls         (top-up, attribution checks) before the on-chain tx lands.\"},\"topUpBatch(bytes32,uint256)\":{\"notice\":\"Top up an existing batch known to this registry. Permissionless:         anyone may top up on the original wallet's behalf.\"}},\"version\":1}},\"settings\":{\"compilationTarget\":{\"contracts/StampsRegistryV2.sol\":\"StampsRegistryV2\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\",\"useLiteralContent\":true},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[],\"viaIR\":true},\"sources\":{\"contracts/StampsRegistryV2.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity ^0.8.23;\\n\\n/*\\n    \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2557   \\u2588\\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\n    \\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u2550\\u255d\\u255a\\u2550\\u2550\\u2588\\u2588\\u2554\\u2550\\u2550\\u255d\\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2588\\u2551\\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u2550\\u255d\\n    \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2551\\u2588\\u2588\\u2554\\u2588\\u2588\\u2588\\u2588\\u2554\\u2588\\u2588\\u2551\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\n    \\u255a\\u2550\\u2550\\u2550\\u2550\\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2551\\u2588\\u2588\\u2551\\u255a\\u2588\\u2588\\u2554\\u255d\\u2588\\u2588\\u2551\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u255d \\u255a\\u2550\\u2550\\u2550\\u2550\\u2588\\u2588\\u2551\\n    \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551  \\u2588\\u2588\\u2551\\u2588\\u2588\\u2551 \\u255a\\u2550\\u255d \\u2588\\u2588\\u2551\\u2588\\u2588\\u2551     \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2551\\n    \\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d   \\u255a\\u2550\\u255d   \\u255a\\u2550\\u255d  \\u255a\\u2550\\u255d\\u255a\\u2550\\u255d     \\u255a\\u2550\\u255d\\u255a\\u2550\\u255d     \\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d\\n\\n    \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2557   \\u2588\\u2588\\u2557    \\u2588\\u2588\\u2557   \\u2588\\u2588\\u2557\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\n    \\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u2550\\u255d\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u2550\\u255d \\u2588\\u2588\\u2551\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u2550\\u255d\\u255a\\u2550\\u2550\\u2588\\u2588\\u2554\\u2550\\u2550\\u255d\\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557\\u255a\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2554\\u255d    \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551\\u255a\\u2550\\u2550\\u2550\\u2550\\u2588\\u2588\\u2557\\n    \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557  \\u2588\\u2588\\u2551  \\u2588\\u2588\\u2588\\u2557\\u2588\\u2588\\u2551\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d \\u255a\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d     \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551 \\u2588\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d\\n    \\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557\\u2588\\u2588\\u2554\\u2550\\u2550\\u255d  \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551\\u2588\\u2588\\u2551\\u255a\\u2550\\u2550\\u2550\\u2550\\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2554\\u2550\\u2550\\u2588\\u2588\\u2557  \\u255a\\u2588\\u2588\\u2554\\u255d      \\u255a\\u2588\\u2588\\u2557 \\u2588\\u2588\\u2554\\u255d\\u2588\\u2588\\u2554\\u2550\\u2550\\u2550\\u255d\\n    \\u2588\\u2588\\u2551  \\u2588\\u2588\\u2551\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\u255a\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d\\u2588\\u2588\\u2551\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551  \\u2588\\u2588\\u2551   \\u2588\\u2588\\u2551        \\u255a\\u2588\\u2588\\u2588\\u2588\\u2554\\u255d \\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2588\\u2557\\n    \\u255a\\u2550\\u255d  \\u255a\\u2550\\u255d\\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d \\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d \\u255a\\u2550\\u255d\\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d   \\u255a\\u2550\\u255d   \\u255a\\u2550\\u255d  \\u255a\\u2550\\u255d   \\u255a\\u2550\\u255d         \\u255a\\u2550\\u2550\\u2550\\u255d  \\u255a\\u2550\\u2550\\u2550\\u2550\\u2550\\u2550\\u255d\\n*/\\n\\n/**\\n * @title  StampsRegistryV2\\n * @notice Thin, self-custody-aware proxy over the upstream Swarm Postage Stamp\\n *         contract.\\n *\\n * @dev Why this exists\\n * ------------------------------------------------------------------------------\\n * The upstream Postage Stamp contract derives `batchId` as\\n *     batchId = keccak256(abi.encode(msg.sender, nonce))\\n *\\n * which means whoever calls `createBatch` is baked into the batch ID. Two\\n * concrete UX consequences this contract exists to fix:\\n *\\n *  1. A user wallet calling `createBatch` directly produces an unpredictable\\n *     batch ID *from the perspective of any aggregator that wants to bundle\\n *     the call into a multicaller transaction* (e.g. Relay's `txs` post-action\\n *     after a cross-chain swap). The aggregator's executor \\u2014 not the user \\u2014\\n *     ends up as `msg.sender`, so the batch ID we compute client-side from\\n *     `(walletAddress, nonce)` no longer matches the on-chain ID, breaking\\n *     top-up and lookup flows.\\n *\\n *  2. The user's wallet has to sign two more transactions on Gnosis after the\\n *     bridge completes (`approve` BZZ + `createBatch`). With this contract the\\n *     entire \\\"bridge \\u2192 buy stamp\\\" path can be expressed as a single Relay\\n *     `txs` action, restoring the one-signature UX of the legacy custodial\\n *     flow without giving up self-custody of the on-chain `_owner` key.\\n *\\n * Because all interactions with Postage Stamp go through this contract,\\n * `msg.sender` to Postage Stamp is always `address(this)`, so:\\n *\\n *     batchId = keccak256(abi.encode(address(this), nonce))\\n *\\n * is computable client-side before any tx is broadcast \\u2014 both for direct EOA\\n * callers and for aggregator-multicaller callers.\\n *\\n * @dev What this contract does NOT do\\n * ------------------------------------------------------------------------------\\n *  - It does NOT mirror per-batch state (depth, bucketDepth, normalisedBalance,\\n *    immutable flag, owner, ttl). All of that is queryable live from the\\n *    upstream Postage Stamp contract via {ISwarmContract}'s view methods.\\n *    The previous {StampsRegistry} duplicated this state and paid SSTORE costs\\n *    on every mutation; this version doesn't.\\n *  - It does NOT have an admin, an upgrade path, or any way to point at a\\n *    different Postage Stamp / BZZ address after deployment. The two upstream\\n *    addresses are `immutable`. If the upstream Postage Stamp contract is ever\\n *    redeployed, deploy a fresh `StampsRegistryV2` against it.\\n *\\n * @dev Self-custody integration (SWIP \\u2014 Client-side postage stamping, mode \\u03b1)\\n * ------------------------------------------------------------------------------\\n * The on-chain `_owner` of every batch created here is `hotKeyOwner`, an\\n * address derived locally by the user's browser tab (per the SWIP). The\\n * registry never sees the hot key's private material, never signs stamps, and\\n * cannot mint stamps for the batch. It only forwards the on-chain createBatch\\n * call so that `_owner` lands as the hot key on Postage Stamp.\\n *\\n * The `wallet` parameter on `createSelfCustodyBatch` is the address the UI\\n * uses to enumerate batches under \\\"Your Stamps\\\". It is intentionally separate\\n * from `msg.sender` (which may be an aggregator multicaller) and from\\n * `hotKeyOwner` (which is a session/derivation key).\\n *\\n * @dev Naming\\n * ------------------------------------------------------------------------------\\n * \\\"Batch\\\" and \\\"Stamps\\\" are used interchangeably; \\\"Batch\\\" is the Swarm protocol\\n * term, \\\"Stamps\\\" is the user-friendly synonym (`StampsRegistryV2` \\u2014\\n * `BatchCreated` event).\\n */\\n\\ninterface ISwarmContract {\\n    function createBatch(\\n        address _owner,\\n        uint256 _initialBalancePerChunk,\\n        uint8 _depth,\\n        uint8 _bucketDepth,\\n        bytes32 _nonce,\\n        bool _immutable\\n    ) external;\\n\\n    function topUp(bytes32 _batchId, uint256 _topupAmountPerChunk) external;\\n\\n    function increaseDepth(bytes32 _batchId, uint8 _newDepth) external;\\n\\n    function batchOwner(bytes32 _batchId) external view returns (address);\\n\\n    function batchDepth(bytes32 _batchId) external view returns (uint8);\\n\\n    function batchBucketDepth(bytes32 _batchId) external view returns (uint8);\\n\\n    function batchImmutableFlag(bytes32 _batchId) external view returns (bool);\\n\\n    function batchNormalisedBalance(bytes32 _batchId) external view returns (uint256);\\n}\\n\\ninterface IERC20 {\\n    function transferFrom(address from, address to, uint256 amount) external returns (bool);\\n\\n    function approve(address spender, uint256 amount) external returns (bool);\\n}\\n\\ncontract StampsRegistryV2 {\\n    // \\u2500\\u2500\\u2500 Constants / immutables \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\n    /// @notice Upstream Swarm Postage Stamp contract on Gnosis Chain.\\n    ISwarmContract public immutable POSTAGE_STAMP;\\n\\n    /// @notice BZZ token used to pay for stamps. Set at construction; cannot\\n    ///         change for the lifetime of this registry.\\n    IERC20 public immutable BZZ;\\n\\n    // \\u2500\\u2500\\u2500 Storage (intentionally minimal) \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\n    /**\\n     * @dev Per-batch attribution: which user wallet \\\"owns\\\" the batch in the\\n     *      UI sense, and which hot key was set as on-chain owner. We only\\n     *      record what the upstream Postage Stamp contract does NOT make easy\\n     *      to discover \\u2014 everything else is read live via {ISwarmContract}.\\n     *\\n     *      `createdAt` is packed into 96 bits so the struct fits a single\\n     *      storage slot together with two addresses (160 + 160 + 96 = 416 bits\\n     *      \\u2192 2 slots is unavoidable; the pack is a nicety, not a saving).\\n     */\\n    struct Attribution {\\n        address wallet;\\n        address hotKeyOwner;\\n        uint96 createdAt;\\n    }\\n\\n    /// @dev wallet \\u2192 batch IDs the wallet is recorded as having paid for.\\n    mapping(address => bytes32[]) private _walletBatches;\\n\\n    /// @notice batchId \\u2192 attribution metadata. Empty for batches not created\\n    ///         through this registry (e.g. created directly on Postage Stamp\\n    ///         by an earlier client version).\\n    mapping(bytes32 => Attribution) public batchAttribution;\\n\\n    // \\u2500\\u2500\\u2500 Events \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\n    /**\\n     * @notice Emitted when a self-custody batch is created via this registry.\\n     *\\n     * @param batchId       keccak256(abi.encode(address(this), nonce))\\n     * @param wallet        Logical \\\"user\\\" address; how the UI lists this batch.\\n     * @param hotKeyOwner   On-chain `_owner` set on the Postage Stamp contract.\\n     * @param totalAmount   Total BZZ paid (initialBalancePerChunk * 2**depth).\\n     * @param depth         Stamp depth (passed through to Postage Stamp).\\n     * @param bucketDepth   Stamp bucket depth (passed through).\\n     * @param immutable_    Whether the batch is immutable (passed through).\\n     * @param nonce         The nonce used to derive `batchId`.\\n     */\\n    event BatchCreated(\\n        bytes32 indexed batchId,\\n        address indexed wallet,\\n        address indexed hotKeyOwner,\\n        uint256 totalAmount,\\n        uint8 depth,\\n        uint8 bucketDepth,\\n        bool immutable_,\\n        bytes32 nonce\\n    );\\n\\n    /**\\n     * @notice Emitted when a batch is topped up via this registry. Permissionless:\\n     *         anyone can top up any batch known to this registry.\\n     */\\n    event BatchToppedUp(\\n        bytes32 indexed batchId,\\n        address indexed wallet,\\n        address indexed payer,\\n        uint256 totalAmount,\\n        uint256 perChunkAmount\\n    );\\n\\n    /**\\n     * @notice Emitted when a batch's depth is increased via this registry.\\n     *         Gated to the original `wallet` (see {increaseBatchDepth}).\\n     */\\n    event BatchDepthIncreased(\\n        bytes32 indexed batchId,\\n        address indexed wallet,\\n        uint8 newDepth\\n    );\\n\\n    // \\u2500\\u2500\\u2500 Errors \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\n    error TransferFailed();\\n    error ApprovalFailed();\\n    error UnknownBatch();\\n    error NotWallet();\\n    error InvalidWallet();\\n    error InvalidHotKey();\\n    error ZeroAmount();\\n\\n    // \\u2500\\u2500\\u2500 Constructor \\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\n    /**\\n     * @param postageStamp Upstream Swarm Postage Stamp contract address.\\n     * @param bzz          BZZ token contract address.\\n     */\\n    constructor(address postageStamp, address bzz) {\\n        require(postageStamp != address(0), \\\"postageStamp = 0\\\");\\n        require(bzz != address(0), \\\"bzz = 0\\\");\\n        POSTAGE_STAMP = ISwarmContract(postageStamp);\\n        BZZ = IERC20(bzz);\\n    }\\n\\n    ////////////////////////////////////////\\n    //              ACTIONS               //\\n    ////////////////////////////////////////\\n\\n    /**\\n     * @notice Create a self-custody postage batch.\\n     *\\n     *         BZZ flow:  msg.sender \\u2192 this contract \\u2192 Postage Stamp.\\n     *         The caller MUST have approved this contract for at least\\n     *         `initialBalancePerChunk * 2**depth` BZZ before calling.\\n     *\\n     *         The on-chain `_owner` set on Postage Stamp is `hotKeyOwner`,\\n     *         NOT `msg.sender`. Only the holder of `hotKeyOwner`'s private\\n     *         key can sign valid postage stamps for this batch.\\n     *\\n     * @dev Trust model\\n     *      - `msg.sender` is whoever pays the BZZ (a user EOA, or an\\n     *        aggregator's multicaller after a cross-chain swap fills BZZ to it).\\n     *      - `wallet` is whatever address the UI wants this batch listed under.\\n     *        It is unauthenticated by design \\u2014 anyone can call this with any\\n     *        `wallet` value. The worst a third party can do by spamming\\n     *        someone else's `wallet` is gift them a batch they don't actually\\n     *        own (the on-chain owner is still the spammer's `hotKeyOwner`).\\n     *        UIs SHOULD show enumeration entries that don't match a known\\n     *        local hot key as \\\"external\\\" or hide them.\\n     *      - `hotKeyOwner` is the actual non-custodial owner. This contract\\n     *        never receives or stores its private key.\\n     *\\n     * @param wallet                The UI-side \\\"user\\\" address. May equal `msg.sender`\\n     *                              in direct calls, or differ in aggregator flows.\\n     * @param hotKeyOwner           On-chain `_owner` for the new batch.\\n     * @param initialBalancePerChunk Per-chunk balance (PLUR).\\n     * @param depth                 Batch depth.\\n     * @param bucketDepth           Bucket depth (typically 16 for Bee).\\n     * @param nonce                 Salt used to derive `batchId` (must be unique\\n     *                              per registry; collision = revert from upstream).\\n     * @param immutable_            Whether the batch is immutable.\\n     * @return batchId              keccak256(abi.encode(address(this), nonce)).\\n     */\\n    function createSelfCustodyBatch(\\n        address wallet,\\n        address hotKeyOwner,\\n        uint256 initialBalancePerChunk,\\n        uint8 depth,\\n        uint8 bucketDepth,\\n        bytes32 nonce,\\n        bool immutable_\\n    ) external returns (bytes32 batchId) {\\n        if (wallet == address(0)) revert InvalidWallet();\\n        if (hotKeyOwner == address(0)) revert InvalidHotKey();\\n        if (initialBalancePerChunk == 0) revert ZeroAmount();\\n\\n        uint256 totalAmount = initialBalancePerChunk * (uint256(1) << depth);\\n\\n        // Pull BZZ from caller (user EOA or aggregator multicaller).\\n        if (!BZZ.transferFrom(msg.sender, address(this), totalAmount)) revert TransferFailed();\\n\\n        // Approve upstream Postage Stamp to spend exactly this batch's BZZ.\\n        // BZZ is a standard ERC20 (no USDT-style \\\"approve from non-zero\\\" quirk),\\n        // so a single approve is safe \\u2014 leftover allowance after this call is 0\\n        // because Postage Stamp pulls exactly `totalAmount` inside `createBatch`.\\n        if (!BZZ.approve(address(POSTAGE_STAMP), totalAmount)) revert ApprovalFailed();\\n\\n        POSTAGE_STAMP.createBatch(\\n            hotKeyOwner,\\n            initialBalancePerChunk,\\n            depth,\\n            bucketDepth,\\n            nonce,\\n            immutable_\\n        );\\n\\n        batchId = keccak256(abi.encode(address(this), nonce));\\n\\n        _walletBatches[wallet].push(batchId);\\n        batchAttribution[batchId] = Attribution({\\n            wallet: wallet,\\n            hotKeyOwner: hotKeyOwner,\\n            createdAt: uint96(block.timestamp)\\n        });\\n\\n        emit BatchCreated(\\n            batchId,\\n            wallet,\\n            hotKeyOwner,\\n            totalAmount,\\n            depth,\\n            bucketDepth,\\n            immutable_,\\n            nonce\\n        );\\n    }\\n\\n    /**\\n     * @notice Top up an existing batch known to this registry. Permissionless:\\n     *         anyone may top up on the original wallet's behalf.\\n     *\\n     * @dev Depth is read live from upstream Postage Stamp rather than a\\n     *      mirrored field, so this works correctly across `increaseDepth`\\n     *      operations performed in-between.\\n     *\\n     * @param batchId          Batch to top up. Must have been created via this\\n     *                         registry (i.e. have an attribution entry).\\n     * @param perChunkAmount   Per-chunk top-up amount (PLUR).\\n     */\\n    function topUpBatch(bytes32 batchId, uint256 perChunkAmount) external {\\n        Attribution memory a = batchAttribution[batchId];\\n        if (a.wallet == address(0)) revert UnknownBatch();\\n        if (perChunkAmount == 0) revert ZeroAmount();\\n\\n        uint8 depth = POSTAGE_STAMP.batchDepth(batchId);\\n        uint256 totalAmount = perChunkAmount * (uint256(1) << depth);\\n\\n        if (!BZZ.transferFrom(msg.sender, address(this), totalAmount)) revert TransferFailed();\\n        if (!BZZ.approve(address(POSTAGE_STAMP), totalAmount)) revert ApprovalFailed();\\n\\n        POSTAGE_STAMP.topUp(batchId, perChunkAmount);\\n\\n        emit BatchToppedUp(batchId, a.wallet, msg.sender, totalAmount, perChunkAmount);\\n    }\\n\\n    /**\\n     * @notice Increase depth on an existing batch. Gated to the wallet that\\n     *         originally created the batch via this registry \\u2014 random callers\\n     *         cannot force a depth bump.\\n     *\\n     * @dev `increaseDepth` on Postage Stamp does not require additional BZZ\\n     *      payment; it only changes the bucketing semantics of future\\n     *      stamps. Authorisation by the original payer wallet is the natural\\n     *      policy here.\\n     */\\n    function increaseBatchDepth(bytes32 batchId, uint8 newDepth) external {\\n        Attribution memory a = batchAttribution[batchId];\\n        if (a.wallet == address(0)) revert UnknownBatch();\\n        if (msg.sender != a.wallet) revert NotWallet();\\n\\n        POSTAGE_STAMP.increaseDepth(batchId, newDepth);\\n\\n        emit BatchDepthIncreased(batchId, a.wallet, newDepth);\\n    }\\n\\n    ////////////////////////////////////////\\n    //              GETTERS               //\\n    ////////////////////////////////////////\\n\\n    /**\\n     * @notice All batch IDs recorded under `wallet`. Newest entries are at the\\n     *         end of the array (push order). Use {getWalletBatchCount} for\\n     *         pagination.\\n     */\\n    function getWalletBatchIds(address wallet) external view returns (bytes32[] memory) {\\n        return _walletBatches[wallet];\\n    }\\n\\n    /// @notice Number of batches recorded under `wallet`.\\n    function getWalletBatchCount(address wallet) external view returns (uint256) {\\n        return _walletBatches[wallet].length;\\n    }\\n\\n    /**\\n     * @notice Read a single batch ID from `wallet`'s list by index.\\n     *         Reverts if `index` is out of range.\\n     */\\n    function getWalletBatchAt(address wallet, uint256 index) external view returns (bytes32) {\\n        bytes32[] storage list = _walletBatches[wallet];\\n        require(index < list.length, \\\"index out of range\\\");\\n        return list[index];\\n    }\\n\\n    /**\\n     * @notice Compute the batch ID a future call to {createSelfCustodyBatch}\\n     *         with the given `nonce` would produce. Useful to the UI to\\n     *         pre-compute the batch ID for receipts and downstream calls\\n     *         (top-up, attribution checks) before the on-chain tx lands.\\n     *\\n     * @dev `keccak256(abi.encode(address(this), nonce))` mirrors the Postage\\n     *      Stamp contract's own `batchId` derivation when `msg.sender` is\\n     *      this registry.\\n     */\\n    function predictBatchId(bytes32 nonce) external view returns (bytes32) {\\n        return keccak256(abi.encode(address(this), nonce));\\n    }\\n}\\n\",\"keccak256\":\"0x00f494ffedf756a950a2d2745f6b90c57a98ad250d70898e0f4d7460ca67b27f\",\"license\":\"MIT\"}},\"version\":1}",
+  "bytecode": "0x60c03461012557601f610d8d38819003918201601f19168301916001600160401b0383118484101761012a57808492604094855283398101031261012557610052602061004b83610140565b9201610140565b6001600160a01b03918216919082156100ed57169081156100be5760805260a052604051610c38908161015582396080518181816101d501528181610463015281816108880152610ae6015260a05181818161041e015281816104a7015281816109080152610aa30152f35b60405162461bcd60e51b81526020600482015260076024820152660627a7a203d20360cc1b6044820152606490fd5b60405162461bcd60e51b815260206004820152601060248201526f0706f73746167655374616d70203d20360841b6044820152606490fd5b600080fd5b634e487b7160e01b600052604160045260246000fd5b51906001600160a01b03821682036101255756fe608080604052600436101561001357600080fd5b600090813560e01c908163016a3b2514610ad2575080630e70205d14610a8d578063154936191461081f5780631d9d4ec11461078f5780632b0f8ec21461035c5780633be4b4d7146102af578063664031af1461015f5780639f35789d14610127578063a658af93146100db5763bfae85571461008f57600080fd5b346100d85760203660031901126100d8576040606091600435815260016020522060018060a01b03600181835416920154906040519283528116602083015260a01c6040820152f35b80fd5b50346100d85760203660031901126100d85760408051306020828101918252600435938301939093529061011c81606081015b03601f198101835282610b71565b519020604051908152f35b50346100d85760203660031901126100d8576020906040906001600160a01b0361014f610b15565b1681528083522054604051908152f35b50346100d85760403660031901126100d8576004356024359060ff82168092036102aa5780835260016020526040832060405161019b81610b2b565b81546001600160a01b03908116808352600190930154808216602084015260a01c60408301529115610298578181511633036102865784827f000000000000000000000000000000000000000000000000000000000000000016803b15610282578180916044604051809481936347aab79b60e01b83528a60048401528b60248401525af180156102775761025f575b50507f31eadab46bc158b91b6c9f8b126f55110b69e9486a005f9aa15410df2a9ca2f591602091511693604051908152a380f35b61026890610b5d565b61027357843861022b565b8480fd5b6040513d84823e3d90fd5b5080fd5b604051632972501560e21b8152600490fd5b60405163119a762760e01b8152600490fd5b600080fd5b50346100d857602080600319360112610282576001600160a01b036102d2610b15565b1682528181526040822060405192838383549182815201908193835284832090835b818110610348575050508461030a910385610b71565b60405193838594850191818652518092526040850193925b82811061033157505050500390f35b835185528695509381019392810192600101610322565b8254845292860192600192830192016102f4565b50346100d85760e03660031901126100d857610376610b15565b602435906001600160a01b03821682036102aa576064359160ff831683036102aa576084359060ff821682036102aa5760c435801515810361078b576001600160a01b03841615610779576001600160a01b038216156107675760443515610755576103ea600160ff87161b604435610b93565b6040516323b872dd60e01b8152336004820152306024820152604481018290529093906020816064818b6001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000165af190811561074a57889161072b575b50156107195760405163095ea7b360e01b81527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316600482018190526024820186905290602081806044810103818c7f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03165af190811561070e5789916106df575b50156106cd578088913b15610282578160ff60c48a836040519586948593635239af7160e01b855260018060a01b038d166004860152604435602486015216604484015260ff8916606484015260a435608484015289151560a48401525af18015610277576106b5575b505060408051306020820190815260a4359282019290925261056e816060810161010e565b5190206001600160a01b0386168852602088905260408820805491979190680100000000000000008210156106a15760a09360ff8a97948a60018a60209f6105de898799857ff5fd7ee2aaabc778ce313aa26fe33b2b4ca17bde510d5980d64f7e63c887cc729f9c018155610bd4565b81549060031b9084821b91600019901b19161790556040519361060085610b2b565b83808d1b03168452602060409085019184808e1b038c168352818601936bffffffffffffffffffffffff4216855281526020859052209383808d1b03905116906bffffffffffffffffffffffff8c1b918286541617855583808d1b0390511691518b1b1617910155604051998a52168b8901521660408701521515606086015260a4356080860152600180831b031694600180831b031693a4604051908152f35b634e487b7160e01b8a52604160045260248afd5b6106be90610b5d565b6106c9578638610549565b8680fd5b6040516340b27c2160e11b8152600490fd5b610701915060203d602011610707575b6106f98183610b71565b810190610bbc565b386104df565b503d6106ef565b6040513d8b823e3d90fd5b6040516312171d8360e31b8152600490fd5b610744915060203d602011610707576106f98183610b71565b3861044e565b6040513d8a823e3d90fd5b604051631f2a200560e01b8152600490fd5b60405163b5acfe3560e01b8152600490fd5b6040516323455ba160e01b8152600490fd5b8580fd5b50346100d85760403660031901126100d85760406107ab610b15565b6001600160a01b0316825260208290529020805460243591908210156107e5576020916107d791610bd4565b90546040519160031b1c8152f35b60405162461bcd60e51b8152602060048201526012602482015271696e646578206f7574206f662072616e676560701b6044820152606490fd5b50346100d85760403660031901126100d857600435602435908083526020906001825260408420926040519361085485610b2b565b80546001600160a01b039081168087526001909201548082168688015260a01c6040870152901561029857811561075557807f0000000000000000000000000000000000000000000000000000000000000000169460405163225f574760e11b815284600482015285816024818a5afa90811561074a578891610a51575b50600160ff6108e392161b84610b93565b6040516323b872dd60e01b8152336004820152306024820152604481018290529096907f000000000000000000000000000000000000000000000000000000000000000084169087816064818d865af1908115610a46578a91610a29575b50156107195760405163095ea7b360e01b81526001600160a01b038316600482015260248101899052908790829060449082908d905af190811561070e578991610a0c575b50156106cd578088913b1561028257819060446040518094819363b67644b960e01b83528a60048401528960248401525af1801561074a576109f9575b505116926040519485528401527f7220aa445c4dea1e018d6457dad6248036215ed9d099fdb17b4b13278d5f023560403394a480f35b610a0590979197610b5d565b95386109c3565b610a239150873d8911610707576106f98183610b71565b38610986565b610a409150883d8a11610707576106f98183610b71565b38610941565b6040513d8c823e3d90fd5b90508581813d8311610a86575b610a688183610b71565b81010312610a82575160ff81168103610a825760016108d2565b8780fd5b503d610a5e565b50346100d857806003193601126100d8576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b9050346102825781600319360112610282577f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b600435906001600160a01b03821682036102aa57565b6060810190811067ffffffffffffffff821117610b4757604052565b634e487b7160e01b600052604160045260246000fd5b67ffffffffffffffff8111610b4757604052565b90601f8019910116810190811067ffffffffffffffff821117610b4757604052565b81810292918115918404141715610ba657565b634e487b7160e01b600052601160045260246000fd5b908160209103126102aa575180151581036102aa5790565b8054821015610bec5760005260206000200190600090565b634e487b7160e01b600052603260045260246000fdfea26469706673582212209ae89b51dc4b386574df07e6d4c2650b391b4814f2b2f4e276d5f90f3266ef4964736f6c63430008170033",
+  "deployedBytecode": "0x608080604052600436101561001357600080fd5b600090813560e01c908163016a3b2514610ad2575080630e70205d14610a8d578063154936191461081f5780631d9d4ec11461078f5780632b0f8ec21461035c5780633be4b4d7146102af578063664031af1461015f5780639f35789d14610127578063a658af93146100db5763bfae85571461008f57600080fd5b346100d85760203660031901126100d8576040606091600435815260016020522060018060a01b03600181835416920154906040519283528116602083015260a01c6040820152f35b80fd5b50346100d85760203660031901126100d85760408051306020828101918252600435938301939093529061011c81606081015b03601f198101835282610b71565b519020604051908152f35b50346100d85760203660031901126100d8576020906040906001600160a01b0361014f610b15565b1681528083522054604051908152f35b50346100d85760403660031901126100d8576004356024359060ff82168092036102aa5780835260016020526040832060405161019b81610b2b565b81546001600160a01b03908116808352600190930154808216602084015260a01c60408301529115610298578181511633036102865784827f000000000000000000000000000000000000000000000000000000000000000016803b15610282578180916044604051809481936347aab79b60e01b83528a60048401528b60248401525af180156102775761025f575b50507f31eadab46bc158b91b6c9f8b126f55110b69e9486a005f9aa15410df2a9ca2f591602091511693604051908152a380f35b61026890610b5d565b61027357843861022b565b8480fd5b6040513d84823e3d90fd5b5080fd5b604051632972501560e21b8152600490fd5b60405163119a762760e01b8152600490fd5b600080fd5b50346100d857602080600319360112610282576001600160a01b036102d2610b15565b1682528181526040822060405192838383549182815201908193835284832090835b818110610348575050508461030a910385610b71565b60405193838594850191818652518092526040850193925b82811061033157505050500390f35b835185528695509381019392810192600101610322565b8254845292860192600192830192016102f4565b50346100d85760e03660031901126100d857610376610b15565b602435906001600160a01b03821682036102aa576064359160ff831683036102aa576084359060ff821682036102aa5760c435801515810361078b576001600160a01b03841615610779576001600160a01b038216156107675760443515610755576103ea600160ff87161b604435610b93565b6040516323b872dd60e01b8152336004820152306024820152604481018290529093906020816064818b6001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000165af190811561074a57889161072b575b50156107195760405163095ea7b360e01b81527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316600482018190526024820186905290602081806044810103818c7f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03165af190811561070e5789916106df575b50156106cd578088913b15610282578160ff60c48a836040519586948593635239af7160e01b855260018060a01b038d166004860152604435602486015216604484015260ff8916606484015260a435608484015289151560a48401525af18015610277576106b5575b505060408051306020820190815260a4359282019290925261056e816060810161010e565b5190206001600160a01b0386168852602088905260408820805491979190680100000000000000008210156106a15760a09360ff8a97948a60018a60209f6105de898799857ff5fd7ee2aaabc778ce313aa26fe33b2b4ca17bde510d5980d64f7e63c887cc729f9c018155610bd4565b81549060031b9084821b91600019901b19161790556040519361060085610b2b565b83808d1b03168452602060409085019184808e1b038c168352818601936bffffffffffffffffffffffff4216855281526020859052209383808d1b03905116906bffffffffffffffffffffffff8c1b918286541617855583808d1b0390511691518b1b1617910155604051998a52168b8901521660408701521515606086015260a4356080860152600180831b031694600180831b031693a4604051908152f35b634e487b7160e01b8a52604160045260248afd5b6106be90610b5d565b6106c9578638610549565b8680fd5b6040516340b27c2160e11b8152600490fd5b610701915060203d602011610707575b6106f98183610b71565b810190610bbc565b386104df565b503d6106ef565b6040513d8b823e3d90fd5b6040516312171d8360e31b8152600490fd5b610744915060203d602011610707576106f98183610b71565b3861044e565b6040513d8a823e3d90fd5b604051631f2a200560e01b8152600490fd5b60405163b5acfe3560e01b8152600490fd5b6040516323455ba160e01b8152600490fd5b8580fd5b50346100d85760403660031901126100d85760406107ab610b15565b6001600160a01b0316825260208290529020805460243591908210156107e5576020916107d791610bd4565b90546040519160031b1c8152f35b60405162461bcd60e51b8152602060048201526012602482015271696e646578206f7574206f662072616e676560701b6044820152606490fd5b50346100d85760403660031901126100d857600435602435908083526020906001825260408420926040519361085485610b2b565b80546001600160a01b039081168087526001909201548082168688015260a01c6040870152901561029857811561075557807f0000000000000000000000000000000000000000000000000000000000000000169460405163225f574760e11b815284600482015285816024818a5afa90811561074a578891610a51575b50600160ff6108e392161b84610b93565b6040516323b872dd60e01b8152336004820152306024820152604481018290529096907f000000000000000000000000000000000000000000000000000000000000000084169087816064818d865af1908115610a46578a91610a29575b50156107195760405163095ea7b360e01b81526001600160a01b038316600482015260248101899052908790829060449082908d905af190811561070e578991610a0c575b50156106cd578088913b1561028257819060446040518094819363b67644b960e01b83528a60048401528960248401525af1801561074a576109f9575b505116926040519485528401527f7220aa445c4dea1e018d6457dad6248036215ed9d099fdb17b4b13278d5f023560403394a480f35b610a0590979197610b5d565b95386109c3565b610a239150873d8911610707576106f98183610b71565b38610986565b610a409150883d8a11610707576106f98183610b71565b38610941565b6040513d8c823e3d90fd5b90508581813d8311610a86575b610a688183610b71565b81010312610a82575160ff81168103610a825760016108d2565b8780fd5b503d610a5e565b50346100d857806003193601126100d8576040517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b9050346102825781600319360112610282577f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b600435906001600160a01b03821682036102aa57565b6060810190811067ffffffffffffffff821117610b4757604052565b634e487b7160e01b600052604160045260246000fd5b67ffffffffffffffff8111610b4757604052565b90601f8019910116810190811067ffffffffffffffff821117610b4757604052565b81810292918115918404141715610ba657565b634e487b7160e01b600052601160045260246000fd5b908160209103126102aa575180151581036102aa5790565b8054821015610bec5760005260206000200190600090565b634e487b7160e01b600052603260045260246000fdfea26469706673582212209ae89b51dc4b386574df07e6d4c2650b391b4814f2b2f4e276d5f90f3266ef4964736f6c63430008170033",
+  "devdoc": {
+    "events": {
+      "BatchCreated(bytes32,address,address,uint256,uint8,uint8,bool,bytes32)": {
+        "params": {
+          "batchId": "keccak256(abi.encode(address(this), nonce))",
+          "bucketDepth": "Stamp bucket depth (passed through).",
+          "depth": "Stamp depth (passed through to Postage Stamp).",
+          "hotKeyOwner": "On-chain `_owner` set on the Postage Stamp contract.",
+          "immutable_": "Whether the batch is immutable (passed through).",
+          "nonce": "The nonce used to derive `batchId`.",
+          "totalAmount": "Total BZZ paid (initialBalancePerChunk * 2**depth).",
+          "wallet": "Logical \"user\" address; how the UI lists this batch."
+        }
+      }
+    },
+    "kind": "dev",
+    "methods": {
+      "constructor": {
+        "params": {
+          "bzz": "BZZ token contract address.",
+          "postageStamp": "Upstream Swarm Postage Stamp contract address."
+        }
+      },
+      "createSelfCustodyBatch(address,address,uint256,uint8,uint8,bytes32,bool)": {
+        "details": "Trust model      - `msg.sender` is whoever pays the BZZ (a user EOA, or an        aggregator's multicaller after a cross-chain swap fills BZZ to it).      - `wallet` is whatever address the UI wants this batch listed under.        It is unauthenticated by design — anyone can call this with any        `wallet` value. The worst a third party can do by spamming        someone else's `wallet` is gift them a batch they don't actually        own (the on-chain owner is still the spammer's `hotKeyOwner`).        UIs SHOULD show enumeration entries that don't match a known        local hot key as \"external\" or hide them.      - `hotKeyOwner` is the actual non-custodial owner. This contract        never receives or stores its private key.",
+        "params": {
+          "bucketDepth": "Bucket depth (typically 16 for Bee).",
+          "depth": "Batch depth.",
+          "hotKeyOwner": "On-chain `_owner` for the new batch.",
+          "immutable_": "Whether the batch is immutable.",
+          "initialBalancePerChunk": "Per-chunk balance (PLUR).",
+          "nonce": "Salt used to derive `batchId` (must be unique                              per registry; collision = revert from upstream).",
+          "wallet": "The UI-side \"user\" address. May equal `msg.sender`                              in direct calls, or differ in aggregator flows."
+        },
+        "returns": {
+          "batchId": "             keccak256(abi.encode(address(this), nonce))."
+        }
+      },
+      "increaseBatchDepth(bytes32,uint8)": {
+        "details": "`increaseDepth` on Postage Stamp does not require additional BZZ      payment; it only changes the bucketing semantics of future      stamps. Authorisation by the original payer wallet is the natural      policy here."
+      },
+      "predictBatchId(bytes32)": {
+        "details": "`keccak256(abi.encode(address(this), nonce))` mirrors the Postage      Stamp contract's own `batchId` derivation when `msg.sender` is      this registry."
+      },
+      "topUpBatch(bytes32,uint256)": {
+        "details": "Depth is read live from upstream Postage Stamp rather than a      mirrored field, so this works correctly across `increaseDepth`      operations performed in-between.",
+        "params": {
+          "batchId": "Batch to top up. Must have been created via this                         registry (i.e. have an attribution entry).",
+          "perChunkAmount": "Per-chunk top-up amount (PLUR)."
+        }
+      }
+    },
+    "stateVariables": {
+      "_walletBatches": {
+        "details": "wallet → batch IDs the wallet is recorded as having paid for."
+      }
+    },
+    "version": 1
+  },
+  "userdoc": {
+    "events": {
+      "BatchCreated(bytes32,address,address,uint256,uint8,uint8,bool,bytes32)": {
+        "notice": "Emitted when a self-custody batch is created via this registry."
+      },
+      "BatchDepthIncreased(bytes32,address,uint8)": {
+        "notice": "Emitted when a batch's depth is increased via this registry.         Gated to the original `wallet` (see {increaseBatchDepth})."
+      },
+      "BatchToppedUp(bytes32,address,address,uint256,uint256)": {
+        "notice": "Emitted when a batch is topped up via this registry. Permissionless:         anyone can top up any batch known to this registry."
+      }
+    },
+    "kind": "user",
+    "methods": {
+      "BZZ()": {
+        "notice": "BZZ token used to pay for stamps. Set at construction; cannot         change for the lifetime of this registry."
+      },
+      "POSTAGE_STAMP()": {
+        "notice": "Upstream Swarm Postage Stamp contract on Gnosis Chain."
+      },
+      "batchAttribution(bytes32)": {
+        "notice": "batchId → attribution metadata. Empty for batches not created         through this registry (e.g. created directly on Postage Stamp         by an earlier client version)."
+      },
+      "createSelfCustodyBatch(address,address,uint256,uint8,uint8,bytes32,bool)": {
+        "notice": "Create a self-custody postage batch.         BZZ flow:  msg.sender → this contract → Postage Stamp.         The caller MUST have approved this contract for at least         `initialBalancePerChunk * 2**depth` BZZ before calling.         The on-chain `_owner` set on Postage Stamp is `hotKeyOwner`,         NOT `msg.sender`. Only the holder of `hotKeyOwner`'s private         key can sign valid postage stamps for this batch."
+      },
+      "getWalletBatchAt(address,uint256)": {
+        "notice": "Read a single batch ID from `wallet`'s list by index.         Reverts if `index` is out of range."
+      },
+      "getWalletBatchCount(address)": {
+        "notice": "Number of batches recorded under `wallet`."
+      },
+      "getWalletBatchIds(address)": {
+        "notice": "All batch IDs recorded under `wallet`. Newest entries are at the         end of the array (push order). Use {getWalletBatchCount} for         pagination."
+      },
+      "increaseBatchDepth(bytes32,uint8)": {
+        "notice": "Increase depth on an existing batch. Gated to the wallet that         originally created the batch via this registry — random callers         cannot force a depth bump."
+      },
+      "predictBatchId(bytes32)": {
+        "notice": "Compute the batch ID a future call to {createSelfCustodyBatch}         with the given `nonce` would produce. Useful to the UI to         pre-compute the batch ID for receipts and downstream calls         (top-up, attribution checks) before the on-chain tx lands."
+      },
+      "topUpBatch(bytes32,uint256)": {
+        "notice": "Top up an existing batch known to this registry. Permissionless:         anyone may top up on the original wallet's behalf."
+      }
+    },
+    "version": 1
+  },
+  "storageLayout": {
+    "storage": [
+      {
+        "astId": 954,
+        "contract": "contracts/StampsRegistryV2.sol:StampsRegistryV2",
+        "label": "_walletBatches",
+        "offset": 0,
+        "slot": "0",
+        "type": "t_mapping(t_address,t_array(t_bytes32)dyn_storage)"
+      },
+      {
+        "astId": 960,
+        "contract": "contracts/StampsRegistryV2.sol:StampsRegistryV2",
+        "label": "batchAttribution",
+        "offset": 0,
+        "slot": "1",
+        "type": "t_mapping(t_bytes32,t_struct(Attribution)948_storage)"
+      }
+    ],
+    "types": {
+      "t_address": {
+        "encoding": "inplace",
+        "label": "address",
+        "numberOfBytes": "20"
+      },
+      "t_array(t_bytes32)dyn_storage": {
+        "base": "t_bytes32",
+        "encoding": "dynamic_array",
+        "label": "bytes32[]",
+        "numberOfBytes": "32"
+      },
+      "t_bytes32": {
+        "encoding": "inplace",
+        "label": "bytes32",
+        "numberOfBytes": "32"
+      },
+      "t_mapping(t_address,t_array(t_bytes32)dyn_storage)": {
+        "encoding": "mapping",
+        "key": "t_address",
+        "label": "mapping(address => bytes32[])",
+        "numberOfBytes": "32",
+        "value": "t_array(t_bytes32)dyn_storage"
+      },
+      "t_mapping(t_bytes32,t_struct(Attribution)948_storage)": {
+        "encoding": "mapping",
+        "key": "t_bytes32",
+        "label": "mapping(bytes32 => struct StampsRegistryV2.Attribution)",
+        "numberOfBytes": "32",
+        "value": "t_struct(Attribution)948_storage"
+      },
+      "t_struct(Attribution)948_storage": {
+        "encoding": "inplace",
+        "label": "struct StampsRegistryV2.Attribution",
+        "members": [
+          {
+            "astId": 943,
+            "contract": "contracts/StampsRegistryV2.sol:StampsRegistryV2",
+            "label": "wallet",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_address"
+          },
+          {
+            "astId": 945,
+            "contract": "contracts/StampsRegistryV2.sol:StampsRegistryV2",
+            "label": "hotKeyOwner",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_address"
+          },
+          {
+            "astId": 947,
+            "contract": "contracts/StampsRegistryV2.sol:StampsRegistryV2",
+            "label": "createdAt",
+            "offset": 20,
+            "slot": "1",
+            "type": "t_uint96"
+          }
+        ],
+        "numberOfBytes": "64"
+      },
+      "t_uint96": {
+        "encoding": "inplace",
+        "label": "uint96",
+        "numberOfBytes": "12"
+      }
+    }
+  }
+}

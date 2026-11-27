@@ -1,14 +1,15 @@
 import React from 'react';
 import styles from './css/UploadHistorySection.module.css';
-import { BEE_GATEWAY_URL, DEFAULT_BEE_API_URL } from './constants';
+import { DEFAULT_BEE_API_URL } from './constants';
 import {
   formatExpiryTime,
-  isExpiringSoon,
   formatDateEU,
   formatDateForCSV,
   parseDateFromCSV,
   fetchStampInfo,
+  getGnosisPublicClient,
 } from './utils';
+import { refreshBatchesFromContract } from './PostageContract';
 import ENSIntegration from './ENSIntegration';
 
 interface UploadHistoryProps {
@@ -26,6 +27,16 @@ interface UploadRecord {
   isWebpageUpload?: boolean; // Flag to indicate this was uploaded as a webpage
   isFolderUpload?: boolean; // Flag to indicate this was uploaded as a folder
   fileSize?: number; // File size in bytes
+  /** Swarm erasure-coding level used at upload (0=None … 4=Paranoid). */
+  redundancyLevel?: number;
+}
+
+const EC_LEVEL_LABELS = ['None', 'Medium', 'Strong', 'Insane', 'Paranoid'] as const;
+
+function formatRedundancyLevel(level?: number): string | null {
+  if (level === undefined || level === null || Number.isNaN(level)) return null;
+  const n = Math.max(0, Math.min(4, Math.floor(level)));
+  return EC_LEVEL_LABELS[n] ?? String(n);
 }
 
 interface UploadHistory {
@@ -100,113 +111,74 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   };
 
   /**
-   * Periodically refreshes stamp expiry dates from the API
-   * Only runs if 24+ hours have passed since last check
-   * Updates all records that share the same stamp ID efficiently
+   * Refresh expiry dates from the Postage Stamp contract on every load.
+   *
+   * - Storage still on chain: expiry = now + remaining time.
+   * - Storage the contract no longer has, or with no time left: expired. A
+   *   file was uploaded with it, so the storage existed then; a row only
+   *   disappears when it expires.
+   * - A failed read leaves the record unchanged.
+   *
+   * (The old version asked the Bee gateway once a day, but the gateway
+   * answers `/stamps` and `/batches` with its web page, so it never updated.)
    */
-  const refreshStampExpiry = async (records: UploadRecord[], userAddress: string) => {
-    // Check if 24 hours have passed since last refresh
-    const lastCheckKey = `stampExpiryLastCheck_${userAddress}`;
-    const lastCheckTimestamp = localStorage.getItem(lastCheckKey);
-    const now = Date.now();
-    const twentyFourHours = 24 * 60 * 60 * 1000;
+  const refreshStampExpiry = async (
+    records: UploadRecord[],
+    userAddress: string
+  ): Promise<UploadRecord[]> => {
+    const norm = (id: string) => {
+      const l = id.toLowerCase();
+      return l.startsWith('0x') ? l : `0x${l}`;
+    };
+    const uniqueStamps = Array.from(
+      new Set(
+        records
+          .map(r => r.stampId)
+          .filter(id => typeof id === 'string' && /^(0x)?[0-9a-fA-F]{64}$/.test(id))
+          .map(norm)
+      )
+    );
+    if (uniqueStamps.length === 0) return records;
 
-    if (lastCheckTimestamp) {
-      const lastCheck = parseInt(lastCheckTimestamp);
-      const timeSinceLastCheck = now - lastCheck;
-      
-      if (timeSinceLastCheck < twentyFourHours) {
-        console.log(`⏳ Stamp expiry check skipped - last checked ${Math.round(timeSinceLastCheck / (60 * 60 * 1000))} hours ago`);
-        return;
-      }
+    let onChain;
+    try {
+      onChain = await refreshBatchesFromContract(
+        getGnosisPublicClient().client as any,
+        uniqueStamps
+      );
+    } catch (err) {
+      console.warn('Expiry refresh from chain failed:', err);
+      return records;
     }
 
-    console.log('🔄 Refreshing stamp expiry dates (24+ hours since last check)...');
-    setIsMigrating(true);
-    setMigrationProgress('Checking expiry dates...');
-
-    // Collect unique stamp IDs
-    const uniqueStamps = Array.from(new Set(records.map(record => record.stampId)));
-    console.log(`📊 Found ${uniqueStamps.length} unique stamps to check`);
-
-    // Map stamp IDs to their record indices for efficient updates
-    const stampToRecords = new Map<string, number[]>();
-    records.forEach((record, index) => {
-      if (!stampToRecords.has(record.stampId)) {
-        stampToRecords.set(record.stampId, []);
-      }
-      stampToRecords.get(record.stampId)!.push(index);
+    const now = Date.now();
+    let changed = false;
+    const updatedRecords = records.map(record => {
+      if (typeof record.stampId !== 'string') return record;
+      const row = onChain.get(norm(record.stampId));
+      if (!row) return record;
+      const expired = row.exists === false || !(row.batchTTL > 0);
+      const expiryDate = expired
+        ? Math.min(record.expiryDate || now, now - 1000)
+        : now + row.batchTTL * 1000;
+      // Ignore drift under a minute so the list does not rewrite on every load.
+      if (Math.abs(expiryDate - (record.expiryDate || 0)) < 60_000 && !expired) return record;
+      if (expired && record.expiryDate && record.expiryDate < now) return record;
+      changed = true;
+      return { ...record, expiryDate };
     });
 
-    let updatedCount = 0;
-    const updatedRecords = [...records];
-
-    // Process each unique stamp
-    for (let i = 0; i < uniqueStamps.length; i++) {
-      const stampId = uniqueStamps[i];
-      const recordIndices = stampToRecords.get(stampId)!;
-
-      try {
-        setMigrationProgress(`Checking (${i + 1}/${uniqueStamps.length})...`);
-
-        // Fetch fresh stamp info from API
-        const stampInfo = await fetchStampInfo(stampId, DEFAULT_BEE_API_URL);
-
-        if (stampInfo && stampInfo.batchTTL) {
-          // Calculate new expiry date
-          const newExpiryDate = Date.now() + stampInfo.batchTTL * 1000;
-
-          // Update all records using this stamp
-          recordIndices.forEach(index => {
-            const oldExpiryDate = updatedRecords[index].expiryDate;
-            updatedRecords[index] = {
-              ...updatedRecords[index],
-              expiryDate: newExpiryDate,
-            };
-            
-            // Log if expiry changed significantly (more than 1 hour difference)
-            if (Math.abs(newExpiryDate - oldExpiryDate) > 60 * 60 * 1000) {
-              console.log(
-                `✅ Updated ${updatedRecords[index].filename || 'unnamed'}: ${formatStampId(stampId)} expiry changed from ${formatDateEU(oldExpiryDate)} to ${formatDateEU(newExpiryDate)}`
-              );
-            }
-          });
-
-          updatedCount += recordIndices.length;
-        } else {
-          console.log(`⚠️ No API data for stamp ${formatStampId(stampId)} (${recordIndices.length} record${recordIndices.length > 1 ? 's' : ''})`);
-        }
-      } catch (error) {
-        console.error(`❌ Error refreshing expiry for ${formatStampId(stampId)}:`, error);
-      }
-
-      // Add delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    // Update localStorage with refreshed data
-    if (updatedCount > 0) {
-      console.log(`✅ Refreshed expiry dates for ${updatedCount} record(s) across ${uniqueStamps.length} stamp(s)`);
-      
+    if (!changed) return records;
+    try {
       const savedHistory = localStorage.getItem('uploadHistory');
-      if (savedHistory) {
-        const allHistory: UploadHistory = JSON.parse(savedHistory);
-        allHistory[userAddress] = updatedRecords;
-        localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
-      }
-
-      // Update component state
-      setHistory(updatedRecords);
+      const allHistory: UploadHistory = savedHistory ? JSON.parse(savedHistory) : {};
+      allHistory[userAddress] = updatedRecords;
+      localStorage.setItem('uploadHistory', JSON.stringify(allHistory));
+    } catch (err) {
+      console.warn('Could not save refreshed expiry dates:', err);
     }
-
-    // Update last check timestamp
-    localStorage.setItem(lastCheckKey, now.toString());
-    
-    setMigrationProgress(`Expiry check complete! (${uniqueStamps.length} checked)`);
-    setTimeout(() => {
-      setIsMigrating(false);
-      setMigrationProgress('');
-    }, 2000);
+    setHistory(updatedRecords);
+    return updatedRecords;
   };
 
   /**
@@ -368,13 +340,15 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
           console.log(`Removed ${userHistory.length - uniqueHistory.length} duplicate entries`);
         }
 
-        // First, refresh stamp expiry dates (runs once every 24 hours)
-        refreshStampExpiry(uniqueHistory, address).then(() => {
-          // Then, auto-migrate any old/invalid expiry dates
-          migrateOldExpiryDates(uniqueHistory, address);
+        // First, refresh expiry dates from the chain, then migrate any
+        // old/invalid expiry formats on top of the refreshed records.
+        refreshStampExpiry(uniqueHistory, address).then(refreshed => {
+          migrateOldExpiryDates(refreshed, address);
         });
       }
     }
+    // Runs once per wallet; the helpers above only read their arguments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
 
   const formatDate = (timestamp: number) => {
@@ -571,12 +545,17 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   }, [history]);
 
   const getReferenceUrl = (record: UploadRecord) => {
-    // For non-archive files with a filename, include the filename in the URL
+    // Prefer DEFAULT_BEE_API_URL + /bzz/ (same pattern as SwapComponent's beeApiUrl).
+    const base = DEFAULT_BEE_API_URL.endsWith('/')
+      ? `${DEFAULT_BEE_API_URL}bzz/`
+      : `${DEFAULT_BEE_API_URL}/bzz/`;
+    const ref = record.reference.startsWith('0x')
+      ? record.reference.slice(2)
+      : record.reference;
     if (record.filename && !isArchiveFile(record.filename)) {
-      return `${BEE_GATEWAY_URL}${record.reference}/${record.filename}`;
+      return `${base}${ref}/${record.filename}`;
     }
-    // Otherwise use the default URL for the reference
-    return `${BEE_GATEWAY_URL}${record.reference}/`;
+    return `${base}${ref}/`;
   };
 
   const downloadCSV = () => {
@@ -595,6 +574,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       'Is Webpage',
       'Is Folder',
       'Associated Domains', // New column
+      'EC Level',
       'Full Link',
     ];
 
@@ -609,6 +589,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       record.isWebpageUpload ? 'Yes' : 'No',
       record.isFolderUpload ? 'Yes' : 'No',
       record.associatedDomains?.join(', ') || '', // New field
+      formatRedundancyLevel(record.redundancyLevel) ?? '',
       getReferenceUrl(record),
     ]);
 
@@ -627,7 +608,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     const filterSuffix = selectedFilter !== 'all' ? `-${selectedFilter}` : '';
     link.setAttribute(
       'download',
-      `upload-history-${address?.slice(0, 8)}${filterSuffix}-${new Date().toISOString().split('T')[0]}.csv`
+      `file-list-${address?.slice(0, 8)}${filterSuffix}-${new Date().toISOString().split('T')[0]}.csv`
     );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -671,8 +652,15 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
               isWebpage,
               isFolder,
               associatedDomainsStr,
-              fullLink,
+              maybeEcOrLink,
+              maybeLink,
             ] = fields;
+
+            // New exports: …, Domains, EC Level, Full Link
+            // Older exports: …, Domains, Full Link
+            const hasEcColumn = fields.length >= 11;
+            const ecLevelRaw = hasEcColumn ? maybeEcOrLink : undefined;
+            const fullLink = hasEcColumn ? maybeLink : maybeEcOrLink;
 
             // Skip if reference + stampId combination already exists (prevent duplicates)
             const key = `${reference}_${stampId}`;
@@ -729,6 +717,23 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   .map(d => d.trim())
                   .filter(d => d);
               }
+
+              if (ecLevelRaw) {
+                const named = EC_LEVEL_LABELS.findIndex(
+                  l => l.toLowerCase() === ecLevelRaw.toLowerCase()
+                );
+                if (named >= 0) {
+                  record.redundancyLevel = named;
+                } else {
+                  const n = Number(ecLevelRaw);
+                  if (!Number.isNaN(n) && n >= 0 && n <= 4) {
+                    record.redundancyLevel = n;
+                  }
+                }
+              }
+
+              // fullLink is ignored on import — we rebuild URLs from reference.
+              void fullLink;
 
               newRecords.push(record);
 
@@ -855,7 +860,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     if (!address) return;
 
     const confirmed = window.confirm(
-      'Are you sure you want to clear all upload history? This action cannot be undone.'
+      'Are you sure you want to clear your whole file list? This action cannot be undone.'
     );
     if (confirmed) {
       setHistory([]);
@@ -882,7 +887,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     }
 
     const confirmed = window.confirm(
-      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your upload history? This action cannot be undone.`
+      `Are you sure you want to clear ${expiredCount} expired item${expiredCount > 1 ? 's' : ''} from your file list? This action cannot be undone.`
     );
     if (confirmed) {
       // Filter out expired items
@@ -971,7 +976,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
     if (!address) return;
 
     const confirmed = window.confirm(
-      'Are you sure you want to delete this upload from history? This action cannot be undone. Back it up if still possible.'
+      'Are you sure you want to remove this upload from your file list? This action cannot be undone. Back it up if still possible.'
     );
 
     if (confirmed) {
@@ -999,10 +1004,10 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
   return (
     <div className={styles.container}>
       <div className={styles.titleContainer}>
-        <h2 className={styles.title}>Upload History</h2>
+        <h2 className={styles.title}>Your Files</h2>
         <div className={styles.buttonGroup}>
           {filteredHistory.length > 0 && (
-            <button className={styles.downloadButton} onClick={downloadCSV} title="Export History ">
+            <button className={styles.downloadButton} onClick={downloadCSV} title="Export file list">
               <svg
                 width="20"
                 height="20"
@@ -1020,7 +1025,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {address && (
-            <label className={styles.uploadButton} title="Import History">
+            <label className={styles.uploadButton} title="Import file list">
               <input
                 type="file"
                 accept=".csv"
@@ -1067,7 +1072,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
             </button>
           )}
           {history.length > 0 && (
-            <button className={styles.clearButton} onClick={clearHistory} title="Clear History">
+            <button className={styles.clearButton} onClick={clearHistory} title="Clear file list">
               <svg
                 width="20"
                 height="20"
@@ -1201,7 +1206,12 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
       ) : (
         <div className={styles.historyList}>
           {filteredHistory.map((record, index) => (
-            <div key={index} className={styles.historyItem}>
+            <div
+              key={index}
+              className={`${styles.historyItem} ${
+                record.expiryDate < Date.now() ? styles.historyItemExpired : ''
+              }`}
+            >
               <div className={styles.itemHeader}>
                 <div className={styles.filenameContainer}>
                   <div className={styles.filenameRow}>
@@ -1249,6 +1259,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   </div>
                   <div className={styles.tagContainer}>
                     <span className={styles.fileType}>{getFileTypeLabel(record)}</span>
+                    {record.expiryDate < Date.now() && (
+                      <span
+                        className={styles.expiredTag}
+                        title="The storage of this file expired. The network deletes its data over time, so the link can stop working."
+                      >
+                        Storage expired
+                      </span>
+                    )}
                     {getFileType(record) === 'websites' && (
                       <button
                         className={styles.ensButton}
@@ -1264,6 +1282,14 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     )}
                     {record.fileSize && (
                       <span className={styles.fileSize}>{formatFileSize(record.fileSize)}</span>
+                    )}
+                    {formatRedundancyLevel(record.redundancyLevel) && (
+                      <span
+                        className={styles.ecLevel}
+                        title={`Erasure coding level used for this upload (${record.redundancyLevel})`}
+                      >
+                        EC: {formatRedundancyLevel(record.redundancyLevel)}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1323,7 +1349,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                   </span>
                 </div>
                 <div className={styles.stampRow}>
-                  <span className={styles.label}>ID:</span>
+                  <span className={styles.label}>Storage ID:</span>
                   <span
                     className={styles.stampId}
                     title={record.stampId}
@@ -1359,7 +1385,7 @@ const UploadHistorySection: React.FC<UploadHistoryProps> = ({ address, setShowUp
                     <button
                       className={styles.deleteButton}
                       onClick={() => deleteRecord(record.reference, record.stampId)}
-                      title="Delete from history"
+                      title="Remove from file list"
                     >
                       ✕
                     </button>

@@ -34,11 +34,17 @@ const config = {
     ignoreBuildErrors: true,
   },
 
-  webpack: (config, { dev }) => {
+  webpack: (config, { isServer, dev }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
       encoding: fileURLToPath(new URL('encoding', import.meta.url)),
     };
+
+    // Static export uses `assetPrefix: './'`, so a worker's own runtime would
+    // load extra script chunks from `./_next/` relative to the worker script
+    // (`<prefix>/_next/static/chunks/`) and double the path. The `new Worker`
+    // calls therefore pass `webpackEntryOptions: { publicPath: '../../' }`,
+    // which resolves to `<prefix>/_next/` for any hosting prefix.
 
     // Development-specific optimizations
     if (dev) {

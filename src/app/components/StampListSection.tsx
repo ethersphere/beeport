@@ -1,31 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import styles from './css/StampListSection.module.css';
+/**
+ * Self-custody-only stamps list. Source of truth for batch metadata is:
+ *
+ *   1. localStorage   — what THIS browser created or imported (fast, offline).
+ *   2. PostageStamp   — direct on-chain reads for fresh `batchTTL` etc.
+ *   3. Bee `/batches/{id}` — gateway chain index (Bee v2.8.1+); fills gaps when
+ *      the RPC read misses or lags, and works for self-custody hot-key batches
+ *      that never appear under `/stamps/{id}` (issuer is the browser, not Bee).
+ *   4. Issuer-state   — encrypted Single Owner Chunk on Swarm; used to restore
+ *      SOCs            the bucket-counter state when local data is missing.
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Bee } from '@ethersphere/bee-js';
+import { useWalletClient } from 'wagmi';
 import { formatUnits } from 'viem';
+
+import {
+  getSelfCustodyBatches,
+  reconcileWalletBatches,
+  StoredSelfCustodyBatch,
+  type ChainBatchInfo,
+} from './SelfCustodyBatch';
+import { STORAGE_OPTIONS, guaranteedStampCapacityBytes } from './constants';
 import { UploadStep } from './types';
 import {
-  GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-  STORAGE_OPTIONS,
-  REGISTRY_ABI,
-  STAMP_API_BATCH_SIZE,
-  STAMP_API_BATCH_DELAY_MS,
-  STAMP_API_TIMEOUT_MS,
-} from './constants';
-import { createPublicClient, http } from 'viem';
-import { gnosis } from 'viem/chains';
-import {
+  formatDateEU,
   formatExpiryTime,
+  getGnosisPublicClient,
   isExpiringSoon,
   isExpiryWarning,
-  getStampUsage,
-  formatDateEU,
-  fetchStampInfo,
+  parseHumanStorageSize,
 } from './utils';
-import { useBeeNodeHealth } from './BeeNodeHealth';
+import {
+  fetchRegistryCreatedAt,
+  livenessFrom,
+  refreshBatchesFromContract,
+} from './PostageContract';
+import { fetchGlobalBatch, type BeeGlobalBatch } from './BeeApi';
+import { deriveHotKey } from './ClientStamping';
+import {
+  loadStamperState,
+  computeStampUsage,
+  computeBucketStatsVisualization,
+  repairStamperState,
+  clearStampedAddresses,
+  groupBucketFill,
+  bucketHealth,
+  type StampUsageStats,
+  type BucketStatsVisualization,
+} from './ClientStamping';
+import { getActiveHotKey, onHotKeyUnlocked } from './HotKeySession';
+import {
+  summarizeSyncResults,
+  syncIssuerStatesFromSwarm,
+  type IssuerStateSyncResult,
+} from './IssuerStateSync';
+import styles from './css/StampListSection.module.css';
 
-// Cache for expired stamps to avoid repeated API calls
-const EXPIRED_STAMPS_CACHE_KEY = 'beeport_expired_stamps';
-
-// User-defined names for postage batches (local only), keyed by normalized batch id (no 0x, lowercase)
+/** User-defined names for postage batches (this browser only). */
 const STORAGE_LABELS_KEY = 'beeport_storage_labels';
 
 function normalizeBatchId(batchId: string): string {
@@ -56,29 +88,28 @@ function persistStorageLabels(labels: Record<string, string>) {
   }
 }
 
-// Minimum age before considering a stamp for permanent expiry caching (24 hours)
-const MIN_STAMP_AGE_FOR_EXPIRY_CACHE = 24 * 60 * 60 * 1000;
-
-// Maximum age for showing propagation message on 404 (1 hour)
-const MAX_PROPAGATION_AGE = 60 * 60 * 1000;
-
-interface ExpiredStampCache {
-  [batchId: string]: {
-    expiredAt: number; // When the stamp was first detected as expired
-    lastChecked: number; // Last time we confirmed it was expired
-    failureCount: number; // Number of consecutive failures
-    stampAge?: number; // Age of the stamp when first marked as expired
-  };
-}
-
 interface StampListSectionProps {
   setShowStampList: (show: boolean) => void;
   address: string | undefined;
   beeApiUrl: string;
-  nodeAddress: string; // The node address to filter stamps by
   setPostageBatchId: (id: string) => void;
   setShowOverlay: (show: boolean) => void;
   setUploadStep: (step: UploadStep) => void;
+  /**
+   * Propagate the selected stamp's depth back to the parent so subsequent
+   * uploads use the correct on-chain depth.
+   *
+   * Without this, "Upload with this storage" falls through to the parent's
+   * `selectedDepth` default (currently 22) regardless of the actual batch
+   * depth — which silently builds the local Stamper at the wrong depth, lets
+   * `cnt` values run past Bee's `maxSlot`, and eventually trips
+   * `Bucket is full` before any chunk reaches the gateway.
+   */
+  setSelectedDepth: (depth: number) => void;
+  /** Clears a stale upload error banner in the parent overlay (if any). */
+  clearParentUploadError?: () => void;
+  /** Show technical details such as the per-batch bucket stats (Settings → Advanced mode). */
+  showAdvancedInfo?: boolean;
 }
 
 interface BatchEvent {
@@ -87,38 +118,59 @@ interface BatchEvent {
   depth: number;
   size: string;
   timestamp?: number;
-  utilization?: number;
-  batchTTL?: number;
   bucketDepth?: number;
-  isPropagating?: boolean; // Flag to indicate stamp is still propagating on network
-}
-
-interface StampInfo {
-  batchID: string;
-  utilization: number;
-  usable: boolean;
-  label: string;
-  depth: number;
-  amount: string;
-  bucketDepth: number;
-  blockNumber: number;
-  immutableFlag: boolean;
-  exists: boolean;
-  batchTTL: number;
+  /** Live remaining seconds, computed from on-chain pricing. */
+  batchTTL?: number;
+  /** Where {@link batchTTL} came from when shown in the UI. */
+  ttlSource?: 'chain' | 'gateway';
+  /**
+   * Set when the chain didn't return a row for this batchId. Either the batch
+   * never made it on-chain (failed tx) or it was reaped after expiry.
+   */
+  missingOnChain?: boolean;
+  /** Paid time ran out (or the batch was removed). Hidden from the list; never usable. */
+  expired?: boolean;
+  /** Hot-key address that owns this batch on-chain. */
+  hotKeyAddress?: string;
+  hasBeenToppedUp?: boolean;
+  /** True when this browser has stamper state for the batch in localStorage. */
+  hasLocalIssuerState?: boolean;
+  /**
+   * Storage usage derived from the local Stamper buckets. `undefined` iff
+   * `hasLocalIssuerState` is false — in that case the UI shows a "usage
+   * unknown, restore from Swarm" placeholder instead of a bar.
+   */
+  usage?: StampUsageStats;
 }
 
 const StampListSection: React.FC<StampListSectionProps> = ({
   setShowStampList,
   address,
   beeApiUrl,
-  nodeAddress,
   setPostageBatchId,
   setShowOverlay,
   setUploadStep,
+  setSelectedDepth,
+  clearParentUploadError,
+  showAdvancedInfo = false,
 }) => {
+  const { data: walletClient } = useWalletClient();
+
   const [stamps, setStamps] = useState<BatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [refreshingStamps, setRefreshingStamps] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  /** Which stamp card has the bucket-distribution panel expanded. */
+  const [expandedStatsBatchId, setExpandedStatsBatchId] = useState<string | null>(null);
+  /** Lazy-loaded bucket-fill data per batch (expand panel). */
+  const [bucketStatsById, setBucketStatsById] = useState<
+    Record<
+      string,
+      | { status: 'ready'; viz: BucketStatsVisualization }
+      | { status: 'unavailable' }
+    >
+  >({});
+  const [statsLoadingBatchId, setStatsLoadingBatchId] = useState<string | null>(null);
   const [storageLabels, setStorageLabels] = useState<Record<string, string>>({});
   const [editingLabelFor, setEditingLabelFor] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
@@ -152,428 +204,354 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     setLabelDraft(storageLabels[key] ?? '');
   };
 
-  const {
-    state: beeHealth,
-    isProbing: isBeeHealthProbing,
-    refresh: refreshBeeHealth,
-  } = useBeeNodeHealth(beeApiUrl, !!address);
-
-  const beeNodeBlocks = beeHealth.status === 'unreachable' || beeHealth.status === 'unhealthy';
-
-  const checkingBeeGateway =
-    !!address &&
-    (beeHealth.status === 'unknown' ||
-      beeHealth.status === 'checking' ||
-      (beeHealth.status === 'ok' && isBeeHealthProbing));
-
-  // Utility functions for cache management (can be called from dev tools)
-  const clearExpiredStampsCache = () => {
-    try {
-      const cached = localStorage.getItem(EXPIRED_STAMPS_CACHE_KEY);
-      if (cached) {
-        const cache = JSON.parse(cached) as ExpiredStampCache;
-        const count = Object.keys(cache).length;
-        localStorage.removeItem(EXPIRED_STAMPS_CACHE_KEY);
-        console.log(`🧹 Cleared ${count} expired stamps from cache`);
-      } else {
-        console.log('🧹 No expired stamps cache to clear');
-      }
-    } catch (error) {
-      console.warn('Error clearing expired stamps cache:', error);
-    }
-  };
-
-  const showExpiredStampsStats = () => {
-    try {
-      const cached = localStorage.getItem(EXPIRED_STAMPS_CACHE_KEY);
-      if (!cached) {
-        console.log('📊 No expired stamps cached');
-        return;
-      }
-
-      const cache = JSON.parse(cached) as ExpiredStampCache;
-      const stamps = Object.entries(cache);
-      const now = Date.now();
-
-      console.log(`📊 Expired Stamps Cache Stats:`);
-      console.log(`   Total expired stamps: ${stamps.length}`);
-
-      if (stamps.length > 0) {
-        const oldestExpiry = Math.min(...stamps.map(([, entry]) => entry.expiredAt));
-        const newestExpiry = Math.max(...stamps.map(([, entry]) => entry.expiredAt));
-
-        console.log(`   Oldest expiry: ${new Date(oldestExpiry).toLocaleString()}`);
-        console.log(`   Newest expiry: ${new Date(newestExpiry).toLocaleString()}`);
-        console.log(
-          `   Sample stamps:`,
-          stamps.slice(0, 3).map(([id]) => id.slice(0, 8) + '...')
-        );
-      }
-    } catch (error) {
-      console.warn('Error reading expired stamps stats:', error);
-    }
-  };
-
-  // Make functions available globally for debugging
-  if (typeof window !== 'undefined') {
-    (window as any).clearExpiredStampsCache = clearExpiredStampsCache;
-    (window as any).showExpiredStampsStats = showExpiredStampsStats;
-  }
-
-  // Helper function to get the size string for a depth value
   const getSizeForDepth = (depth: number): string => {
-    const option = STORAGE_OPTIONS.find(option => option.depth === depth);
+    const option = STORAGE_OPTIONS.find(o => o.depth === depth);
     return option ? option.size : `${depth} (unknown size)`;
   };
 
-  // Helper functions for caching (moved outside useEffect to be reusable)
-  const getExpiredStampsCache = (): ExpiredStampCache => {
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = bytes;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    const rounded = v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1);
+    return `${rounded} ${units[i]}`;
+  };
+
+  const TOTAL_SWARM_BUCKETS = 65536;
+
+  const toggleBucketStats = async (stamp: BatchEvent) => {
+    if (!stamp.usage) return;
+    if (expandedStatsBatchId === stamp.batchId) {
+      setExpandedStatsBatchId(null);
+      return;
+    }
+    setExpandedStatsBatchId(stamp.batchId);
+    const cached = bucketStatsById[stamp.batchId];
+    if (cached) return;
+
+    setStatsLoadingBatchId(stamp.batchId);
     try {
-      const cached = localStorage.getItem(EXPIRED_STAMPS_CACHE_KEY);
-      if (!cached) return {};
-
-      const cache = JSON.parse(cached) as ExpiredStampCache;
-      const now = Date.now();
-
-      // Clean up very old cache entries (older than 7 days)
-      let cleaned = false;
-      Object.keys(cache).forEach(batchId => {
-        const entry = cache[batchId];
-        const ageInCache = now - entry.expiredAt;
-
-        // Remove entries that have been in cache for > 7 days with high failure count
-        if (ageInCache > 7 * 24 * 60 * 60 * 1000 && entry.failureCount >= 5) {
-          delete cache[batchId];
-          cleaned = true;
-        }
-      });
-
-      // Save cleaned cache
-      if (cleaned) {
-        localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
+      const state = await loadStamperState(stamp.batchId);
+      if (!state) {
+        setBucketStatsById(prev => ({
+          ...prev,
+          [stamp.batchId]: { status: 'unavailable' },
+        }));
+        return;
       }
-
-      return cache;
-    } catch (error) {
-      console.warn('Error reading expired stamps cache:', error);
-      return {};
+      const viz = computeBucketStatsVisualization(state, stamp.depth);
+      setBucketStatsById(prev => ({
+        ...prev,
+        [stamp.batchId]: { status: 'ready', viz },
+      }));
+    } catch (err) {
+      console.error('Bucket stats load failed:', err);
+      setBucketStatsById(prev => ({
+        ...prev,
+        [stamp.batchId]: { status: 'unavailable' },
+      }));
+    } finally {
+      setStatsLoadingBatchId(null);
     }
   };
 
-  const markStampAsExpired = (batchId: string, stampTimestamp?: number) => {
-    try {
-      const cache = getExpiredStampsCache();
-      const now = Date.now();
+  /**
+   * Render a list of locally-stored batches, enriched with fresh on-chain
+   * status for each (TTL, depth, owner). Pure read — no signing prompt.
+   */
+  const buildStampList = async (
+    stored: StoredSelfCustodyBatch[]
+  ): Promise<BatchEvent[]> => {
+    if (stored.length === 0) return [];
 
-      // Calculate stamp age if we have the timestamp
-      const stampAge = stampTimestamp ? now - stampTimestamp * 1000 : undefined;
+    const { client: publicClient } = getGnosisPublicClient();
+    const [onChainMap, gatewayEntries, localStateEntries] = await Promise.all([
+      refreshBatchesFromContract(
+        publicClient,
+        stored.map(b => b.batchId)
+      ),
+      Promise.all(
+        stored.map(async s => {
+          const gateway = await fetchGlobalBatch(s.batchId, beeApiUrl);
+          return [s.batchId, gateway] as const;
+        })
+      ),
+      Promise.all(
+        stored.map(async s => [s.batchId, await loadStamperState(s.batchId)] as const)
+      ),
+    ]);
 
-      // If it's already in cache, increment failure count
-      if (cache[batchId]) {
-        cache[batchId].lastChecked = now;
-        cache[batchId].failureCount += 1;
+    const gatewayMap = new Map<string, BeeGlobalBatch>();
+    for (const [batchId, gateway] of gatewayEntries) {
+      if (gateway) gatewayMap.set(batchId.toLowerCase(), gateway);
+    }
 
-        // Only keep in cache if stamp is old enough OR we've had many failures
-        if (
-          stampAge &&
-          stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE &&
-          cache[batchId].failureCount < 5
-        ) {
-          delete cache[batchId];
-        }
-      } else {
-        // Don't cache young stamps as expired - they might just be propagating
-        if (stampAge && stampAge < MIN_STAMP_AGE_FOR_EXPIRY_CACHE) {
-          return;
-        }
+    const localStates = new Map(localStateEntries);
 
-        // New expired stamp (old enough to cache)
-        cache[batchId] = {
-          expiredAt: now,
-          lastChecked: now,
-          failureCount: 1,
-          stampAge,
-        };
+    // A row the Postage Stamp contract no longer has is either a purchase not
+    // mined yet or a batch that expired and was removed. The registry tells
+    // them apart (it records every mined purchase).
+    const gone = [...onChainMap.entries()].filter(([, b]) => b.exists === false).map(([k]) => k);
+    const createdAtEntries = await Promise.all(
+      gone.map(async k => [k, await fetchRegistryCreatedAt(publicClient, k)] as const)
+    );
+    const registryCreatedAt = new Map(createdAtEntries);
+
+    const rows = stored.map(s => {
+      const id = s.batchId.toLowerCase().startsWith('0x')
+        ? s.batchId.toLowerCase()
+        : `0x${s.batchId.toLowerCase()}`;
+      const onChain: ChainBatchInfo | undefined = onChainMap.get(id);
+      const gateway = gatewayMap.get(s.batchId.toLowerCase());
+      const localState = localStates.get(s.batchId) ?? null;
+      const hasLocalIssuerState = !!localState;
+      const usage = localState ? computeStampUsage(localState, s.depth) : undefined;
+      const base: BatchEvent = {
+        batchId: s.batchId,
+        totalAmount: formatUnits(BigInt(s.totalAmount), 16),
+        depth: s.depth,
+        size: getSizeForDepth(s.depth),
+        timestamp: s.timestamp,
+        bucketDepth: s.bucketDepth,
+        hotKeyAddress: s.hotKeyAddress,
+        hasBeenToppedUp: s.hasBeenToppedUp,
+        hasLocalIssuerState,
+        usage,
+      };
+
+      const liveness = livenessFrom(onChain, registryCreatedAt.get(id));
+      if (liveness === 'expired') {
+        return { ...base, expired: true, batchTTL: 0 };
+      }
+      if ((!onChain || onChain.exists === false) && !gateway) {
+        return { ...base, missingOnChain: true };
       }
 
-      localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
-    } catch (error) {
-      console.warn('Error updating expired stamps cache:', error);
-    }
+      const batchTTL =
+        onChain?.batchTTL !== undefined && onChain.batchTTL > 0
+          ? onChain.batchTTL
+          : gateway?.batchTTL;
+      const ttlSource: BatchEvent['ttlSource'] =
+        onChain?.batchTTL !== undefined && onChain.batchTTL > 0
+          ? 'chain'
+          : gateway?.batchTTL !== undefined && gateway.batchTTL > 0
+            ? 'gateway'
+            : undefined;
+
+      return {
+        ...base,
+        depth: (onChain?.exists !== false ? onChain?.depth : undefined) ?? gateway?.depth ?? s.depth,
+        bucketDepth:
+          (onChain?.exists !== false ? onChain?.bucketDepth : undefined) ??
+          gateway?.bucketDepth ??
+          s.bucketDepth,
+        batchTTL,
+        ttlSource,
+      };
+    });
+    // Expired storage cannot be used or topped up, so it is not listed.
+    return rows.filter(r => !r.expired);
   };
 
+  // Initial load: pull from localStorage + chain. No wallet signing needed.
   useEffect(() => {
-    if (!address) {
-      setIsLoading(false);
-      return;
-    }
-
-    if (beeHealth.status === 'unknown' || beeHealth.status === 'checking') {
-      setIsLoading(true);
-      return;
-    }
-
-    if (beeHealth.status === 'unreachable' || beeHealth.status === 'unhealthy') {
-      setIsLoading(false);
-      setStamps([]);
-      return;
-    }
-
-    // `ok` but a probe is still in flight (e.g. Bee URL just changed) — wait before stamp API calls
-    if (isBeeHealthProbing) {
-      setIsLoading(true);
-      return;
-    }
-
-    const isStampKnownExpired = (batchId: string): boolean => {
-      const cache = getExpiredStampsCache();
-      const cachedEntry = cache[batchId];
-
-      if (!cachedEntry) return false;
-
-      // For recently cached stamps with low failure count, allow retry after some time
-      const timeSinceLastCheck = Date.now() - cachedEntry.lastChecked;
-      const retryInterval = cachedEntry.failureCount < 3 ? 5 * 60 * 1000 : 60 * 60 * 1000; // 5 min or 1 hour
-
-      if (timeSinceLastCheck > retryInterval && cachedEntry.failureCount < 5) {
-        return false; // Allow retry
-      }
-
-      return true; // Keep it cached
-    };
-
-    // Enhanced fetchStampInfo with intelligent caching
-    const fetchStampInfo = async (
-      batchId: string,
-      stampTimestamp?: number
-    ): Promise<StampInfo | null> => {
-      // Check if we already know this stamp is expired (with retry logic)
-      if (isStampKnownExpired(batchId)) {
-        console.log(`⚡ Skipping known expired stamp: ${batchId.slice(0, 8)}... (cached)`);
-        return null;
-      }
-
-      try {
-        const response = await fetch(`${beeApiUrl}/stamps/${batchId.slice(2)}`, {
-          signal: AbortSignal.timeout(STAMP_API_TIMEOUT_MS),
-        });
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            markStampAsExpired(batchId, stampTimestamp);
-          }
-          return null;
-        }
-
-        const data = await response.json();
-
-        // If we successfully got data, remove from expired cache if it was there
-        const cache = getExpiredStampsCache();
-        if (cache[batchId]) {
-          delete cache[batchId];
-          localStorage.setItem(EXPIRED_STAMPS_CACHE_KEY, JSON.stringify(cache));
-        }
-
-        return data;
-      } catch (error) {
-        console.error(`Error fetching stamps info for ${batchId.slice(0, 8)}...:`, error);
-        // Don't cache network errors as expired - they might be temporary
-        return null;
-      }
-    };
-
     const fetchStamps = async () => {
-      setIsLoading(true);
+      if (!address) {
+        setIsLoading(false);
+        return;
+      }
       try {
-        // Create a client with the registry ABI
-        const client = createPublicClient({
-          chain: gnosis,
-          transport: http(),
-        });
-
-        // Call the getOwnerBatches function from the registry
-        const batchesData = await client.readContract({
-          address: GNOSIS_CUSTOM_REGISTRY_ADDRESS as `0x${string}`,
-          abi: REGISTRY_ABI,
-          functionName: 'getOwnerBatches',
-          args: [address as `0x${string}`],
-        });
-
-        // Process the batches data with optimized batching
-        console.log(`📊 Processing ${(batchesData as any[]).length} stamps from contract...`);
-
-        // Filter batches to only include those for the current node
-        const batchesForCurrentNode = (batchesData as any[]).filter(batch => {
-          const batchNodeAddress = batch.nodeAddress?.toLowerCase();
-          const currentNodeAddress = nodeAddress?.toLowerCase();
-          const isForCurrentNode = batchNodeAddress === currentNodeAddress;
-          if (!isForCurrentNode) {
-            console.log(
-              `🔀 Skipping stamp ${batch.batchId.toString().slice(0, 10)}... (node: ${batchNodeAddress?.slice(0, 10)}... != current: ${currentNodeAddress?.slice(0, 10)}...)`
-            );
-          }
-          return isForCurrentNode;
-        });
-
-        console.log(
-          `🎯 Found ${batchesForCurrentNode.length} stamps for current node (${(batchesData as any[]).length - batchesForCurrentNode.length} for other nodes)`
-        );
-
-        // Filter out known expired stamps before making API calls
-        const batchesToCheck = batchesForCurrentNode.filter(batch => {
-          const batchId = batch.batchId.toString();
-          const isExpired = isStampKnownExpired(batchId);
-          if (isExpired) {
-            console.log(`⚡ Skipping permanently cached expired stamp: ${batchId.slice(0, 8)}...`);
-          }
-          return !isExpired;
-        });
-
-        console.log(
-          `🔍 Making API calls for ${batchesToCheck.length} stamps (${batchesForCurrentNode.length - batchesToCheck.length} skipped from cache)`
-        );
-
-        // Process stamps in smaller batches to avoid overwhelming the API
-        const stampEvents: BatchEvent[] = [];
-
-        for (let i = 0; i < batchesToCheck.length; i += STAMP_API_BATCH_SIZE) {
-          const batch = batchesToCheck.slice(i, i + STAMP_API_BATCH_SIZE);
-
-          const batchPromises = batch.map(async contractBatch => {
-            const batchId = contractBatch.batchId.toString();
-            const stampTimestamp = Number(contractBatch.timestamp);
-            const stampInfo = await fetchStampInfo(batchId, stampTimestamp);
-
-            const depth = Number(contractBatch.depth);
-
-            // If no stamp info, determine if it's propagating or expired
-            if (!stampInfo) {
-              const now = Date.now();
-              const stampAge = now - stampTimestamp * 1000;
-
-              // Only show propagation message for very recent stamps (< 1 hour)
-              // Older stamps returning 404 are likely expired
-              if (stampAge < MAX_PROPAGATION_AGE) {
-                return {
-                  batchId,
-                  totalAmount: formatUnits(contractBatch.totalAmount, 16),
-                  depth,
-                  size: getSizeForDepth(depth),
-                  timestamp: stampTimestamp,
-                  utilization: 0, // Default values for propagating stamp
-                  batchTTL: 30 * 24 * 60 * 60, // Assume 30 days default
-                  bucketDepth: 16, // Standard bucket depth
-                  isPropagating: true, // Flag to show propagation message
-                };
-              }
-
-              // Skip older stamps that failed API calls (likely expired)
-              return null;
-            }
-
-            return {
-              batchId,
-              totalAmount: formatUnits(contractBatch.totalAmount, 16),
-              depth,
-              size: getSizeForDepth(depth),
-              timestamp: stampTimestamp,
-              utilization: stampInfo.utilization,
-              batchTTL: stampInfo.batchTTL,
-              bucketDepth: stampInfo.bucketDepth,
-              isPropagating: false, // Not propagating, we have real data
-            };
-          });
-
-          // Process this batch and add valid stamps
-          const batchResults = await Promise.all(batchPromises);
-          const validStamps = batchResults.filter(
-            (stamp): stamp is NonNullable<typeof stamp> => stamp !== null
-          );
-
-          stampEvents.push(...validStamps);
-
-          // Add a small delay between batches to be respectful to the API
-          if (i + STAMP_API_BATCH_SIZE < batchesToCheck.length) {
-            await new Promise(resolve => setTimeout(resolve, STAMP_API_BATCH_DELAY_MS));
-          }
-        }
-
-        setStamps(stampEvents.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-      } catch (error) {
-        console.error('Error fetching stamps:', error);
+        // Pick up batches the registry lists for this wallet but the local
+        // store lacks (wiped browser, or a purchase whose status poll failed).
+        await reconcileWalletBatches(address, getGnosisPublicClient().client as any);
+        const stored = getSelfCustodyBatches(address);
+        console.log(`📊 Found ${stored.length} self-custody batches for wallet`);
+        const events = await buildStampList(stored);
+        setStamps(events.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      } catch (err) {
+        console.error('Error fetching stamps:', err);
       } finally {
         setIsLoading(false);
       }
     };
+    fetchStamps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
 
-    void fetchStamps();
-  }, [address, beeApiUrl, nodeAddress, beeHealth.status, isBeeHealthProbing]);
-
-  const handleHardReset = () => {
-    const confirmed = window.confirm(
-      'Refresh storage list? This clears the local expired-stamps cache and reloads the page. Only use this if your storage list looks incorrect.'
-    );
-    if (!confirmed) return;
-
-    try {
-      localStorage.removeItem(EXPIRED_STAMPS_CACHE_KEY);
-      window.location.reload();
-    } catch (error) {
-      console.error('Error clearing expired stamps cache:', error);
+  /**
+   * Sync the given storages with Swarm, then redraw the list and drop cached
+   * bucket stats so "Used" and the stats show the merged counters.
+   */
+  const syncStoragesFromSwarm = async (
+    hotKey: Parameters<typeof syncIssuerStatesFromSwarm>[0]['hotKey'],
+    storages: BatchEvent[]
+  ): Promise<IssuerStateSyncResult[]> => {
+    const results = await syncIssuerStatesFromSwarm({
+      bee: new Bee(beeApiUrl),
+      hotKey,
+      storages: storages.map(e => ({ batchId: e.batchId, depth: e.depth })),
+    });
+    for (const r of results) {
+      if (r.outcome === 'failed') console.warn(`State sync failed for ${r.batchId}:`, r.error);
     }
+    if (results.some(r => r.outcome === 'restored' || r.outcome === 'merged' || r.outcome === 'seeded')) {
+      const updated = await buildStampList(getSelfCustodyBatches(address as string));
+      setStamps(updated.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      setBucketStatsById({});
+      setExpandedStatsBatchId(null);
+    }
+    return results;
   };
 
-  // Function to refresh a specific stamp
-  const refreshSingleStamp = async (stampToRefresh: BatchEvent) => {
-    if (!address || beeNodeBlocks) return;
-
-    const batchId = stampToRefresh.batchId;
-    setRefreshingStamps(prev => new Set(prev).add(batchId));
-
-    try {
-      // Re-fetch stamp info directly from the API using utils function
-      const stampTimestamp = stampToRefresh.timestamp || Date.now() / 1000;
-      const stampInfo = await fetchStampInfo(batchId, beeApiUrl);
-
-      if (!stampInfo) {
-        const now = Date.now();
-        const stampAge = now - stampTimestamp * 1000;
-
-        // Check if still young enough for propagation
-        if (stampAge < MAX_PROPAGATION_AGE) {
-          // Keep as propagating - no change needed
-          return;
-        } else {
-          // Too old, remove from list
-          setStamps(prev => prev.filter(s => s.batchId !== batchId));
-          return;
+  // Automatic sync: whenever the hot key is unlocked (no extra signature),
+  // and on load when it already is. Quiet unless a storage changed.
+  const stampsRef = useRef<BatchEvent[]>([]);
+  stampsRef.current = stamps;
+  const autoSyncRunning = useRef(false);
+  const autoSyncRef = useRef<() => void>(() => undefined);
+  autoSyncRef.current = () => {
+    if (!address || autoSyncRunning.current) return;
+    const hotKey = getActiveHotKey(address);
+    const list = stampsRef.current.filter(e => !e.missingOnChain);
+    if (!hotKey || list.length === 0) return;
+    autoSyncRunning.current = true;
+    void syncStoragesFromSwarm(hotKey, list)
+      .then(results => {
+        const changed = results.filter(
+          r => r.outcome === 'restored' || r.outcome === 'merged' || r.outcome === 'seeded'
+        );
+        if (changed.length > 0) {
+          setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(changed)}.`);
         }
-      } else {
-        // Stamp is now ready! Update it with real data
-        const updatedStamp: BatchEvent = {
-          ...stampToRefresh, // Keep existing data
-          utilization: stampInfo.utilization,
-          batchTTL: stampInfo.batchTTL,
-          bucketDepth: stampInfo.bucketDepth,
-          isPropagating: false, // No longer propagating
-        };
-
-        // Update the specific stamp in the list
-        setStamps(prev => prev.map(stamp => (stamp.batchId === batchId ? updatedStamp : stamp)));
-      }
-    } catch (error) {
-      console.error(`Error refreshing stamp ${batchId}:`, error);
-    } finally {
-      setRefreshingStamps(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(batchId);
-        return newSet;
+      })
+      .catch(err => console.warn('Automatic state sync failed:', err))
+      .finally(() => {
+        autoSyncRunning.current = false;
       });
+  };
+  useEffect(() => {
+    if (!address) return;
+    const wallet = address.toLowerCase();
+    return onHotKeyUnlocked(unlocked => {
+      if (unlocked === wallet) autoSyncRef.current();
+    });
+  }, [address]);
+  // Also once the list has loaded, in case the key was unlocked before.
+  const stampCount = stamps.length;
+  useEffect(() => {
+    if (stampCount > 0) autoSyncRef.current();
+  }, [stampCount, address]);
+
+  /**
+   * Full refresh: re-read every batch on-chain and (if a wallet client is
+   * available) attempt to restore the stamper state from SOCs for batches
+   * that have no local state yet. Restoration NEVER overwrites a non-empty
+   * local state — local is always assumed to be the most up-to-date snapshot
+   * of THIS browser's stamper.
+   *
+   * This is what the gear ⚙️ button at the bottom of the list invokes.
+   */
+  const handleFullRefresh = async () => {
+    if (!address || isRefreshing) return;
+    setIsRefreshing(true);
+    setStatusMessage('Reading batch state from the Postage Stamp contract…');
+    try {
+      await reconcileWalletBatches(address, getGnosisPublicClient().client as any);
+      const stored = getSelfCustodyBatches(address);
+      const events = await buildStampList(stored);
+      setStamps(events.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+
+      const syncable = events.filter(e => !e.missingOnChain);
+      if (syncable.length === 0) {
+        setStatusMessage(
+          `Refreshed ${events.length} batch${events.length === 1 ? '' : 'es'} from chain.`
+        );
+        return;
+      }
+      if (!walletClient) {
+        setStatusMessage(
+          `Refreshed ${events.length} from chain. Connect a wallet to sync storage state from Swarm.`
+        );
+        return;
+      }
+
+      // Sync every storage with its newest Swarm backup (restore when this
+      // browser has nothing, merge when the backup is newer). ONE signature
+      // unlocks the hot key for every storage.
+      setStatusMessage(`Syncing storage state from Swarm for ${syncable.length} storage(s)…`);
+      const hotKey = await deriveHotKey(walletClient, address as `0x${string}`);
+      const results = await syncStoragesFromSwarm(hotKey, syncable);
+      setStatusMessage(`Synced storage state from Swarm: ${summarizeSyncResults(results)}.`);
+    } catch (err) {
+      console.error('Refresh failed:', err);
+      setStatusMessage(`Refresh failed: ${(err as Error).message}`);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
-  const handleStampSelect = (stamp: any) => {
-    setPostageBatchId(stamp.batchId.slice(2));
+  /**
+   * Repair the local Stamper state of one batch and clear its chunk-dedup set.
+   *
+   * Counters above the bucket limit are capped and the stored depth is set to
+   * the on-chain depth (typical cause: the old depth-desync bug, TODO §1.7).
+   * Counters are never lowered: a lower counter re-uses a slot, and Bee then
+   * replaces the older chunk in it. Wiping the state would not help either —
+   * the next upload restores the same counters from the Swarm backup.
+   */
+  const handleResetLocalState = async (stamp: BatchEvent) => {
+    const idLabel = (stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId)
+      .slice(0, 10);
+    const ok = window.confirm(
+      `Reset local state for storage ${idLabel}…?\n\n` +
+        `This repairs the saved counters of this one storage in this browser:\n` +
+        `• counters above the bucket limit are set to the limit,\n` +
+        `• the depth is set to the on-chain depth,\n` +
+        `• the "already uploaded" list is cleared, so some chunks can be sent again.\n\n` +
+        `Counters are never lowered, so files already in this storage stay safe. ` +
+        `Other storages are not changed. Continue?`
+    );
+    if (!ok) return;
+    const [repaired] = await Promise.all([
+      repairStamperState(stamp.batchId, stamp.depth),
+      clearStampedAddresses(stamp.batchId),
+    ]);
+    setBucketStatsById(prev => {
+      const next = { ...prev };
+      delete next[stamp.batchId];
+      return next;
+    });
+    setExpandedStatsBatchId(cur => (cur === stamp.batchId ? null : cur));
+    setStamps(prev =>
+      prev.map(s =>
+        s.batchId === stamp.batchId
+          ? {
+              ...s,
+              hasLocalIssuerState: !!repaired,
+              usage: repaired ? computeStampUsage(repaired, stamp.depth) : undefined,
+            }
+          : s
+      )
+    );
+    setStatusMessage(`Local state repaired for ${idLabel}.`);
+  };
+
+  const handleStampSelect = (stamp: BatchEvent) => {
+    if (stamp.expired) return;
+    clearParentUploadError?.();
+    // CRITICAL: align the upload depth with the on-chain batch depth.
+    // The parent's `selectedDepth` default doesn't necessarily match this
+    // stamp; passing through the wrong depth builds a Stamper that hands
+    // out `cnt` values past Bee's `maxSlot`, which Bee silently rejects
+    // while local bucket counters keep climbing — manifesting later as a
+    // bogus "Bucket is full" with usage at 100% / 0.0% avg.
+    setSelectedDepth(stamp.depth);
+    setPostageBatchId(stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId);
     setShowOverlay(true);
     setUploadStep('ready');
     setShowStampList(false);
@@ -583,57 +561,25 @@ const StampListSection: React.FC<StampListSectionProps> = ({
     <div className={styles.stampListContainer}>
       <div className={styles.stampListContent}>
         <div className={styles.stampListHeader}>
-          <h2>Your Storage</h2>
+          <h2>Your Self-Custody Storage</h2>
         </div>
 
-        {address && beeNodeBlocks && (
-          <div
-            className={
-              beeHealth.status === 'unhealthy'
-                ? `${styles.healthBanner} ${styles.healthBannerError}`
-                : `${styles.healthBanner} ${styles.healthBannerWarn}`
-            }
-            role="alert"
-          >
-            <div className={styles.healthBannerBody}>
-              <strong>Bee Node gateway not working</strong>
-              <p className={styles.healthBannerSub}>
-                Change the Bee API gateway in Settings or try again later
-              </p>
-            </div>
-            <button
-              type="button"
-              className={styles.healthBannerRetry}
-              onClick={() => void refreshBeeHealth()}
-              disabled={isBeeHealthProbing}
-            >
-              {isBeeHealthProbing ? (
-                <>
-                  <span className={styles.smallSpinner} aria-hidden />
-                  Checking…
-                </>
-              ) : (
-                'Retry'
-              )}
-            </button>
-          </div>
-        )}
-
         {!address ? (
-          <div className={styles.stampListLoading}>Connect wallet to view your storage</div>
-        ) : beeNodeBlocks ? null : isLoading ? (
-          <div className={styles.stampListLoading}>
-            {checkingBeeGateway ? 'Checking Bee gateway…' : 'Loading your storage...'}
-          </div>
+          <div className={styles.stampListLoading}>Connect wallet to check storage</div>
+        ) : isLoading ? (
+          <div className={styles.stampListLoading}>Loading storage…</div>
         ) : stamps.length === 0 ? (
-          <div className={styles.stampListEmpty}>No storage batches found</div>
+          <div className={styles.stampListEmpty}>
+            No self-custody storage yet. Buy storage to create your first batch — it will appear
+            here automatically.
+          </div>
         ) : (
           <>
-            {stamps.map(stamp => {
+            {stamps.map((stamp, index) => {
               const idKey = normalizeBatchId(stamp.batchId);
               const labelText = storageLabels[idKey];
               return (
-                <div key={stamp.batchId} className={styles.stampListItem}>
+              <div key={index} className={styles.stampListItem}>
                 <div className={styles.storageLabelRow}>
                   <span className={styles.storageLabelHeading}>Label</span>
                   {editingLabelFor === idKey ? (
@@ -711,18 +657,15 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                       ? stamp.batchId.slice(2)
                       : stamp.batchId;
                     navigator.clipboard.writeText(idToCopy);
-                    // Show temporary "Copied!" message
                     const element = document.querySelector(`[data-stamp-id="${stamp.batchId}"]`);
                     if (element) {
                       element.setAttribute('data-copied', 'true');
-                      setTimeout(() => {
-                        element.setAttribute('data-copied', 'false');
-                      }, 2000);
+                      setTimeout(() => element.setAttribute('data-copied', 'false'), 2000);
                     }
                   }}
                   data-stamp-id={stamp.batchId}
                   data-copied="false"
-                  title="Click to copy batch ID"
+                  title="Click to copy storage ID"
                 >
                   ID: {stamp.batchId.startsWith('0x') ? stamp.batchId.slice(2) : stamp.batchId}
                 </div>
@@ -730,103 +673,302 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   <span>Paid: {Number(stamp.totalAmount).toFixed(2)} BZZ</span>
                   <span>Size: {stamp.size}</span>
 
-                  {stamp.isPropagating ? (
-                    <div className={styles.propagatingMessage}>
-                      <span className={styles.propagatingText}>
-                        🕐 Storage is propagating on the network — ready in up to 2 minutes
-                      </span>
-                    </div>
+                  {stamp.expired ? (
+                    <span
+                      className={`${styles.selfCustodyBadge} ${styles.expiredBadge}`}
+                      title="The paid time of this storage ran out and the network removed it. It cannot be used or topped up."
+                    >
+                      Expired
+                    </span>
+                  ) : stamp.missingOnChain ? (
+                    <span
+                      title="The Postage Stamp contract has no entry for this batch — it likely hasn't been mined yet, or the batch was fully expired and reaped."
+                      className={styles.selfCustodyBadge}
+                    >
+                      ⏳ Not on chain
+                    </span>
                   ) : (
-                    <>
-                      {stamp.utilization !== undefined && stamp.depth !== undefined && (
-                        <span>
-                          Utilization:{' '}
-                          {getStampUsage(
-                            stamp.utilization,
-                            stamp.depth,
-                            stamp.bucketDepth || 16
-                          ).toFixed(2)}
-                          %
-                        </span>
-                      )}
-                      {stamp.batchTTL !== undefined && (
-                        <span
-                          className={
-                            isExpiringSoon(stamp.batchTTL)
-                              ? styles.expiryWarning
-                              : isExpiryWarning(stamp.batchTTL)
-                                ? styles.expiryKhaki
-                                : ''
-                          }
-                        >
-                          Expires: {formatExpiryTime(stamp.batchTTL)}
-                          {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
-                        </span>
-                      )}
-                    </>
+                    stamp.batchTTL !== undefined && (
+                      <span
+                        className={
+                          isExpiringSoon(stamp.batchTTL)
+                            ? styles.expiryWarning
+                            : isExpiryWarning(stamp.batchTTL)
+                              ? styles.expiryKhaki
+                              : ''
+                        }
+                        title={
+                          stamp.ttlSource === 'gateway'
+                            ? 'Expiry from Bee gateway chain index (on-chain RPC read unavailable)'
+                            : undefined
+                        }
+                      >
+                        Expires: {formatExpiryTime(stamp.batchTTL)}
+                        {stamp.ttlSource === 'gateway' ? ' (gateway)' : ''}
+                        {isExpiringSoon(stamp.batchTTL) && ' - TOP UP'}
+                      </span>
+                    )
                   )}
 
                   {stamp.timestamp && <span>Created: {formatDateEU(stamp.timestamp * 1000)}</span>}
                 </div>
+
+                {/* Storage utilization: % and bar are usedBytes / product
+                    “guaranteed” label (STORAGE_OPTIONS), not 2^depth theory. */}
+                {stamp.usage ? (
+                  (() => {
+                    const u = stamp.usage;
+                    const corrupted = u.depthMismatch || u.exceedsMaxSlot;
+                    const guaranteedBytes =
+                      guaranteedStampCapacityBytes(stamp.depth) ?? parseHumanStorageSize(stamp.size);
+                    const nominalPct =
+                      guaranteedBytes && guaranteedBytes > 0
+                        ? Math.min(100, (u.usedBytes / guaranteedBytes) * 100)
+                        : Math.min(100, u.avgPercent);
+                    const worstPct = Math.min(100, u.maxBucketPercent);
+                    const barClass = corrupted
+                      ? styles.usageBarDanger
+                      : nominalPct >= 95
+                        ? styles.usageBarDanger
+                        : nominalPct >= 80
+                          ? styles.usageBarWarn
+                          : styles.usageBarOk;
+                    return (
+                      <>
+                        <div className={styles.usageWrapper}>
+                          <div className={styles.usageRow}>
+                            <span
+                              className={styles.usageLabel}
+                              title={
+                                guaranteedBytes
+                                  ? `Used bytes ÷ labelled capacity (${stamp.size}, same as the buy flow) — the % matches “${formatBytes(u.usedBytes)} of ${stamp.size}”.`
+                                  : 'Could not resolve labelled capacity; showing average fill vs on-chain 2^depth capacity instead.'
+                              }
+                            >
+                              Used: {nominalPct.toFixed(1)}%
+                            </span>
+                            <span
+                              className={styles.usageDetail}
+                              title="Same basis as the percentage: ≈ used bytes out of the product’s labelled size for this depth."
+                            >
+                              ≈ {formatBytes(u.usedBytes)} of {stamp.size}
+                            </span>
+                            {corrupted && (
+                              <span
+                                className={styles.usageCorruptBadge}
+                                title={
+                                  u.depthMismatch
+                                    ? `This browser's local Stamper state was built at a different depth than the on-chain batch (depth ${stamp.depth}). The bucket counters can't be trusted: some local 'used' slots were rejected by Bee, and some 'free' slots may already be claimed. Reset to recover.`
+                                    : `Local bucket counters exceed Bee's per-bucket cap for this batch's depth — usually means this state was inherited from an upload at the wrong depth and can no longer accept new uploads. Reset to recover.`
+                                }
+                              >
+                                ⚠ corrupted local state
+                              </span>
+                            )}
+                          </div>
+                          <div className={styles.usageBarContainer}>
+                            <div
+                              className={`${styles.usageBar} ${barClass}`}
+                              style={{ width: `${nominalPct}%` }}
+                            />
+                          </div>
+                          {showAdvancedInfo &&
+                            !corrupted &&
+                            (() => {
+                              const health = bucketHealth(
+                                u.maxBucketUsed,
+                                2 ** (stamp.depth - 16)
+                              );
+                              return (
+                                <>
+                                  <div className={styles.usageStatus} title={health.text}>
+                                    <span
+                                      className={`${styles.usageStatusDot} ${
+                                        health.level === 'ok'
+                                          ? styles.usageBarOk
+                                          : health.level === 'warn'
+                                            ? styles.usageBarWarn
+                                            : styles.usageBarDanger
+                                      }`}
+                                    />
+                                    <span className={styles.usageStatusTitle}>{health.title}</span>
+                                    <span className={styles.usageStatusText}>{health.text}</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          {corrupted && (
+                            <div className={styles.usageCorruptDetail}>
+                              <button
+                                type="button"
+                                className={styles.usageResetButton}
+                                onClick={() => {
+                                  void handleResetLocalState(stamp);
+                                }}
+                                title="Wipe the local Stamper buckets and chunk-dedup cache for this batch. The on-chain storage is untouched."
+                              >
+                                Reset local state
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {showAdvancedInfo && (
+                          <div className={styles.bucketStatsWrap}>
+                            <button
+                              type="button"
+                              className={styles.bucketStatsToggle}
+                              onClick={() => void toggleBucketStats(stamp)}
+                              aria-expanded={expandedStatsBatchId === stamp.batchId}
+                              title="Worst-bucket fill and how many buckets hold 0, 1, 2 or more chunks"
+                            >
+                              <span className={styles.bucketStatsChevron} aria-hidden>
+                                {expandedStatsBatchId === stamp.batchId ? '▼' : '▶'}
+                              </span>
+                              Bucket stats
+                            </button>
+
+                            {expandedStatsBatchId === stamp.batchId && (
+                              <div className={styles.bucketStatsPanel}>
+                                <div className={styles.bucketWorstSection}>
+                                  <div className={styles.bucketWorstLine}>
+                                    <span className={styles.bucketWorstLabel}>Worst bucket</span>
+                                    <span
+                                      className={styles.bucketWorstValue}
+                                      title="The single fullest of 65 536 logical buckets, as a % of that bucket’s chunk cap (maxSlot). Bee rejects new stamps when any bucket hits 100%, even if nominal fill is low."
+                                    >
+                                      {worstPct.toFixed(1)}%
+                                    </span>
+                                    <span className={styles.bucketWorstHint}>
+                                      of per-bucket capacity — uploads fail if any bucket reaches 100%
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {statsLoadingBatchId === stamp.batchId && (
+                                  <p className={styles.bucketStatsMuted}>Loading bucket layout…</p>
+                                )}
+                                {statsLoadingBatchId !== stamp.batchId &&
+                                  bucketStatsById[stamp.batchId]?.status === 'unavailable' && (
+                                    <p className={styles.bucketStatsMuted}>
+                                      Could not load issuer state for this batch.
+                                    </p>
+                                  )}
+                                {statsLoadingBatchId !== stamp.batchId &&
+                                  (() => {
+                                    const bsEntry = bucketStatsById[stamp.batchId];
+                                    if (bsEntry?.status !== 'ready') return null;
+                                    const { viz } = bsEntry;
+                                    const groups = groupBucketFill(viz);
+                                    const nonEmptyTotal = groups.reduce((sum, g) => sum + g.count, 0);
+                                    return (
+                                      <>
+                                        <p className={styles.bucketStatsCaption}>
+                                          {nonEmptyTotal === TOTAL_SWARM_BUCKETS
+                                            ? `${TOTAL_SWARM_BUCKETS.toLocaleString()} logical buckets`
+                                            : 'Bucket counts'}
+                                          {' · '}
+                                          max {viz.maxSlot} chunks per bucket at depth {stamp.depth}
+                                        </p>
+                                        <div
+                                          className={styles.bucketStack}
+                                          role="img"
+                                          aria-label="How many buckets hold 0, 1, 2 or more chunks"
+                                        >
+                                          {groups
+                                            .filter(g => g.count > 0)
+                                            .map(g => (
+                                              <div
+                                                key={g.label}
+                                                className={styles.bucketStackSeg}
+                                                style={{ flexGrow: g.count, background: g.color }}
+                                                title={`${g.label}: ${g.count.toLocaleString()} buckets`}
+                                              />
+                                            ))}
+                                        </div>
+                                        <ul className={styles.bucketLegend}>
+                                          {groups
+                                            .filter(g => g.count > 0)
+                                            .map(g => (
+                                              <li key={g.label} className={styles.bucketLegendItem}>
+                                                <span
+                                                  className={styles.bucketLegendSwatch}
+                                                  style={{ background: g.color }}
+                                                />
+                                                <span className={styles.bucketLegendLabel}>{g.label}</span>
+                                                <span className={styles.bucketLegendCount}>
+                                                  {g.count.toLocaleString()}
+                                                  <span className={styles.bucketHistPct}>
+                                                    {' '}
+                                                    ({((g.count / TOTAL_SWARM_BUCKETS) * 100).toFixed(1)}%)
+                                                  </span>
+                                                </span>
+                                              </li>
+                                            ))}
+                                        </ul>
+                                      </>
+                                    );
+                                  })()}
+                                <div className={styles.bucketStatsFooter}>
+                                  <button
+                                    type="button"
+                                    className={styles.usageResetButton}
+                                    onClick={() => {
+                                      void handleResetLocalState(stamp);
+                                    }}
+                                    title="Clear the saved counters and the already-uploaded list for this storage only."
+                                  >
+                                    Reset local state
+                                  </button>
+                                  <span className={styles.bucketStatsMuted}>
+                                    Only if the counters look wrong. Affects this storage only.
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  <div className={styles.usageWrapper}>
+                    <span
+                      className={styles.usageUnknown}
+                      title="No local Stamper state for this batch in this browser. Click 🔄 below to attempt restoring it from a Swarm SOC backup."
+                    >
+                      Used: unknown — no local issuer state
+                    </span>
+                  </div>
+                )}
+
                 <div className={styles.stampActions}>
-                  {stamp.isPropagating ? (
-                    <button
-                      className={styles.refreshButton}
-                      onClick={() => refreshSingleStamp(stamp)}
-                      disabled={refreshingStamps.has(stamp.batchId)}
-                      title={
-                        refreshingStamps.has(stamp.batchId)
-                          ? 'Checking status...'
-                          : 'Refresh to check if ready'
-                      }
-                    >
-                      {refreshingStamps.has(stamp.batchId) ? '⏳ Checking...' : 'Refresh'}
-                    </button>
-                  ) : (
-                    <button
-                      className={styles.uploadWithStampButton}
-                      onClick={() => {
-                        handleStampSelect(stamp);
-                      }}
-                      title="Upload to this storage"
-                    >
-                      Upload to this storage
-                    </button>
-                  )}
+                  <button
+                    className={styles.uploadWithStampButton}
+                    onClick={() => handleStampSelect(stamp)}
+                    disabled={!!stamp.expired}
+                    title={stamp.expired ? 'This storage has expired' : 'Upload with this storage'}
+                  >
+                    Upload with this storage
+                  </button>
 
                   <button
                     className={styles.topUpButton}
-                    title={
-                      stamp.isPropagating
-                        ? 'Please wait for propagation to finish'
-                        : 'Top up this storage'
-                    }
-                    disabled={stamp.isPropagating}
+                    title={stamp.expired ? 'This storage has expired' : 'Top up this storage'}
+                    disabled={!!stamp.expired}
                     onClick={() => {
-                      if (!stamp.isPropagating) {
-                        try {
-                          console.log('Top-up button clicked');
-                          // Format the batch ID (ensure no 0x prefix for URL)
-                          const formattedId = stamp.batchId.startsWith('0x')
-                            ? stamp.batchId.slice(2)
-                            : stamp.batchId;
-
-                          // Create the topup URL
-                          const topupUrl = `${window.location.origin}/?topup=${formattedId}`;
-                          console.log('Opening new page:', topupUrl);
-
-                          // Use window.open which forces a completely new page load
-                          // The "_self" ensures it replaces the current page
-                          window.open(topupUrl, '_self');
-                        } catch (error) {
-                          console.error('Error during top-up navigation:', error);
-                          // Emergency fallback if all else fails
-                          alert('Navigation failed. Please copy the ID and try again manually.');
-                        }
+                      try {
+                        const formattedId = stamp.batchId.startsWith('0x')
+                          ? stamp.batchId.slice(2)
+                          : stamp.batchId;
+                        const topupUrl = `${window.location.origin}/?topup=${formattedId}`;
+                        window.open(topupUrl, '_self');
+                      } catch (error) {
+                        console.error('Error during top-up navigation:', error);
+                        alert('Navigation failed. Please copy the storage ID and use it manually.');
                       }
                     }}
                   >
-                    {/* Plus/Add icon in SVG format */}
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="20"
@@ -845,36 +987,25 @@ const StampListSection: React.FC<StampListSectionProps> = ({
                   </button>
                 </div>
               </div>
-            );
+              );
             })}
           </>
         )}
 
-        {/* Hard reset button - discrete at bottom */}
+        {statusMessage && (
+          <div className={styles.stampListLoading} style={{ marginTop: 12 }}>
+            {statusMessage}
+          </div>
+        )}
+
         <div className={styles.resetButtonContainer}>
           <button
-            type="button"
             className={styles.resetButton}
-            onClick={handleHardReset}
-            title="Refresh storage list (clears cache and reloads)"
-            aria-label="Refresh storage list"
+            onClick={handleFullRefresh}
+            disabled={isRefreshing}
+            title="Sync storage list from the chain and storage state from Swarm"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
+            {isRefreshing ? '⏳' : '🔄'}
           </button>
         </div>
       </div>

@@ -1,14 +1,14 @@
 /**
- * Lightweight liveness probe for the Bee gateway (Your Stamps + upload step).
+ * Lightweight liveness probe for the Bee gateway shown on the Upload page.
  *
  * Why this exists:
  *   Self-custody upload silently dies a hundred different ways when the
  *   gateway is unhealthy — chunks 5xx, the manifest GET 502s, etc. The
  *   user sees a frozen progress bar and assumes the app is broken. A
- *   one-time `/health` check when Your Stamps loads or the upload step opens
- *   catches "node is down / wrong URL / syncing" up-front: (a) show a clear message,
- *   (b) disable Upload until it passes and skip Bee stamp API calls until healthy.
- *   Users can Retry to probe again after fixing the gateway.
+ *   30-second `/health` poll lets us detect "node is down / wrong URL /
+ *   syncing" up-front and (a) show a clear message, (b) disable the
+ *   Upload button so the user doesn't burn stamp slots on requests that
+ *   will never land.
  *
  * The probe uses a raw `fetch` (not `bee.getHealth()`) so we can pin a
  * tight 5-second timeout via AbortController; bee-js falls back to axios
@@ -37,6 +37,12 @@ export interface BeeHealthState {
   version?: string;
   /** Wall-clock timestamp of the most recent completed probe. */
   lastChecked?: number;
+  /**
+   * Set when a readable cross-origin `/health` fetch failed but a follow-up
+   * `no-cors` probe still reached the gateway — typical of duplicate CORS
+   * headers (Bee + nginx both emitting `Access-Control-Allow-Origin`).
+   */
+  corsLimited?: boolean;
 }
 
 /**
@@ -46,6 +52,39 @@ export interface BeeHealthState {
  * is sick, stop pretending".
  */
 const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * How often we re-probe while the upload UI is open. Long enough that we
+ * don't add noticeable load to a public gateway; short enough that the user
+ * sees the banner clear within a polling cycle once the node recovers.
+ */
+const POLL_INTERVAL_MS = 30_000;
+
+/** Best-effort: did the TCP/TLS request complete even though CORS blocked JS? */
+async function probeReachableNoCors(url: string, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'no-cors',
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    return res.type === 'opaque';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isLikelyCorsFetchFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError') return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed');
+}
 
 /**
  * Run a single `/health` probe. Resolves with a `BeeHealthState` describing
@@ -113,11 +152,25 @@ export async function probeBeeNodeHealth(beeApiUrl: string): Promise<BeeHealthSt
     };
   } catch (err) {
     const aborted = (err as Error)?.name === 'AbortError';
+    if (!aborted && isLikelyCorsFetchFailure(err)) {
+      const reachable = await probeReachableNoCors(url, PROBE_TIMEOUT_MS);
+      if (reachable) {
+        return {
+          status: 'ok',
+          corsLimited: true,
+          message:
+            'Gateway is reachable but the browser blocked reading /health (usually duplicate CORS headers from Bee and nginx). Uploads may still work — try Retry or upload anyway.',
+          lastChecked: Date.now(),
+        };
+      }
+    }
     return {
       status: 'unreachable',
       message: aborted
         ? `No response from the Bee gateway within ${PROBE_TIMEOUT_MS / 1000}s.`
-        : `Cannot reach the Bee gateway: ${(err as Error)?.message ?? 'unknown error'}`,
+        : isLikelyCorsFetchFailure(err)
+          ? `Cannot reach the Bee gateway from this browser (network or CORS). If uploads still work, the gateway is fine — check Origin allowlists on nginx and Bee cors-allowed-origins.`
+          : `Cannot reach the Bee gateway: ${(err as Error)?.message ?? 'unknown error'}`,
       lastChecked: Date.now(),
     };
   } finally {
@@ -139,14 +192,14 @@ export interface UseBeeNodeHealthResult {
 }
 
 /**
- * React hook: runs a single `/health` probe whenever `enabled` becomes true
- * or `beeApiUrl` changes while enabled. No background polling — use
- * {@link UseBeeNodeHealthResult.refresh} (e.g. a Retry button) to check again.
- * Cancels stale in-flight probes on unmount / dependency change.
+ * React hook: probes `/health` once on mount, then every {@link POLL_INTERVAL_MS}
+ * while `enabled` is true. Re-probes when `beeApiUrl` changes. Cancels in-flight
+ * probes on unmount / dependency change so we don't `setState` after unmount.
  *
  * @param beeApiUrl Bee gateway base URL (no trailing `/health`).
- * @param enabled   When false, no request runs; state keeps the last value.
- *                  Pass `false` while the upload UI is hidden.
+ * @param enabled   When false, no polling happens and the state stays at the
+ *                  most-recent value. Pass `false` while the upload UI is
+ *                  hidden so we don't ping a node the user can't see.
  */
 export function useBeeNodeHealth(
   beeApiUrl: string,
@@ -184,7 +237,9 @@ export function useBeeNodeHealth(
 
   useEffect(() => {
     if (!enabled) return;
-    void probe();
+    probe();
+    const id = setInterval(probe, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [probe, enabled]);
 
   return { state, isProbing, refresh: probe };

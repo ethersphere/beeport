@@ -1,5 +1,4 @@
 import {
-  ChainId,
   ChainType,
   getTokenBalancesByChain,
   getTokens,
@@ -125,11 +124,14 @@ export const useTokenManagement = (
           );
           console.log('Token balances:', balances);
 
+          // Self-custody buys go through Relay (any chain → BZZ on Gnosis), so
+          // we do NOT pre-filter the Gnosis token list by a Sushi route.
           setTokenBalances(balances);
+          const effectiveBalances = balances;
 
           // Find tokens with balance
-          if (balances?.[currentChainId]) {
-            const tokensWithBalance = balances[currentChainId]
+          if (effectiveBalances?.[currentChainId]) {
+            const tokensWithBalance = effectiveBalances[currentChainId]
               .filter(t => (t?.amount ?? 0n) > 0n)
               .sort((a, b) => {
                 const aUsdValue =

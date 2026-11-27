@@ -14,12 +14,15 @@ const Disclaimer: React.FC = () => {
         a node.
       </p>
       <p>
-        This app is currently in <strong>beta</strong>, and some features may be unstable. For
-        critical or large-scale use, we recommend{' '}
-        <a href="https://docs.ethswarm.org/docs/bee/installation/getting-started/" target="_blank">
-          running your own Bee node
+        This app is currently in <strong>beta</strong>. Start by uploading a few small files to get
+        familiar with how it works.
+      </p>
+      <p>
+        You are on <strong>V2</strong> of Beeport. For V1 and old stamps go to{' '}
+        <a href="https://beeport-v1.ethswarm.org/" target="_blank" rel="noopener noreferrer">
+          V1 Beeport
         </a>
-        . Start by uploading a few small files to get familiar with how it works.
+        .
       </p>
     </div>
   );

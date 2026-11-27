@@ -1,11 +1,7 @@
-import { ChainId } from '@lifi/sdk';
 import { StorageOption, SwarmConfigType } from './types';
+import { parseHumanStorageSize } from './utils';
 
 // Environment variable configuration
-export const GNOSIS_CUSTOM_REGISTRY_ADDRESS =
-  process.env.NEXT_PUBLIC_GNOSIS_CUSTOM_REGISTRY_ADDRESS ||
-  '0x5EBfBeFB1E88391eFb022d5d33302f50a46bF4f3';
-
 export const LIFI_API_KEY =
   process.env.NEXT_PUBLIC_LIFI_API_KEY ||
   '83f85c7b-97d2-4130-95b0-f72af1f0261e.b11f7330-ebb1-4684-af33-f28759ec6853';
@@ -13,28 +9,32 @@ export const LIFI_API_KEY =
 export const DEFAULT_NODE_ADDRESS =
   process.env.NEXT_PUBLIC_DEFAULT_NODE_ADDRESS || '0x5cb4839B7d7b0ab6BaAbFEdD6749497ECa65b2Ca';
 
-export const LIFI_CONTRACT_ADDRESS =
-  process.env.NEXT_PUBLIC_LIFI_CONTRACT_ADDRESS || '0x2dfaDAB8266483beD9Fd9A292Ce56596a2D1378D';
-
 export const GNOSIS_BZZ_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_BZZ_ADDRESS || '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da';
 
 export const GNOSIS_STAMP_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_STAMP_ADDRESS || '0x45a1502382541Cd610CC9068e88727426b696293';
 
+/**
+ * StampsRegistryV2 — thin self-custody-aware proxy over the upstream Postage
+ * Stamp contract. Used by the buy/top-up flow so that:
+ *   1. `msg.sender` to PostageStamp is always this registry, giving a
+ *      deterministic `batchId = keccak256(registry, nonce)` independent of
+ *      who calls the registry (user EOA, Relay multicaller, etc.).
+ *   2. The full "bridge → buy stamp" path can be expressed as a single
+ *      Relay `txs` action, restoring the legacy one-signature UX while
+ *      preserving the SWIP self-custody property (on-chain `_owner` is the
+ *      hot key, not the wallet or the gateway).
+ *
+ * Override with NEXT_PUBLIC_STAMPS_REGISTRY_V2_ADDRESS for a fork / testnet.
+ */
+export const STAMPS_REGISTRY_V2_ADDRESS =
+  process.env.NEXT_PUBLIC_STAMPS_REGISTRY_V2_ADDRESS ||
+  '0xA1a108E50FdB1aE7848a78577a37f7Bb8F27232f';
+
+/** Bee API base URL for uploads (`POST /chunks`, health, etc.). Override for a local node. */
 export const DEFAULT_BEE_API_URL =
   process.env.NEXT_PUBLIC_DEFAULT_BEE_API_URL || 'https://beeport.xyz';
-
-// Check if we're running on production domains
-const isProductionDomain =
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'beeport.ethswarm.org' ||
-    window.location.hostname === 'beeport.eth.limo');
-
-// BEE Gateway URL - use beeport.xyz for development, bzz.link for production
-export const BEE_GATEWAY_URL =
-  process.env.NEXT_PUBLIC_BEE_GATEWAY_URL ||
-  (isProductionDomain ? 'https://bzz.link/bzz/' : 'https://beeport.xyz/bzz/');
 
 export const ENS_SUBGRAPH_URL =
   'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH';
@@ -45,14 +45,8 @@ export const GNOSIS_PRICE_ORACLE_ADDRESS =
   process.env.NEXT_PUBLIC_GNOSIS_PRICE_ORACLE_ADDRESS ||
   '0x47EeF336e7fE5bED98499A4696bce8f28c1B0a8b';
 
-export const GNOSIS_DESTINATION_TOKEN =
-  process.env.NEXT_PUBLIC_GNOSIS_DESTINATION_TOKEN || '0x0000000000000000000000000000000000000000';
-
 // Static configuration
 export const MIN_TOKEN_BALANCE_USD = 0.5;
-
-// Minimum USD value for bridging to avoid dust amounts
-export const MIN_BRIDGE_USD_VALUE = 0.1;
 
 /** Default slippage in percent: 5 means 5%. Custom slippage (Settings) can use 0.5 steps. Relay API expects basis points; we convert in RelayQuotes (percent × 100 = bps). */
 export const DEFAULT_SLIPPAGE = 5;
@@ -69,42 +63,6 @@ export const RELAY_STATUS_CHECK_INTERVAL_MS = 5000; // 5 seconds between status 
 export const RELAY_STATUS_MAX_ATTEMPTS = 24; // Maximum status check attempts for valid statuses (2 minutes)
 export const TRANSACTION_TIMEOUT_MS = 300000; // Transaction receipt timeout (5 minutes)
 
-// Swarm upload configuration
-export const SWARM_DEFERRED_UPLOAD = 'false'; // Use direct upload to Swarm network for better performance
-
-// Stamp optimization constants
-export const STAMP_API_BATCH_SIZE = 5; // Process 5 stamps at a time
-export const STAMP_API_BATCH_DELAY_MS = 100; // Delay between batches
-export const STAMP_API_TIMEOUT_MS = 10000; // 10 second timeout for stamp API calls
-// Note: Expired stamps are cached permanently since they cannot be reactivated
-
-// Disable message signing for executeRoute calls
-export const DISABLE_MESSAGE_SIGNING = true;
-
-// Accept exchange rate updates automatically for executeRoute calls
-export const ACCEPT_EXCHANGE_RATE_UPDATES = true;
-
-// Upload retry and timeout configuration
-export const UPLOAD_RETRY_CONFIG = {
-  maxRetries: 2, // Maximum number of retry attempts (total tries = maxRetries + 1)
-  retryDelayMs: 5000, // Wait time between retries in milliseconds (5 seconds)
-  retryableErrors: [
-    'Network request failed',
-    'timeout',
-    'stalled',
-    'Upload failed',
-    'Network error',
-  ], // Error message substrings that trigger retries
-} as const;
-
-// Upload timeout configuration
-export const UPLOAD_TIMEOUT_CONFIG = {
-  minTimeoutMinutes: 10, // Minimum timeout duration in minutes
-  maxTimeoutMinutes: 12 * 60, // Maximum timeout duration in minutes (12 hours)
-  assumedUploadSpeedMbps: 1, // Assumed minimum upload speed in Mbps for timeout calculations
-  timeoutBufferMultiplier: 1.5, // Buffer multiplier for timeout calculations (50% buffer)
-} as const;
-
 // File size thresholds for warnings and enhanced logging
 export const FILE_SIZE_CONFIG = {
   largeFileThresholdGB: 2, // Files larger than this show warnings
@@ -113,26 +71,12 @@ export const FILE_SIZE_CONFIG = {
   enhancedLoggingThresholdGB: 0.5, // Same as above but in GB for consistency
 } as const;
 
-// Use the same production check for other features
-const isProduction = isProductionDomain;
-
 // Define all time options
 const ALL_TIME_OPTIONS = [
   { days: 1, display: '1 day' },
   { days: 2, display: '2 days' },
   { days: 7, display: '7 days' },
   { days: 15, display: '15 days' },
-  { days: 30, display: '30 days' },
-  { days: 90, display: '90 days' },
-  { days: 180, display: '180 days' },
-  { days: 365, display: '1 year' },
-  { days: 365 * 2, display: '2 years' },
-  { days: 365 * 5, display: '5 years' },
-  { days: 365 * 10, display: '10 years' },
-];
-
-// Define conservative time options (for potential future use)
-const CONSERVATIVE_TIME_OPTIONS = [
   { days: 30, display: '30 days' },
   { days: 90, display: '90 days' },
   { days: 180, display: '180 days' },
@@ -158,31 +102,21 @@ const ALL_STORAGE_OPTIONS: StorageOption[] = [
   { depth: 27, size: '476GB' },
 ];
 
-// Define conservative storage options (for potential future use)
-const CONSERVATIVE_STORAGE_OPTIONS: StorageOption[] = [
-  { depth: 20, size: '680MB' },
-  { depth: 21, size: '2.6GB' },
-  { depth: 22, size: '7.7GB' },
-  { depth: 23, size: '20GB' },
-  { depth: 24, size: '47GB' },
-  { depth: 25, size: '105GB' },
-  { depth: 26, size: '227GB' },
-  { depth: 27, size: '476GB' },
-];
-
 // Export all storage options for both production and development
 export const STORAGE_OPTIONS: StorageOption[] = ALL_STORAGE_OPTIONS;
 
+/**
+ * Byte capacity matching the UI “guaranteed” / product label for this depth
+ * (same strings as in {@link STORAGE_OPTIONS}).
+ */
+export function guaranteedStampCapacityBytes(depth: number): number | undefined {
+  const opt = STORAGE_OPTIONS.find(o => o.depth === depth);
+  if (!opt) return undefined;
+  const bytes = parseHumanStorageSize(opt.size);
+  return bytes ?? undefined;
+}
+
 export const DEFAULT_SWARM_CONFIG: SwarmConfigType = {
-  toChain: ChainId.DAI,
-  swarmPostageStampAddress: GNOSIS_CUSTOM_REGISTRY_ADDRESS,
-  swarmToken: GNOSIS_BZZ_ADDRESS,
-  swarmContractGasLimit: '2000000',
-  swarmContractAbi: [
-    'function createBatch(address _owner, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
-    'function createBatchRegistry(address _owner,  address _nodeAddress, uint256 _initialBalancePerChunk, uint8 _depth, uint8 _bucketDepth, bytes32 _nonce, bool _immutable) external',
-    'function topUpBatch(bytes32 _batchId, uint256 _topupAmountPerChunk) external',
-  ],
   swarmBatchInitialBalance: '477774720',
   swarmBatchDepth: '20',
   swarmBatchBucketDepth: '16',
@@ -258,35 +192,192 @@ export const BZZ_USDC_POOL_ADDRESS =
   process.env.NEXT_PUBLIC_BZZ_USDC_POOL_ADDRESS || '0x6f30b7cf40cb423c1d23478a9855701ecf43931e';
 
 /**
- * Note on naming convention: The terms "Batch" and "Stamps" are used interchangeably throughout the codebase.
- * "Batch" refers to a collection of stamps created in a single transaction and is the terminology used in the
- * Swarm protocol. "Stamps" is a more user-friendly term used to describe the same concept.
- * For example: "BatchCreated" event, but "StampsRegistry" contract.
+ * Minimal ABI for the upstream Swarm Postage Stamp contract on Gnosis
+ * (`GNOSIS_STAMP_ADDRESS`). Used for read-only calls (`batches`, pricing) and
+ * any direct protocol inspection — **not** for app-side `createBatch` (all
+ * creates go through StampsRegistryV2 (`STAMPS_REGISTRY_V2_ADDRESS`).
+ *
+ * `batchId` for direct `msg.sender` calls is `keccak256(abi.encode(msg.sender, nonce))`.
+ * Beeport’s buy flow uses the registry as `msg.sender` instead.
  */
-// Registry ABI for the functions we need to retrieve batch data
-export const REGISTRY_ABI = [
+export const POSTAGE_STAMP_ABI = [
   {
-    inputs: [{ internalType: 'address', name: '_owner', type: 'address' }],
-    name: 'getOwnerBatches',
+    inputs: [
+      { internalType: 'address', name: '_owner', type: 'address' },
+      { internalType: 'uint256', name: '_initialBalancePerChunk', type: 'uint256' },
+      { internalType: 'uint8', name: '_depth', type: 'uint8' },
+      { internalType: 'uint8', name: '_bucketDepth', type: 'uint8' },
+      { internalType: 'bytes32', name: '_nonce', type: 'bytes32' },
+      { internalType: 'bool', name: '_immutable', type: 'bool' },
+    ],
+    name: 'createBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'bytes32', name: '_batchId', type: 'bytes32' },
+      { internalType: 'uint256', name: '_topupAmountPerChunk', type: 'uint256' },
+    ],
+    name: 'topUp',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'bytes32', name: '_batchId', type: 'bytes32' },
+      { internalType: 'uint8', name: '_newDepth', type: 'uint8' },
+    ],
+    name: 'increaseDepth',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'bytes32', name: '_batchId', type: 'bytes32' }],
+    name: 'remainingBalance',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'bytes32', name: '_batchId', type: 'bytes32' }],
+    name: 'batchOwner',
+    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  // Public mapping accessor — single source of truth for batch state.
+  // Verified against the Gnosis Postage Stamp contract (selector 0xc81e25ab).
+  {
+    inputs: [{ internalType: 'bytes32', name: '', type: 'bytes32' }],
+    name: 'batches',
     outputs: [
-      {
-        components: [
-          { internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
-          { internalType: 'uint256', name: 'totalAmount', type: 'uint256' },
-          { internalType: 'uint256', name: 'normalisedBalance', type: 'uint256' },
-          { internalType: 'address', name: 'nodeAddress', type: 'address' },
-          { internalType: 'address', name: 'payer', type: 'address' },
-          { internalType: 'uint8', name: 'depth', type: 'uint8' },
-          { internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
-          { internalType: 'bool', name: 'immutable_', type: 'bool' },
-          { internalType: 'uint256', name: 'timestamp', type: 'uint256' },
-        ],
-        internalType: 'struct StampsRegistry.BatchInfo[]',
-        name: '',
-        type: 'tuple[]',
-      },
+      { internalType: 'address', name: 'owner', type: 'address' },
+      { internalType: 'uint8', name: 'depth', type: 'uint8' },
+      { internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
+      { internalType: 'bool', name: 'immutable_', type: 'bool' },
+      { internalType: 'uint256', name: 'normalisedBalance', type: 'uint256' },
+      { internalType: 'uint256', name: 'lastUpdatedBlockNumber', type: 'uint256' },
     ],
     stateMutability: 'view',
     type: 'function',
+  },
+  // Cumulative price-per-chunk paid since contract genesis. A batch expires
+  // once `currentTotalOutPayment >= normalisedBalance`. Selector 0x51b17cd0.
+  {
+    inputs: [],
+    name: 'currentTotalOutPayment',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  // Current price per chunk per block (PLUR). Selector 0x053f14da.
+  {
+    inputs: [],
+    name: 'lastPrice',
+    outputs: [{ internalType: 'uint64', name: '', type: 'uint64' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  // ── Events ────────────────────────────────────────────────────────────────
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true,  internalType: 'bytes32', name: 'batchId',           type: 'bytes32' },
+      { indexed: false, internalType: 'uint256', name: 'totalAmount',       type: 'uint256' },
+      { indexed: false, internalType: 'uint256', name: 'normalisedBalance', type: 'uint256' },
+      { indexed: false, internalType: 'address', name: 'owner',             type: 'address' },
+      { indexed: false, internalType: 'uint8',   name: 'depth',             type: 'uint8'   },
+      { indexed: false, internalType: 'uint8',   name: 'bucketDepth',       type: 'uint8'   },
+      { indexed: false, internalType: 'bool',    name: 'immutableFlag',     type: 'bool'    },
+    ],
+    name: 'BatchCreated',
+    type: 'event',
+  },
+] as const;
+
+/**
+ * StampsRegistryV2 ABI — only the functions/events the frontend talks to.
+ * The contract exists to make `batchId` deterministic regardless of who
+ * calls it (user wallet, Relay multicaller, etc.) and to provide a chain-
+ * indexed list of self-custody batches under a wallet.
+ *
+ * Source: contracts/StampsRegistryV2.sol
+ */
+export const STAMPS_REGISTRY_V2_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'wallet', type: 'address' },
+      { internalType: 'address', name: 'hotKeyOwner', type: 'address' },
+      { internalType: 'uint256', name: 'initialBalancePerChunk', type: 'uint256' },
+      { internalType: 'uint8', name: 'depth', type: 'uint8' },
+      { internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
+      { internalType: 'bytes32', name: 'nonce', type: 'bytes32' },
+      { internalType: 'bool', name: 'immutable_', type: 'bool' },
+    ],
+    name: 'createSelfCustodyBatch',
+    outputs: [{ internalType: 'bytes32', name: 'batchId', type: 'bytes32' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+      { internalType: 'uint256', name: 'perChunkAmount', type: 'uint256' },
+    ],
+    name: 'topUpBatch',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'address', name: 'wallet', type: 'address' }],
+    name: 'getWalletBatchIds',
+    outputs: [{ internalType: 'bytes32[]', name: '', type: 'bytes32[]' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'address', name: 'wallet', type: 'address' }],
+    name: 'getWalletBatchCount',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'bytes32', name: 'nonce', type: 'bytes32' }],
+    name: 'predictBatchId',
+    outputs: [{ internalType: 'bytes32', name: '', type: 'bytes32' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ internalType: 'bytes32', name: '', type: 'bytes32' }],
+    name: 'batchAttribution',
+    outputs: [
+      { internalType: 'address', name: 'wallet', type: 'address' },
+      { internalType: 'address', name: 'hotKeyOwner', type: 'address' },
+      { internalType: 'uint96', name: 'createdAt', type: 'uint96' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: 'bytes32', name: 'batchId', type: 'bytes32' },
+      { indexed: true, internalType: 'address', name: 'wallet', type: 'address' },
+      { indexed: true, internalType: 'address', name: 'hotKeyOwner', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'totalAmount', type: 'uint256' },
+      { indexed: false, internalType: 'uint8', name: 'depth', type: 'uint8' },
+      { indexed: false, internalType: 'uint8', name: 'bucketDepth', type: 'uint8' },
+      { indexed: false, internalType: 'bool', name: 'immutable_', type: 'bool' },
+      { indexed: false, internalType: 'bytes32', name: 'nonce', type: 'bytes32' },
+    ],
+    name: 'BatchCreated',
+    type: 'event',
   },
 ] as const;

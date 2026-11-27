@@ -19,20 +19,20 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deploy:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat deploy --network gnosis --tags SushiSwapStampsRouter",
+    "deploy:registry-v2": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat deploy --network gnosis --tags StampsRegistryV2",
     "verify:router": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_router.ts --network gnosis",
-    "verify:registry": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry.ts --network gnosis"
+    "verify:registry-v2": "TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry_v2.ts --network gnosis"
   },
   "dependencies": {
+    "@ethersphere/bee-js": "^12.1.0",
+    "@ethersphere/core-sdk": "0.3.0",
     "@formbricks/js": "^4.1.0",
     "@lifi/sdk": "3.6.7",
+    "@noble/hashes": "1.8.0",
+    "@noble/secp256k1": "1.7.1",
     "@rainbow-me/rainbowkit": "^2.1.7",
     "@tanstack/react-query": "^5.59.11",
-    "alchemy-sdk": "^3.6.1",
-    "axios": "^1.7.7",
-    "cors": "^2.8.5",
     "encoding": "^0.1.13",
-    "express": "^4.21.2",
-    "http-proxy-middleware": "^3.0.3",
     "jszip": "^3.10.1",
     "next": "14.2.15",
     "pako": "^2.1.0",
@@ -40,11 +40,8 @@
     "react": "^18",
     "react-dom": "^18",
     "serve": "^14.2.4",
-    "tar-js": "^0.3.0",
-    "trackjs-nextjs": "^1.0.3",
     "viem": "^2.25.0",
-    "wagmi": "^2.12.17",
-    "zod": "^3.25.76"
+    "wagmi": "^2.12.17"
   },
   "ts-node": {
     "project": "./tsconfig.hardhat.json",

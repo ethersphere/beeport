@@ -8,6 +8,8 @@ import {
 } from 'viem';
 import { gnosis } from 'viem/chains';
 import { getRpcUrlsForChain } from '@/app/wagmi';
+import type { StampInfo } from './types';
+import { fetchStampBatchInfo } from './BeeApi';
 
 // Global state for custom RPC URL
 let globalCustomRpcUrl: string | undefined = undefined;
@@ -36,6 +38,31 @@ export const formatErrorMessage = (error: unknown): string => {
   const requestArgsIndex = errorMessage.indexOf('Request Arguments:');
   return requestArgsIndex > -1 ? errorMessage.slice(0, requestArgsIndex).trim() : errorMessage;
 };
+
+/**
+ * Parses product labels like "680MB", "2.6GB", "110MB" (binary SI: 1 MB = 1024² B).
+ * Returns null if the string is not recognized.
+ */
+export function parseHumanStorageSize(label: string): number | null {
+  const m = label.trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const unit = m[2].toUpperCase();
+  const mult =
+    unit === 'B'
+      ? 1
+      : unit === 'KB'
+        ? 1024
+        : unit === 'MB'
+          ? 1024 ** 2
+          : unit === 'GB'
+            ? 1024 ** 3
+            : unit === 'TB'
+              ? 1024 ** 4
+              : 1;
+  return n * mult;
+}
 
 /**
  * Calculates batch ID from nonce and sender address (pure function)
@@ -156,57 +183,6 @@ export const performWithRetry = async <T>(
 };
 
 /**
- * Logs the token swap route from quote steps
- * @param steps Array of steps from LIFI quote
- * @param type String identifier for the quote type
- */
-export const logTokenRoute = (steps: any[], type: string) => {
-  console.info(`>> ${type} Token Route:`);
-
-  // Log the tool information if available
-  if (steps.length > 0 && steps[0].toolDetails) {
-    console.info(
-      `   Tool used: ${steps[0].toolDetails.name} (${steps[0].toolDetails.logoURI || 'N/A'})`
-    );
-  } else if (steps.length > 0 && steps[0].tool) {
-    console.info(`   Tool used: ${steps[0].tool}`);
-  }
-
-  steps.forEach((step, index) => {
-    // Check if this is a contract call step
-    if (
-      step.action.fromToken.symbol === 'BZZ' &&
-      step.action.toToken.symbol === 'BZZ' &&
-      step.action.toContractCallData?.length > 0
-    ) {
-      console.info(`   Step ${index + 1}: Contract Call (Chain ${step.action.fromChainId})`);
-      if (step.toolDetails) {
-        console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
-      } else if (step.tool) {
-        console.info(`     Tool: ${step.tool}`);
-      }
-      return;
-    }
-
-    const fromToken = step.action.fromToken.name || step.action.fromToken.symbol;
-    const toToken = step.action.toToken.name || step.action.toToken.symbol;
-    const fromChain = step.action.fromChainId;
-    const toChain = step.action.toChainId;
-
-    console.info(
-      `   Step ${index + 1}: ${fromToken} (Chain ${fromChain}) → ${toToken} (Chain ${toChain})`
-    );
-
-    // Log tool information for each step if available
-    if (step.toolDetails) {
-      console.info(`     Tool: ${step.toolDetails.name} (${step.tool})`);
-    } else if (step.tool) {
-      console.info(`     Tool: ${step.tool}`);
-    }
-  });
-};
-
-/**
  * Generates a new nonce and returns an updated SwarmConfig
  * @param swarmConfig The current SwarmConfig object
  * @param setSwarmConfig Optional state setter function to update the config
@@ -249,45 +225,6 @@ export const generateProperNonce = (): string => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('')
   );
-};
-
-/**
- * Handles exchange rate updates for Li.Fi SDK executeRoute calls
- * @param params Exchange rate update parameters from Li.Fi SDK
- * @param setStatusMessage Function to update status message
- * @param acceptExchangeRateUpdates Boolean flag to control acceptance
- * @returns Promise<boolean> indicating whether to accept the rate update
- */
-export const handleExchangeRateUpdate = async (
-  params: {
-    toToken: any;
-    oldToAmount: string;
-    newToAmount: string;
-  },
-  setStatusMessage: (status: any) => void,
-  acceptExchangeRateUpdates: boolean
-): Promise<boolean> => {
-  const { toToken, oldToAmount, newToAmount } = params;
-
-  console.log('Exchange rate update detected:');
-  console.log(`Token: ${toToken.symbol}`);
-  console.log(`Old amount: ${oldToAmount}`);
-  console.log(`New amount: ${newToAmount}`);
-
-  // Calculate percentage change
-  const oldAmount = parseFloat(oldToAmount);
-  const newAmount = parseFloat(newToAmount);
-  const percentageChange = ((newAmount - oldAmount) / oldAmount) * 100;
-
-  console.log(`Exchange rate change: ${percentageChange.toFixed(2)}%`);
-
-  // Update status message to inform user about the rate change
-  setStatusMessage((prev: any) => ({
-    ...prev,
-    message: `${prev.message} (Rate updated: ${percentageChange > 0 ? '+' : ''}${percentageChange.toFixed(2)}%)`,
-  }));
-
-  return acceptExchangeRateUpdates;
 };
 
 /**
@@ -348,72 +285,15 @@ export const fetchNodeWalletAddress = async (
 };
 
 /**
- * Fetches current price from Gnosis price oracle
- * @param publicClient Optional public client to use, if not provided uses getGnosisPublicClient
- * @param priceOracleAddress Optional oracle address, if not provided uses default
- * @param priceOracleAbi Optional oracle ABI, if not provided uses default
- * @returns Promise<bigint> The current price, or 65000n as fallback
+ * Fetches stamp / batch metadata from the Bee gateway.
+ *
+ * Tries `GET /stamps/{id}` first, then `GET /batches/{id}` (Bee v2.8.1+,
+ * works for self-custody batches whose issuer is not the gateway).
  */
-export const fetchCurrentPriceFromOracle = async (
-  publicClient?: any,
-  priceOracleAddress?: string,
-  priceOracleAbi?: any
-): Promise<bigint> => {
-  try {
-    // Use our custom RPC configuration first, not wagmi's publicClient
-    const client = getGnosisPublicClient().client;
-
-    // If no address/abi provided, we'll need them from the calling component
-    // to avoid circular dependencies
-    if (!priceOracleAddress || !priceOracleAbi) {
-      throw new Error(
-        'Price oracle address and ABI must be provided to avoid circular dependencies'
-      );
-    }
-
-    const price = await client.readContract({
-      address: priceOracleAddress as `0x${string}`,
-      abi: priceOracleAbi,
-      functionName: 'currentPrice',
-      args: [],
-    });
-
-    console.log('Price fetched from oracle (utility):', price);
-    return BigInt(price as string | number | bigint);
-  } catch (error) {
-    console.error('Error fetching current price from oracle:', error);
-    console.log('Using utility fallback price: 65000');
-    return BigInt(65000); // Fallback price
-  }
-};
-
-/**
- * Fetches stamp information for a given batch ID
- * @param batchId The batch ID (with or without 0x prefix)
- * @param beeApiUrl The Bee API URL
- * @returns Promise<StampInfo | null> The stamp information or null if failed
- */
-export const fetchStampInfo = async (batchId: string, beeApiUrl: string): Promise<any | null> => {
-  try {
-    // Make sure the batchId doesn't have 0x prefix for the API call
-    const formattedBatchId = batchId.startsWith('0x') ? batchId.slice(2) : batchId;
-
-    const response = await fetch(`${beeApiUrl}/stamps/${formattedBatchId}`, {
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      console.error(`Error fetching stamp info: ${response.status} ${response.statusText}`);
-      return null;
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error(`Error fetching stamp info for ${batchId}:`, error);
-    return null;
-  }
-};
+export const fetchStampInfo = async (
+  batchId: string,
+  beeApiUrl: string
+): Promise<StampInfo | null> => fetchStampBatchInfo(batchId, beeApiUrl);
 
 /**
  * Update upload history expiry dates for a specific stamp after top-up
@@ -615,10 +495,25 @@ export const parseDateFromCSV = (dateString: string): number => {
   return parsedDate.getTime(); // Will be NaN if invalid
 };
 
+
 /**
- * Format hash for display (shows first 6 and last 6 characters)
+ * Per-chunk balance to pay for `days` of storage.
+ *
+ * The Postage Stamp contract rejects a new batch whose per-chunk balance is
+ * below `minimumValidityBlocks * lastPrice`, and the price can rise between
+ * the quote and the transaction. A 1-day batch pays exactly that minimum, so
+ * for new batches we keep a 5% margin above it. Longer durations are above
+ * the minimum already and are unchanged. Top-ups have no minimum.
  */
-export const formatHash = (hash: string): string => {
-  if (hash.length <= 12) return hash;
-  return `${hash.slice(0, 6)}...${hash.slice(-6)}`;
-};
+export function perChunkBalanceForDays(
+  price: bigint,
+  blocksPerDay: number,
+  days: number,
+  isNewBatch: boolean
+): bigint {
+  const perDay = price * BigInt(blocksPerDay);
+  const base = perDay * BigInt(days);
+  if (!isNewBatch) return base;
+  const floor = (perDay * 105n) / 100n;
+  return base > floor ? base : floor;
+}

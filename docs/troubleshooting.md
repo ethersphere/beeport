@@ -1,313 +1,88 @@
-# Troubleshooting Guide
+# Troubleshooting
 
-## Common Upload Issues
+Common failures in Beeport self-custody uploads and what to do about them.
 
-### Upload Fails Immediately
+## Upload fails immediately
 
-#### "Missing file, postage batch ID, or wallet"
+### "Missing file, postage batch ID, or wallet"
 
-**Cause**: Required components not properly connected or selected.
+Connect the wallet, choose a file, and select a stamp. If state looks out of sync, refresh the page.
 
-**Solutions**:
+### "Storage not ready yet" / HTTP 400 `invalid batch id` on a fresh batch
 
-1. **Connect wallet**: Ensure MetaMask or compatible wallet is connected
-2. **Select file**: Choose a file before attempting upload
-3. **Select postage stamp**: Choose an existing stamp or create a new one
-4. **Refresh page**: Sometimes connection state gets out of sync
+The Bee gateway's batchstore hasn't indexed your `createBatch` block yet. The app probes with one chunk and retries for ~2 minutes ("Waiting for Bee gateway to recognize your new storage…"). If it still fails after that, the gateway is slow to poll its RPC or watches a different PostageStamp contract — wait a minute and press Upload again (your file selection is preserved), or switch gateways.
 
-#### "Upload failed with status 400/500"
+### "One chunk of this file belongs to a full bucket" / "Bucket is full"
 
-**Cause**: Server-side error or invalid request.
+A storage has 65,536 buckets. Each bucket holds a fixed number of chunks. A chunk goes into the bucket that its address points to. When that bucket is full, the app cannot stamp the chunk. The upload stops. Chunks that the app already sent stay stored.
 
-**Solutions**:
+The app checks its own saved counters before it sends a chunk. Bee applies the same limit. Bee refuses a stamp with a slot number above the limit (`invalid index`).
 
-1. **Check file format**: Ensure file type is supported
-2. **Verify stamp validity**: Stamp may be expired or invalid
-3. **Try smaller file**: Large files may exceed server limits
-4. **Wait and retry**: Temporary server issues
+Other files can still work, because their chunks go to other buckets. A top-up adds time, not space, so it does not help. Use a larger storage for this file.
 
-### Network and Connection Issues
+If the counters look wrong, enable **Advanced mode** in Settings. Then use **Reset local state** in the storage list. This repairs the counters of that one storage. Counters above the bucket limit go to the limit, and the depth goes to the on-chain depth. The reset never lowers a counter, so files already in the storage stay safe. A reset cannot add space to a bucket that is really full.
 
-#### "Network error during upload"
+### "This storage has expired"
 
-**Cause**: Internet connection problems or network instability.
+Storage is rented for a fixed time. When the paid time runs out, the Postage Stamp contract removes the batch. The network then deletes the files over time. The app reads each storage from the contract. It hides expired storage in the storage list. It also refuses uploads and top-ups to expired storage. Buy new storage to upload again.
 
-**Solutions**:
+### "Could not verify this storage's saved state on Swarm" / `500 read chunk failed`
 
-1. **Check internet connection**: Verify stable internet access
-2. **Try different network**: Switch to different WiFi or mobile data
-3. **Disable VPN**: VPN may interfere with upload
-4. **Close other applications**: Free up bandwidth
-5. **Retry upload**: Network issues are often temporary
+When you buy storage, and after each upload, the app saves the state of the storage to Swarm. The state is a set of counters that show which parts of the storage are in use. Another browser with the same wallet reads this saved state before it uploads. The app also reads it when you unlock the hot key, and when you click the sync button (🔄) below the storage list. The hot key is the key that signs your uploads. One wallet signature unlocks it.
 
-#### "Upload timeout"
+Bee answers 404 when it cannot find a chunk. Bee also remembers each peer (another Bee node) that did not return a chunk. Bee does not ask that peer again for one minute. After about three failed reads of the same address, no peer is left. Bee then answers `500 read chunk failed` for that address until the address gets no reads for one minute.
 
-**Cause**: File too large for current connection speed or server timeout.
+The app reads this answer as "not found". Older versions of the app stopped the upload. If another browser says that no saved state exists, open the storage list in the browser that bought or used the storage. Click the sync button (🔄) there. That browser then saves the state to Swarm.
 
-**Solutions**:
+### "Bee doesn't recognize this batch"
 
-1. **Use faster internet**: Switch to higher bandwidth connection
-2. **Compress file**: Reduce file size before uploading
-3. **Try during off-peak hours**: Less network congestion
-4. **Split large files**: Break into smaller chunks
-5. **Keep browser tab active**: Don't switch tabs during upload
+If it's not a fresh-batch race (above), the gateway probably watches a different postage contract than the one that created the batch. Compare Bee's `--postage-stamp-contract-address` with the app's Gnosis stamp address.
 
-### File-Specific Issues
+## Network issues
 
-#### "File too large"
+### Many `net::ERR_FAILED` on `POST …/chunks` during large uploads
 
-**Cause**: File exceeds size limits or stamp capacity.
+Too many parallel chunk requests vs what the HTTP/2 edge can sustain (typical stream limit ~128 per connection).
 
-**Solutions**:
+1. Use current Beeport — parallelism is capped to stay within typical gateway limits.
+2. Self-hosted gateway: raise `http2_max_concurrent_streams` only if you intentionally increase client parallelism.
+3. If errors persist, try a different network or a gateway closer to you.
 
-1. **Compress file**: Use ZIP, RAR, or other compression
-2. **Choose larger stamp**: Select stamp with more capacity
-3. **Split file**: Break into multiple smaller files
-4. **Remove unnecessary content**: Clean up file before upload
+See [Client-side chunk pipeline](./client-side-chunk-pipeline.md).
 
-#### "Invalid file format"
+### Duplicate CORS headers (`Access-Control-Allow-Origin` appears twice)
 
-**Cause**: File type not supported or corrupted file.
+Both Bee and nginx are adding CORS headers. Uploads may still work and files still open by direct navigation, but `fetch` probes fail. Fix the gateway so only one layer emits CORS — see [Self-hosting a Bee gateway](./self-hosting-bee-gateway.md).
 
-**Solutions**:
+### Upload stalls or times out
 
-1. **Check file extension**: Ensure file has proper extension
-2. **Verify file integrity**: Try opening file locally first
-3. **Convert format**: Use different file format if needed
-4. **Re-create file**: Generate new version of the file
+Keep the tab open and focused (background tabs get throttled). For multi-GB files use a stable connection; progress can look stuck while large chunk batches drain.
 
-### Postage Stamp Issues
+## Archive / website issues
 
-#### "Insufficient funds" or "Stamp capacity exceeded"
+| Symptom | Fix |
+| ------- | --- |
+| ZIP/TAR extract fails | Re-create the archive with standard compression; test extracting locally first |
+| Files missing after extract | Duplicate names or paths over 100 chars (TAR limit, auto-truncated) — see [Archive processing](./archive-processing.md) |
+| Website shows blank root | `index.html` must be at the archive/folder root; try the URL with a trailing `/` |
+| Broken assets on a website | Use relative paths; filename case must match exactly |
+| NFT ZIP rejected | Needs top-level `images/` and `json/` folders — see [NFT collection upload](./nft-collection-upload.md) |
 
-**Cause**: Postage stamp doesn't have enough capacity for the file.
+## HTTP status codes from the gateway
 
-**Solutions**:
+| Code | Likely cause | What to do |
+| ---- | ------------ | ---------- |
+| 400 | Fresh batch not indexed yet, invalid stamp, or bucket collision | Wait for the readiness probe / retry; check stamp state |
+| 404 | Batch or reference unknown to this gateway | Verify the batch ID / reference; try another gateway |
+| 413 | Body too large for the edge proxy | Gateway config (`client_max_body_size`) — chunks are 4 KB, so this usually means a misrouted request |
+| 429 | Rate limited | Wait and retry |
+| 500 `read chunk failed` | Recent reads did not find the chunk, and Bee has no peer left to ask | Normal for a chunk that does not exist. It changes back to 404 one minute after the last read |
+| 5xx | Gateway problem | Retry later or switch gateways |
 
-1. **Check stamp utilization**: View stamp details for available space
-2. **Top up stamp**: Add more capacity to existing stamp
-3. **Create new stamp**: Purchase larger stamp
-4. **Use different stamp**: Select stamp with more capacity
+## Reporting an issue
 
-#### "Stamp not found" or "Invalid batch ID"
-
-**Cause**: Stamp doesn't exist or has expired.
-
-**Solutions**:
-
-1. **Verify stamp ID**: Check stamp ID is correct
-2. **Check expiration**: Stamp may have expired
-3. **Create new stamp**: Purchase fresh postage stamp
-4. **Wait for propagation**: New stamps may take time to be recognized
-
-### Browser and Interface Issues
-
-#### "Page not responding" or "Browser crash"
-
-**Cause**: Large files or many files overwhelming browser memory.
-
-**Solutions**:
-
-1. **Close other tabs**: Free up browser memory
-2. **Restart browser**: Clear memory and start fresh
-3. **Use smaller batches**: Upload fewer files at once
-4. **Try different browser**: Chrome, Firefox, Safari, Edge
-5. **Clear browser cache**: Remove stored data
-
-#### "Upload progress stuck"
-
-**Cause**: Browser or network issue preventing progress updates.
-
-**Solutions**:
-
-1. **Wait patiently**: Large files may appear stuck but are processing
-2. **Check network activity**: Look for ongoing data transfer
-3. **Refresh page**: Restart upload process
-4. **Try incognito mode**: Avoid extension interference
-
-### Archive Processing Issues
-
-#### "Failed to extract ZIP/TAR"
-
-**Cause**: Corrupted archive or unsupported compression method.
-
-**Solutions**:
-
-1. **Test archive locally**: Extract on your computer first
-2. **Re-create archive**: Generate new ZIP/TAR file
-3. **Use standard compression**: Avoid exotic compression methods
-4. **Check file names**: Avoid special characters in filenames
-
-#### "Some files missing after extraction"
-
-**Cause**: File name conflicts or extraction errors.
-
-**Solutions**:
-
-1. **Check for duplicates**: Remove duplicate filenames
-2. **Avoid special characters**: Use only letters, numbers, hyphens
-3. **Verify archive structure**: Ensure proper folder organization
-4. **Test with smaller archive**: Try subset of files first
-
-### NFT Collection Issues
-
-#### "No images found in images folder"
-
-**Cause**: ZIP doesn't contain properly structured images folder.
-
-**Solutions**:
-
-1. **Check folder name**: Must be exactly "images" (case-insensitive)
-2. **Verify folder contents**: Ensure images are directly in folder
-3. **Check file formats**: Use standard image formats (PNG, JPG, GIF)
-4. **Avoid subfolders**: Images should be directly in images/ folder
-
-#### "No JSON metadata files found"
-
-**Cause**: ZIP doesn't contain properly structured json folder.
-
-**Solutions**:
-
-1. **Check folder name**: Must be exactly "json" (case-insensitive)
-2. **Verify JSON format**: Use JSON validator to check files
-3. **Check file extensions**: Files must end with .json
-4. **Ensure valid JSON**: Fix syntax errors in metadata files
-
-### Webpage Upload Issues
-
-#### "Website not loading"
-
-**Cause**: Missing index.html or incorrect configuration.
-
-**Solutions**:
-
-1. **Include index.html**: Must be in root of archive
-2. **Check file paths**: Use relative paths in HTML/CSS
-3. **Verify archive structure**: Ensure proper website organization
-4. **Test locally**: Open files in browser before uploading
-
-#### "Broken links or missing assets"
-
-**Cause**: Incorrect file paths or missing files.
-
-**Solutions**:
-
-1. **Use relative paths**: Avoid absolute URLs
-2. **Check case sensitivity**: Filenames must match exactly
-3. **Include all assets**: Ensure CSS, JS, images are in archive
-4. **Test file structure**: Verify all links work locally
-
-## Error Code Reference
-
-### HTTP Status Codes
-
-| Code | Meaning               | Common Causes                    | Solutions                             |
-| ---- | --------------------- | -------------------------------- | ------------------------------------- |
-| 400  | Bad Request           | Invalid file or parameters       | Check file format and settings        |
-| 401  | Unauthorized          | Wallet not connected             | Connect wallet and sign message       |
-| 403  | Forbidden             | Invalid signature or permissions | Reconnect wallet, retry signing       |
-| 404  | Not Found             | Stamp or endpoint not found      | Verify stamp ID, check network        |
-| 413  | Payload Too Large     | File exceeds size limits         | Compress file or use smaller file     |
-| 422  | Unprocessable Entity  | Stamp not ready or invalid       | Wait for stamp to be usable           |
-| 429  | Too Many Requests     | Rate limiting                    | Wait and retry later                  |
-| 500  | Internal Server Error | Server-side issue                | Retry later or contact support        |
-| 502  | Bad Gateway           | Network routing issue            | Try different network or retry        |
-| 503  | Service Unavailable   | Server overloaded                | Wait and retry later                  |
-| 504  | Gateway Timeout       | Request took too long            | Use faster connection or smaller file |
-
-### Application Error Messages
-
-| Error Message                | Cause                        | Solution                   |
-| ---------------------------- | ---------------------------- | -------------------------- |
-| "Failed to process archive"  | Corrupted or invalid archive | Re-create archive file     |
-| "Stamp utilization exceeded" | Not enough stamp capacity    | Use larger stamp or top up |
-| "Upload session expired"     | Upload took too long         | Restart upload process     |
-| "File validation failed"     | File corrupted or invalid    | Check file integrity       |
-| "Network request failed"     | Connection issue             | Check internet and retry   |
-| "Browser memory exceeded"    | Too many/large files         | Use smaller batches        |
-
-## Performance Optimization
-
-### For Large Files (>1GB)
-
-1. **Stable connection**: Use wired internet when possible
-2. **Close other applications**: Free up bandwidth and memory
-3. **Use compression**: Reduce file size before upload
-4. **Monitor progress**: Keep browser tab active
-5. **Plan timing**: Upload during off-peak hours
-
-### For Many Files (>100 files)
-
-1. **Batch uploads**: Split into smaller groups
-2. **Use ZIP archives**: More efficient than multiple individual files
-3. **Organize files**: Group related files together
-4. **Remove duplicates**: Clean up before uploading
-5. **Monitor browser memory**: Watch for performance issues
-
-### For Slow Networks
-
-1. **Compress aggressively**: Use maximum compression
-2. **Upload during off-peak**: Less network congestion
-3. **Use mobile data**: Sometimes faster than WiFi
-4. **Split large files**: Break into manageable chunks
-5. **Be patient**: Allow extra time for completion
-
-## Browser-Specific Issues
-
-### Chrome
-
-- **Memory issues**: Clear cache, restart browser
-- **Extension conflicts**: Try incognito mode
-- **Security warnings**: Allow site permissions
-
-### Firefox
-
-- **Upload limits**: Check about:config settings
-- **Memory management**: Enable strict memory mode
-- **Security settings**: Adjust privacy settings
-
-### Safari
-
-- **File handling**: Enable file downloads
-- **Memory limits**: Close other tabs
-- **Security restrictions**: Allow site permissions
-
-### Edge
-
-- **Compatibility mode**: Disable IE compatibility
-- **Security settings**: Adjust SmartScreen settings
-- **Memory management**: Clear browser data
-
-## Getting Help
-
-### Before Contacting Support
-
-1. **Try basic solutions**: Refresh, reconnect wallet, retry
-2. **Check browser console**: Look for error messages
-3. **Test with different file**: Isolate file-specific issues
-4. **Document the issue**: Note exact error messages
-5. **Try different browser**: Rule out browser-specific issues
-
-### Information to Provide
-
-When reporting issues, include:
-
-- **Browser and version**: Chrome 120, Firefox 115, etc.
-- **Operating system**: Windows 11, macOS 14, Ubuntu 22.04
-- **File details**: Size, type, name
-- **Error messages**: Exact text of any errors
-- **Steps to reproduce**: What you did before the error
-- **Network details**: Connection type and speed
-- **Wallet information**: Type and version (without private keys!)
-
-### Self-Diagnosis Tools
-
-1. **Browser developer tools**: Check console for errors
-2. **Network tab**: Monitor upload progress and failures
-3. **File validation**: Test files locally before upload
-4. **Connection test**: Verify internet speed and stability
-5. **Wallet connection**: Ensure proper wallet connectivity
+Include: browser + version, OS, file size/type, the exact error text, and the one-line diagnostic from the success/failure status (chunk count, chunks/s, protocol) if shown. The browser console (DevTools) usually has a `[ClientSideUpload]` trace worth copying.
 
 ---
 
-_For specific feature issues, see the individual guides: [Single File](./single-file-upload.md), [Multiple Files](./multiple-file-upload.md), [ZIP Files](./zip-file-upload.md), [Webpages](./webpage-upload.md), [NFT Collections](./nft-collection-upload.md)_
+_Guides: [Single file](./single-file-upload.md) · [Multiple files](./multiple-file-upload.md) · [ZIP](./zip-file-upload.md) · [Webpage](./webpage-upload.md) · [NFT collection](./nft-collection-upload.md)_

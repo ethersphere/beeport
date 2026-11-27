@@ -1,16 +1,12 @@
 /**
- * Standalone verification script for StampsRegistry on Gnosis chain.
+ * Standalone verification script for StampsRegistryV2 on Gnosis chain.
  *
  * Usage
  * ─────
- *   # Convenience npm script (sets TS_NODE_PROJECT automatically):
- *   npm run verify:registry
- *
- *   # Or directly (TS_NODE_PROJECT required for Node 22 + Next.js tsconfig):
- *   TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/verify_registry.ts --network gnosis
+ *   npm run verify:registry-v2
  *
  *   # Pass the address explicitly:
- *   REGISTRY_ADDRESS=0xYourAddress npm run verify:registry
+ *   REGISTRY_V2_ADDRESS=0xYourAddress npm run verify:registry-v2
  */
 
 import { run, deployments } from 'hardhat';
@@ -18,17 +14,17 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env' });
 
 async function main() {
-  let registryAddress: string | undefined = process.env.REGISTRY_ADDRESS;
+  let registryAddress: string | undefined = process.env.REGISTRY_V2_ADDRESS;
 
   if (!registryAddress) {
     try {
-      const deployment = await deployments.get('StampsRegistry');
+      const deployment = await deployments.get('StampsRegistryV2');
       registryAddress = deployment.address;
       console.log(`📦 Loaded address from deployments cache: ${registryAddress}`);
     } catch {
       console.error(
-        '❌ No REGISTRY_ADDRESS env var set and no deployment found.\n' +
-          '   Set REGISTRY_ADDRESS=0x... or run the deploy script first.'
+        '❌ No REGISTRY_V2_ADDRESS env var set and no deployment found.\n' +
+          '   Set REGISTRY_V2_ADDRESS=0x... or run `npm run deploy:registry-v2` first.'
       );
       process.exit(1);
     }
@@ -37,21 +33,23 @@ async function main() {
   const swarmContractAddress =
     process.env.SWARM_CONTRACT_ADDRESS ||
     '0x45a1502382541Cd610CC9068e88727426b696293';
+  const bzzAddress =
+    process.env.GNOSIS_BZZ_ADDRESS || '0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da';
 
   console.log('\n══════════════════════════════════════════════════════════');
-  console.log('StampsRegistry Verification');
+  console.log('StampsRegistryV2 Verification');
   console.log('══════════════════════════════════════════════════════════');
-  console.log(`Registry address  : ${registryAddress}`);
-  console.log(`SwarmContract     : ${swarmContractAddress}`);
+  console.log(`Registry V2 address : ${registryAddress}`);
+  console.log(`Postage Stamp       : ${swarmContractAddress}`);
+  console.log(`BZZ                 : ${bzzAddress}`);
   console.log('══════════════════════════════════════════════════════════\n');
 
-  // ── GnosisScan ────────────────────────────────────────────────────────────
   console.log('▶ Step 1 – GnosisScan (Etherscan API) …');
   try {
     await run('verify:verify', {
       address: registryAddress,
-      constructorArguments: [swarmContractAddress],
-      contract: 'contracts/StampsRegistry.sol:StampsRegistry',
+      constructorArguments: [swarmContractAddress, bzzAddress],
+      contract: 'contracts/StampsRegistryV2.sol:StampsRegistryV2',
     });
     console.log(`✅ GnosisScan verified: https://gnosisscan.io/address/${registryAddress}#code\n`);
   } catch (err: any) {
@@ -63,12 +61,11 @@ async function main() {
     }
   }
 
-  // ── Sourcify ──────────────────────────────────────────────────────────────
   console.log('▶ Step 2 – Sourcify (v2) …');
   try {
     await run('sourcify', {
       address: registryAddress,
-      constructorArguments: [swarmContractAddress],
+      constructorArguments: [swarmContractAddress, bzzAddress],
     });
     console.log('✅ Sourcify verified!\n');
   } catch (err: any) {
