@@ -26,6 +26,14 @@ If the counters look wrong, enable **Advanced mode** in Settings. Then use **Res
 
 Storage is rented for a fixed time. When the paid time runs out, the Postage Stamp contract removes the batch. The network then deletes the files over time. The app reads each storage from the contract. It hides expired storage in the storage list. It also refuses uploads and top-ups to expired storage. Buy new storage to upload again.
 
+### "Could not verify this storage's saved state on Swarm" / `500 read chunk failed`
+
+After each upload, the app saves the state of the storage to Swarm. The state is a set of counters that show which parts of the storage are in use. Another browser with the same wallet reads this saved state before it uploads.
+
+Bee answers 404 when it cannot find a chunk. Bee also remembers each peer (another Bee node) that did not return a chunk. Bee does not ask that peer again for one minute. After about three failed reads of the same address, no peer is left. Bee then answers `500 read chunk failed` for that address until the address gets no reads for one minute.
+
+The app reads this answer as "not found". Older versions of the app stopped the upload. If another browser says that no saved state exists, upload one file from the browser that used the storage. That upload saves the state to Swarm.
+
 ### "Bee doesn't recognize this batch"
 
 If it's not a fresh-batch race (above), the gateway probably watches a different postage contract than the one that created the batch. Compare Bee's `--postage-stamp-contract-address` with the app's Gnosis stamp address.
@@ -68,6 +76,7 @@ Keep the tab open and focused (background tabs get throttled). For multi-GB file
 | 404 | Batch or reference unknown to this gateway | Verify the batch ID / reference; try another gateway |
 | 413 | Body too large for the edge proxy | Gateway config (`client_max_body_size`) — chunks are 4 KB, so this usually means a misrouted request |
 | 429 | Rate limited | Wait and retry |
+| 500 `read chunk failed` | Recent reads did not find the chunk, and Bee has no peer left to ask | Normal for a chunk that does not exist. It changes back to 404 one minute after the last read |
 | 5xx | Gateway problem | Retry later or switch gateways |
 
 ## Reporting an issue

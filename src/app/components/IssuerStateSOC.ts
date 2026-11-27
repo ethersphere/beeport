@@ -351,14 +351,38 @@ async function readSocPayloadAt(
       const soc = await reader.download(identifier);
       return soc.payload.toUint8Array();
     } catch (err) {
-      if (isNotFound(err)) return null;
-      // Bee answers `500 read chunk failed` when a network lookup fails for a
-      // reason other than "not found" (timeout, no peer). That is transient,
-      // and one such answer must not stop an upload: retry before giving up.
+      if (isNotFound(err) || isNoPeerLeft(err)) return null;
+      // Other 5xx answers and network errors are transient: retry them
+      // before giving up, so one bad answer does not stop an upload.
       if (attempt >= SOC_READ_RETRY_DELAYS_MS.length || !isTransientReadError(err)) throw err;
       await new Promise(r => setTimeout(r, SOC_READ_RETRY_DELAYS_MS[attempt]));
     }
   }
+}
+
+/**
+ * Bee's `500 read chunk failed` for a chunk that recent lookups did not find.
+ * Bee skips each peer that failed to return a chunk for one minute
+ * (`pkg/retrieval`: `skiplistDur`). After about three failed reads of the same
+ * address no peer is left, and Bee answers 500 with this message instead of
+ * 404 until the address has been left alone for a minute. Every backup
+ * lookup reads "the next index", which does not exist yet, so this answer is
+ * normal. Matched on the exact JSON message so a proxy error page is not
+ * mistaken for it.
+ */
+function isNoPeerLeft(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { status?: unknown; responseBody?: unknown; response?: { status?: unknown } };
+  if ((e.status ?? e.response?.status) !== 500) return false;
+  let body = e.responseBody;
+  try {
+    if (body instanceof ArrayBuffer) body = new Uint8Array(body);
+    if (body instanceof Uint8Array) body = new TextDecoder().decode(body);
+    if (typeof body === 'string') body = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  return (body as { message?: unknown } | null)?.message === 'read chunk failed';
 }
 
 /** Waits between retries of a backup chunk read that failed transiently. */
@@ -384,13 +408,15 @@ function isTransientReadError(err: unknown): boolean {
  * `hintIndex` (highest index this browser knows of; `-1`/omitted = scratch),
  * then binary-search the gap.
  *
- * A single 404 is not trusted on its own:
+ * A single miss is not trusted on its own:
  *  - The next TWO indexes are probed together, so one index that never reached
  *    the network (a save that failed half-way) does not end the search.
  *  - Misses found during the search are re-read in the next round.
  *  - Without a hint (fresh browser, restore path) the final "nothing newer"
  *    answer is confirmed with a second, fresh read of both indexes, because a
  *    wrong answer there restores old counters.
+ * A re-read asks peers that the first read did not try. When no peer is left,
+ * Bee answers 500 for a minute; {@link isNoPeerLeft} reads that as a miss.
  *
  * Up to date with a hint costs one round of two parallel probes that miss
  * (about 1 s on the gateway).

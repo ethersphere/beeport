@@ -423,7 +423,7 @@ const SOC_NOT_FOUND_RETRY_DELAY_MS = 2_000;
  *     read fails we ABORT the upload rather than risk starting from blank
  *     counters — re-allocating used `(bucket, index)` slots makes Bee evict
  *     the previously stored chunks (newer stamp timestamp wins), which is
- *     silent data loss. A 404 (checked by HTTP status, retried) proceeds
+ *     silent data loss. A miss (404, or Bee's "no peer left" 500; retried) proceeds
  *     from blank only when this browser created the batch; otherwise the
  *     upload is aborted, because SOC saves are best-effort and a missing SOC
  *     does not prove the batch is unused.
