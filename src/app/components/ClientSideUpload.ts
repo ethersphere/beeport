@@ -1500,6 +1500,14 @@ async function saveManifestPresigned(
   node: MantarayNode,
   presignedUpload: (data: Uint8Array) => Promise<Reference>
 ): Promise<Reference> {
+  // Random obfuscation key per node, as Bee does (`pkg/manifest/mantaray`).
+  // bee-js leaves it all-zero, and then a node whose bytes do not depend on
+  // the file is the same chunk on every upload: the "/" index node is always
+  // `0cc878d3…` (bucket 3272). Each upload stamped it into one more slot of
+  // that one bucket until the bucket was full and every upload failed.
+  if (node.obfuscationKey.every(b => b === 0)) {
+    node.obfuscationKey = crypto.getRandomValues(new Uint8Array(32));
+  }
   for (const fork of node.forks.values()) {
     const childRef = await saveManifestPresigned(fork.node, presignedUpload);
     fork.node.selfAddress = childRef.toUint8Array();
